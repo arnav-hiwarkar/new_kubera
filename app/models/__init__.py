@@ -5,3 +5,7 @@ from app.models.auditor import Auditor
 from app.models.activity_log import ActivityLog
 from app.models.notification import Notification
 from app.models.docvault import Bucket, Document, DocumentVersion, DocumentAccessOverride
+from app.models.auditease import (
+    LedgerGroup, TrialBalanceAccount, AuditEngagement, AuditorEngagementGrant,
+    AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage, ReportTemplate
+)
