@@ -9,3 +9,4 @@ from app.models.auditease import (
     LedgerGroup, TrialBalanceAccount, AuditEngagement, AuditorEngagementGrant,
     AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage, ReportTemplate
 )
+from app.models.compliance import ComplianceDomain, DocumentType, MeetingRecord
