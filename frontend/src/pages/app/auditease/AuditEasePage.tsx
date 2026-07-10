@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ImportTBModal } from '@/components/auditease/ImportTBModal';
+import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable';
 import { CreateEngagementModal } from '@/components/auditease/CreateEngagementModal';
 import { Upload, Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -79,45 +80,8 @@ export default function AuditEasePage() {
             </Button>
           </div>
 
-          <div className="rounded-md border border-border bg-card flex-1 overflow-hidden flex flex-col">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>Code</TableHead>
-                  <TableHead>Ledger Name</TableHead>
-                  <TableHead className="text-right">Opening</TableHead>
-                  <TableHead className="text-right">Debit</TableHead>
-                  <TableHead className="text-right">Credit</TableHead>
-                  <TableHead className="text-right">Closing</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tbLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      Loading trial balance...
-                    </TableCell>
-                  </TableRow>
-                ) : tbAccounts.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No accounts found. Import a Trial Balance CSV to get started.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  tbAccounts.map((acc) => (
-                    <TableRow key={acc.id} className="hover:bg-muted/30 transition-colors">
-                      <TableCell className="font-mono text-xs text-muted-foreground">{acc.ledger_code || '—'}</TableCell>
-                      <TableCell className="font-medium">{acc.ledger_name}</TableCell>
-                      <TableCell className="text-right">{acc.opening_balance.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-destructive">{acc.debit.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-green-500">{acc.credit.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-medium">{acc.closing_balance.toLocaleString()}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <TrialBalanceTable tbAccounts={tbAccounts} isLoading={tbLoading} isReadOnly={false} />
           </div>
         </TabsContent>
 

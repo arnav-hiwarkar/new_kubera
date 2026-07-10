@@ -1,18 +1,15 @@
-import { useQuery } from '@tanstack/react-query';
-import { auditeaseAuditorApi } from '@/api/auditease-auditor';
+
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft } from 'lucide-react';
+import { AuditorRequirementsTab } from './components/AuditorRequirementsTab';
+import { AuditorQueriesTab } from './components/AuditorQueriesTab';
+import { AuditorEntriesTab } from './components/AuditorEntriesTab';
+import { AuditorTrialBalanceTab } from './components/AuditorTrialBalanceTab';
 
 export default function AuditorEngagementDetailPage() {
   const { id } = useParams<{ id: string }>();
-
-  const { data: trialBalance = [], isLoading: tbLoading } = useQuery({
-    queryKey: ['auditor', 'engagements', id, 'trial-balance'],
-    queryFn: () => auditeaseAuditorApi.getTrialBalance(id!),
-    enabled: !!id,
-  });
 
   return (
     <div className="flex h-full flex-col gap-6">
@@ -34,45 +31,19 @@ export default function AuditorEngagementDetailPage() {
         </TabsList>
 
         <TabsContent value="trial-balance" className="flex-1 flex flex-col min-h-0 m-0">
-          <div className="bg-card border border-border rounded-md p-6">
-            <h3 className="text-lg font-medium mb-4">Client Trial Balance</h3>
-            {tbLoading ? (
-              <p className="text-sm text-muted-foreground">Loading...</p>
-            ) : trialBalance.length === 0 ? (
-              <p className="text-sm text-muted-foreground border border-dashed rounded p-4 text-center">No trial balance accounts available.</p>
-            ) : (
-              <div className="space-y-2">
-                {trialBalance.map(acc => (
-                  <div key={acc.id} className="flex justify-between items-center p-3 border border-border rounded-md text-sm">
-                    <span>{acc.ledger_code} - {acc.ledger_name}</span>
-                    <span className="font-mono">{acc.closing_balance.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+           <AuditorTrialBalanceTab engagementId={id!} />
         </TabsContent>
         
-        {/* Placeholder tabs for Requirements, Queries, Entries */}
         <TabsContent value="requirements" className="flex-1 flex flex-col min-h-0 m-0">
-           <div className="bg-card border border-border rounded-md p-6">
-              <h3 className="text-lg font-medium mb-4">Requirements</h3>
-              <p className="text-sm text-muted-foreground">Request documents from the client here.</p>
-           </div>
+           <AuditorRequirementsTab engagementId={id!} />
         </TabsContent>
 
         <TabsContent value="queries" className="flex-1 flex flex-col min-h-0 m-0">
-           <div className="bg-card border border-border rounded-md p-6">
-              <h3 className="text-lg font-medium mb-4">Queries</h3>
-              <p className="text-sm text-muted-foreground">Ask questions and discuss items with the client.</p>
-           </div>
+           <AuditorQueriesTab engagementId={id!} />
         </TabsContent>
 
         <TabsContent value="entries" className="flex-1 flex flex-col min-h-0 m-0">
-           <div className="bg-card border border-border rounded-md p-6">
-              <h3 className="text-lg font-medium mb-4">Entries</h3>
-              <p className="text-sm text-muted-foreground">Propose audit adjusting entries here.</p>
-           </div>
+           <AuditorEntriesTab engagementId={id!} />
         </TabsContent>
       </Tabs>
     </div>

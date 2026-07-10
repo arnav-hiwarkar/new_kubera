@@ -75,8 +75,35 @@ async def get_trial_balance(
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    result = await db.execute(select(TrialBalanceAccount).where(TrialBalanceAccount.company_id == current_user.company_id))
-    return result.scalars().all()
+    from sqlalchemy.orm import aliased
+    L1 = aliased(LedgerGroup)
+    L2 = aliased(LedgerGroup)
+    L3 = aliased(LedgerGroup)
+    
+    result = await db.execute(
+        select(
+            TrialBalanceAccount,
+            L1.name,
+            L2.name,
+            L3.name
+        )
+        .outerjoin(L1, TrialBalanceAccount.mapped_group_id == L1.id)
+        .outerjoin(L2, L1.parent_id == L2.id)
+        .outerjoin(L3, L2.parent_id == L3.id)
+        .where(TrialBalanceAccount.company_id == current_user.company_id)
+        .order_by(TrialBalanceAccount.ledger_code)
+    )
+    
+    out = []
+    for tb, g1, g2, g3 in result.all():
+        data = tb.__dict__.copy()
+        data["mapped_group_name"] = g1
+        data["parent_group_name"] = g2
+        data["top_group_name"] = g3
+        out.append(data)
+        
+    return out
+
 
 
 @router.post("/ledgers/{ledger_id}/map-group", response_model=TrialBalanceAccountResponse)
@@ -99,8 +126,31 @@ async def map_ledger_group(
         
     ledger.mapped_group_id = group.id
     await db.commit()
-    await db.refresh(ledger)
-    return ledger
+    
+    from sqlalchemy.orm import aliased
+    L1 = aliased(LedgerGroup)
+    L2 = aliased(LedgerGroup)
+    L3 = aliased(LedgerGroup)
+    
+    result = await db.execute(
+        select(
+            TrialBalanceAccount,
+            L1.name,
+            L2.name,
+            L3.name
+        )
+        .outerjoin(L1, TrialBalanceAccount.mapped_group_id == L1.id)
+        .outerjoin(L2, L1.parent_id == L2.id)
+        .outerjoin(L3, L2.parent_id == L3.id)
+        .where(TrialBalanceAccount.id == ledger.id)
+    )
+    
+    tb, g1, g2, g3 = result.one()
+    data = tb.__dict__.copy()
+    data["mapped_group_name"] = g1
+    data["parent_group_name"] = g2
+    data["top_group_name"] = g3
+    return data
 
 
 # --- Engagements ---

@@ -102,6 +102,7 @@ class AuditEntry(Base, TimestampMixin):
     code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[AuditEntryStatus] = mapped_column(SAEnum(AuditEntryStatus, name="audit_entry_status"), default=AuditEntryStatus.proposed, nullable=False)
+    rejection_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     
     lines = relationship("AuditEntryLine", back_populates="entry", cascade="all, delete-orphan")
 
@@ -126,6 +127,7 @@ class RequirementRequest(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     engagement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("audit_engagements.id"), nullable=False, index=True)
     raised_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auditors.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, server_default="Requirement")
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[RequestStatus] = mapped_column(SAEnum(RequestStatus, name="request_status"), default=RequestStatus.open, nullable=False)
     fulfilled_document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)

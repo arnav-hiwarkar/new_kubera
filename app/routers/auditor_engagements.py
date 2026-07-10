@@ -114,7 +114,56 @@ async def get_trial_balance(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     eng = await check_auditor_access(db, current_auditor.id, engagement_id)
-    result = await db.execute(select(TrialBalanceAccount).where(TrialBalanceAccount.company_id == eng.company_id))
+    
+    from sqlalchemy.orm import aliased
+    L1 = aliased(LedgerGroup)
+    L2 = aliased(LedgerGroup)
+    L3 = aliased(LedgerGroup)
+    
+    result = await db.execute(
+        select(
+            TrialBalanceAccount,
+            L1.name,
+            L2.name,
+            L3.name
+        )
+        .outerjoin(L1, TrialBalanceAccount.mapped_group_id == L1.id)
+        .outerjoin(L2, L1.parent_id == L2.id)
+        .outerjoin(L3, L2.parent_id == L3.id)
+        .where(TrialBalanceAccount.company_id == eng.company_id)
+        .order_by(TrialBalanceAccount.ledger_code)
+    )
+    
+    out = []
+    for tb, g1, g2, g3 in result.all():
+        data = tb.__dict__.copy()
+        data["mapped_group_name"] = g1
+        data["parent_group_name"] = g2
+        data["top_group_name"] = g3
+        out.append(data)
+        
+    return out
+
+
+@router.get("/engagements/{engagement_id}/entries", response_model=List[AuditEntryResponse])
+async def list_entries(
+    engagement_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    
+    result = await db.execute(
+        select(AuditEntry)
+        .options(selectinload(AuditEntry.lines))
+        .where(
+            and_(
+                AuditEntry.engagement_id == engagement_id,
+                AuditEntry.created_by == current_auditor.id
+            )
+        )
+        .order_by(AuditEntry.created_at.desc())
+    )
     return result.scalars().all()
 
 
@@ -158,6 +207,86 @@ async def create_entry(
     return res.scalar_one()
 
 
+@router.put("/engagements/{engagement_id}/entries/{entry_id}", response_model=AuditEntryResponse)
+async def update_entry(
+    engagement_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    entry: AuditEntryCreate,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    
+    # Check debits == credits
+    total_debit = sum(l.amount for l in entry.lines if l.side == "debit")
+    total_credit = sum(l.amount for l in entry.lines if l.side == "credit")
+    if total_debit != total_credit:
+        raise HTTPException(status_code=400, detail="Debits must equal credits")
+        
+    result = await db.execute(
+        select(AuditEntry)
+        .options(selectinload(AuditEntry.lines))
+        .where(
+            and_(
+                AuditEntry.id == entry_id,
+                AuditEntry.engagement_id == engagement_id,
+                AuditEntry.created_by == current_auditor.id
+            )
+        )
+    )
+    db_entry = result.scalar_one_or_none()
+    
+    if not db_entry:
+        raise HTTPException(status_code=404, detail="Audit entry not found")
+        
+    if db_entry.status == AuditEntryStatus.approved:
+        raise HTTPException(status_code=400, detail="Cannot edit an approved audit entry")
+        
+    # Update fields and reset status
+    db_entry.code = entry.code
+    db_entry.description = entry.description
+    db_entry.status = AuditEntryStatus.proposed
+    db_entry.rejection_comment = None
+    
+    # Delete old lines
+    for line in db_entry.lines:
+        await db.delete(line)
+        
+    # Add new lines
+    for line in entry.lines:
+        db.add(AuditEntryLine(
+            entry_id=db_entry.id,
+            ledger_id=line.ledger_id,
+            side=line.side,
+            amount=line.amount
+        ))
+        
+    await db.commit()
+    
+    # reload with lines
+    res = await db.execute(select(AuditEntry).options(selectinload(AuditEntry.lines)).where(AuditEntry.id == db_entry.id))
+    return res.scalar_one()
+
+
+@router.get("/engagements/{engagement_id}/requirement-requests", response_model=List[RequirementRequestResponse])
+async def get_requirements(
+    engagement_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    
+    result = await db.execute(
+        select(RequirementRequest).where(
+            and_(
+                RequirementRequest.engagement_id == engagement_id,
+                RequirementRequest.raised_by == current_auditor.id
+            )
+        )
+    )
+    return result.scalars().all()
+
+
 @router.post("/engagements/{engagement_id}/requirement-requests", response_model=RequirementRequestResponse)
 async def create_requirement(
     engagement_id: uuid.UUID,
@@ -170,12 +299,95 @@ async def create_requirement(
     db_req = RequirementRequest(
         engagement_id=engagement_id,
         raised_by=current_auditor.id,
+        title=req.title,
         description=req.description
     )
     db.add(db_req)
     await db.commit()
     await db.refresh(db_req)
     return db_req
+
+
+@router.put("/engagements/{engagement_id}/requirement-requests/{req_id}", response_model=RequirementRequestResponse)
+async def update_requirement(
+    engagement_id: uuid.UUID,
+    req_id: uuid.UUID,
+    req: RequirementRequestCreate,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    
+    result = await db.execute(select(RequirementRequest).where(and_(RequirementRequest.id == req_id, RequirementRequest.engagement_id == engagement_id, RequirementRequest.raised_by == current_auditor.id)))
+    db_req = result.scalar_one_or_none()
+    if not db_req:
+        raise HTTPException(status_code=404, detail="Requirement request not found")
+    if db_req.status != RequestStatus.open:
+        raise HTTPException(status_code=400, detail="Cannot edit a fulfilled requirement request")
+        
+    db_req.title = req.title
+    db_req.description = req.description
+    await db.commit()
+    await db.refresh(db_req)
+    return db_req
+
+
+@router.delete("/engagements/{engagement_id}/requirement-requests/{req_id}")
+async def delete_requirement(
+    engagement_id: uuid.UUID,
+    req_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    
+    result = await db.execute(select(RequirementRequest).where(and_(RequirementRequest.id == req_id, RequirementRequest.engagement_id == engagement_id, RequirementRequest.raised_by == current_auditor.id)))
+    db_req = result.scalar_one_or_none()
+    if not db_req:
+        raise HTTPException(status_code=404, detail="Requirement request not found")
+    if db_req.status != RequestStatus.open:
+        raise HTTPException(status_code=400, detail="Cannot delete a fulfilled requirement request")
+        
+    await db.delete(db_req)
+    await db.commit()
+    return {"message": "Requirement request deleted"}
+
+
+@router.get("/engagements/{engagement_id}/queries", response_model=List[QueryResponse])
+async def list_queries(
+    engagement_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    
+    result = await db.execute(
+        select(Query)
+        .options(selectinload(Query.messages))
+        .where(Query.engagement_id == engagement_id)
+        .order_by(Query.updated_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.get("/engagements/{engagement_id}/queries/{query_id}", response_model=QueryResponse)
+async def get_query(
+    engagement_id: uuid.UUID,
+    query_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    
+    result = await db.execute(
+        select(Query)
+        .options(selectinload(Query.messages))
+        .where(and_(Query.id == query_id, Query.engagement_id == engagement_id))
+    )
+    db_query = result.scalar_one_or_none()
+    if not db_query:
+        raise HTTPException(status_code=404, detail="Query not found")
+    return db_query
 
 
 @router.post("/engagements/{engagement_id}/queries", response_model=QueryResponse)
@@ -234,3 +446,25 @@ async def add_query_message(
     await db.commit()
     await db.refresh(db_msg)
     return db_msg
+
+
+@router.put("/engagements/{engagement_id}/queries/{query_id}/close", response_model=QueryResponse)
+async def close_query(
+    engagement_id: uuid.UUID,
+    query_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    
+    result = await db.execute(select(Query).options(selectinload(Query.messages)).where(and_(Query.id == query_id, Query.engagement_id == engagement_id)))
+    db_query = result.scalar_one_or_none()
+    if not db_query:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if db_query.opened_by != current_auditor.id:
+        raise HTTPException(status_code=403, detail="Only the auditor who opened the query can close it")
+        
+    db_query.status = QueryStatus.closed
+    await db.commit()
+    await db.refresh(db_query)
+    return db_query

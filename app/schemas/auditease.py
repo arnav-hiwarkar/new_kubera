@@ -25,6 +25,9 @@ class TrialBalanceAccountBase(BaseModel):
     ledger_code: Optional[str] = None
     ledger_name: str
     mapped_group_id: Optional[uuid.UUID] = None
+    mapped_group_name: Optional[str] = None
+    parent_group_name: Optional[str] = None
+    top_group_name: Optional[str] = None
     opening_balance: float = 0
     debit: float = 0
     credit: float = 0
@@ -89,6 +92,7 @@ class AuditEntryResponse(BaseModel):
     code: Optional[str]
     description: str
     status: AuditEntryStatus
+    rejection_comment: Optional[str]
     created_at: datetime
     updated_at: datetime
     lines: List[AuditEntryLineResponse]
@@ -98,12 +102,14 @@ class AuditEntryResponse(BaseModel):
 # --- Requests & Queries ---
 
 class RequirementRequestCreate(BaseModel):
+    title: str
     description: str
 
 class RequirementRequestResponse(BaseModel):
     id: uuid.UUID
     engagement_id: uuid.UUID
     raised_by: uuid.UUID
+    title: str
     description: str
     status: RequestStatus
     fulfilled_document_id: Optional[uuid.UUID]

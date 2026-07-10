@@ -123,7 +123,7 @@ async def test_requirements_and_queries(client: AsyncClient):
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
     
     # Auditor creates requirement
-    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", json={"description": "Provide bank statements"}, headers=aud_headers)
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", json={"title": "Bank Statements", "description": "Provide bank statements"}, headers=aud_headers)
     assert resp.status_code == 200
     req_id = resp.json()["id"]
     

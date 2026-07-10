@@ -1,10 +1,8 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap");
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-
-/* Google Fonts – DM Serif Display, DM Sans, DM Mono */
-@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap");
-
 @custom-variant dark (&:is(.dark *));
 
 /*

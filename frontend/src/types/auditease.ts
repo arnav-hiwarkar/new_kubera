@@ -12,6 +12,9 @@ export interface TrialBalanceAccountResponse {
   ledger_code: string | null;
   ledger_name: string;
   mapped_group_id: string | null;
+  top_group_name?: string | null;
+  parent_group_name?: string | null;
+  mapped_group_name?: string | null;
   opening_balance: number;
   debit: number;
   credit: number;
@@ -71,12 +74,14 @@ export interface AuditEntryResponse {
   code: string | null;
   description: string;
   status: AuditEntryStatus;
+  rejection_comment?: string | null;
   created_at: string;
   updated_at: string;
   lines: AuditEntryLineResponse[];
 }
 
 export interface RequirementRequestCreate {
+  title: string;
   description: string;
 }
 
@@ -84,6 +89,7 @@ export interface RequirementRequestResponse {
   id: string;
   engagement_id: string;
   raised_by: string;
+  title: string;
   description: string;
   status: RequestStatus;
   fulfilled_document_id: string | null;
