@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { auditeaseCompanyApi } from '@/api/auditease-company';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -13,12 +13,17 @@ import {
 } from '@/components/ui/table';
 import { ImportTBModal } from '@/components/auditease/ImportTBModal';
 import { CreateEngagementModal } from '@/components/auditease/CreateEngagementModal';
-import { Upload, Plus } from 'lucide-react';
+import { Upload, Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { useAppAuth } from '@/contexts/AppAuthContext';
+import { toast } from 'sonner';
 
 export default function AuditEasePage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { role } = useAppAuth();
+  const isAdmin = role === 'admin';
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isCreateEngagementOpen, setIsCreateEngagementOpen] = useState(false);
 
@@ -31,6 +36,24 @@ export default function AuditEasePage() {
     queryKey: ['auditease', 'engagements'],
     queryFn: auditeaseCompanyApi.getEngagements,
   });
+
+  const deleteEngagementMutation = useMutation({
+    mutationFn: auditeaseCompanyApi.deleteEngagement,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auditease', 'engagements'] });
+      toast.success('Engagement deleted successfully');
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to delete engagement');
+    }
+  });
+
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (confirm('Are you sure you want to delete this engagement? This action cannot be undone.')) {
+      deleteEngagementMutation.mutate(id);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col gap-6">
@@ -117,6 +140,7 @@ export default function AuditEasePage() {
                   <TableHead>Period</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
+                  {isAdmin && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -148,6 +172,19 @@ export default function AuditEasePage() {
                       <TableCell className="text-muted-foreground">
                         {format(new Date(eng.created_at), 'MMM d, yyyy')}
                       </TableCell>
+                      {isAdmin && (
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8"
+                            onClick={(e) => handleDelete(e, eng.id)}
+                            disabled={deleteEngagementMutation.isPending}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 )}

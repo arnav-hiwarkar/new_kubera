@@ -42,6 +42,9 @@ export const auditeaseCompanyApi = {
     const { data } = await api.patch<AuditEngagementResponse>(`/auditease/engagements/${engagementId}/close`);
     return data;
   },
+  deleteEngagement: async (engagementId: string) => {
+    await api.delete(`/auditease/engagements/${engagementId}`);
+  },
   inviteAuditor: async (engagementId: string, payload: AuditorInvite) => {
     await api.post(`/auditease/engagements/${engagementId}/invite-auditor`, payload);
   },

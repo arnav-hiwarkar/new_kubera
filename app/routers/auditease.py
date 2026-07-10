@@ -3,7 +3,7 @@ from typing import Annotated, List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select, and_, update, func
+from sqlalchemy import select, and_, update, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -157,6 +157,54 @@ async def close_engagement(
     return eng
 
 
+@router.delete("/engagements/{engagement_id}")
+async def delete_engagement(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can delete engagements")
+
+    result = await db.execute(select(AuditEngagement).where(and_(AuditEngagement.id == engagement_id, AuditEngagement.company_id == current_user.company_id)))
+    eng = result.scalar_one_or_none()
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+        
+    # Check for approved entries
+    entries_res = await db.execute(
+        select(AuditEntry).where(and_(AuditEntry.engagement_id == engagement_id, AuditEntry.status == AuditEntryStatus.approved))
+    )
+    if entries_res.scalars().first():
+        raise HTTPException(status_code=400, detail="Cannot delete engagement with approved entries")
+
+    # Hard delete engagement
+    # Manually delete related records since ondelete="CASCADE" is missing on some tables
+    await db.execute(delete(AuditorEngagementGrant).where(AuditorEngagementGrant.engagement_id == engagement_id))
+    
+    # Delete related requirement requests
+    await db.execute(delete(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id))
+    
+    # Delete queries and query messages (query messages have ondelete="CASCADE" but let's be safe)
+    queries_res = await db.execute(select(Query.id).where(Query.engagement_id == engagement_id))
+    query_ids = queries_res.scalars().all()
+    if query_ids:
+        await db.execute(delete(QueryMessage).where(QueryMessage.query_id.in_(query_ids)))
+        await db.execute(delete(Query).where(Query.engagement_id == engagement_id))
+        
+    # Delete audit entries and their lines (lines have ondelete="CASCADE")
+    entries_res = await db.execute(select(AuditEntry.id).where(AuditEntry.engagement_id == engagement_id))
+    entry_ids = entries_res.scalars().all()
+    if entry_ids:
+        await db.execute(delete(AuditEntryLine).where(AuditEntryLine.entry_id.in_(entry_ids)))
+        await db.execute(delete(AuditEntry).where(AuditEntry.engagement_id == engagement_id))
+        
+    await db.delete(eng)
+    await db.commit()
+    
+    return {"message": "Engagement deleted"}
+
+
 class AuditorInvite(BaseModel):
     email: str
 
@@ -187,6 +235,13 @@ async def invite_auditor(
         )
         db.add(auditor)
         await db.flush() # get auditor.id
+    else:
+        # Check if grant already exists
+        grant_res = await db.execute(select(AuditorEngagementGrant).where(
+            and_(AuditorEngagementGrant.auditor_id == auditor.id, AuditorEngagementGrant.engagement_id == engagement_id)
+        ))
+        if grant_res.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Auditor is already invited to this engagement")
         
     grant = AuditorEngagementGrant(
         auditor_id=auditor.id,

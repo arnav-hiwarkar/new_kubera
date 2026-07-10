@@ -31,21 +31,22 @@ async def test_engagement_lifecycle(client: AsyncClient):
     co_token = await get_company_token(client, email="co@a.com", password="pass")
     co_headers = {"Authorization": f"Bearer {co_token}"}
     
-    # Auditor Setup
-    resp = await client.post("/api/v1/auth/auditor/register", json={"email": "aud@a.com", "password": "pass", "name": "Auditor"})
-    assert resp.status_code == 201
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud@a.com", "password": "pass"})
-    aud_token = resp.json()["access_token"]
-    aud_headers = {"Authorization": f"Bearer {aud_token}"}
-    
     # 1. Company creates engagement
     resp = await client.post("/api/v1/auditease/engagements", json={"period_label": "FY2023"}, headers=co_headers)
     assert resp.status_code == 201
     eng_id = resp.json()["id"]
     
-    # 2. Company invites auditor
+    # 2. Company invites auditor (new auditor -> creates placeholder -> status = invited)
     resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "aud@a.com"}, headers=co_headers)
     assert resp.status_code == 200
+    
+    # Auditor Setup (registering over the placeholder)
+    resp = await client.post("/api/v1/auth/auditor/register", json={"email": "aud@a.com", "password": "pass", "name": "Auditor"})
+    assert resp.status_code == 201
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud@a.com", "password": "pass"})
+    aud_token = resp.json()["access_token"]
+    aud_headers = {"Authorization": f"Bearer {aud_token}"}
+
     
     # 3. Auditor sees invite and accepts
     resp = await client.get("/api/v1/auditor/engagements", headers=aud_headers)
