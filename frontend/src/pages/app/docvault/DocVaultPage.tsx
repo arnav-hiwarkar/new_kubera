@@ -15,7 +15,7 @@ import {
 import { Folder, FileText, Search, Plus, MoreHorizontal } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
-import type { BucketResponse, DocumentResponse } from '@/types/docvault';
+import type { DocumentResponse } from '@/types/docvault';
 import { UploadModal } from '@/components/docvault/UploadModal';
 import { DocumentDetailModal } from '@/components/docvault/DocumentDetailModal';
 
@@ -26,7 +26,7 @@ export default function DocVaultPage() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<DocumentResponse | null>(null);
 
-  const { data: buckets = [], isLoading: bucketsLoading } = useQuery({
+  const { data: buckets = [] } = useQuery({
     queryKey: ['docvault', 'buckets'],
     queryFn: docvaultApi.getBuckets,
   });

@@ -3,7 +3,7 @@ from typing import Annotated, List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select, and_, update
+from sqlalchemy import select, and_, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -173,9 +173,12 @@ async def invite_auditor(
     if not eng or eng.status == EngagementStatus.closed:
         raise HTTPException(status_code=404, detail="Active engagement not found")
 
-    aud_res = await db.execute(select(Auditor).where(Auditor.email == invite.email))
+    aud_res = await db.execute(select(Auditor).where(func.lower(Auditor.email) == invite.email.lower()))
     auditor = aud_res.scalar_one_or_none()
+    
+    is_new = False
     if not auditor:
+        is_new = True
         # Create a placeholder auditor account so they can receive invites before registering
         auditor = Auditor(
             email=invite.email,
@@ -188,7 +191,8 @@ async def invite_auditor(
     grant = AuditorEngagementGrant(
         auditor_id=auditor.id,
         engagement_id=engagement_id,
-        status=GrantStatus.invited
+        status=GrantStatus.invited if is_new else GrantStatus.accepted,
+        accepted_at=None if is_new else datetime.now(timezone.utc)
     )
     db.add(grant)
     await db.commit()

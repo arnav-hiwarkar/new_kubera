@@ -3,7 +3,7 @@ import { auditeaseAuditorApi } from '@/api/auditease-auditor';
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, MessageSquare, FileText, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 export default function AuditorEngagementDetailPage() {
   const { id } = useParams<{ id: string }>();

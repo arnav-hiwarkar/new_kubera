@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, setTokenGetter, setRefreshHandler, setLogoutHandler } from '@/lib/api';
+import { api, setAuditorTokenGetter, setAuditorRefreshHandler, setAuditorLogoutHandler } from '@/lib/api';
 import type { AuditorOut, TokenResponse, AuditorRegisterRequest } from '@/types/auth';
 
 interface AuditorAuthContextValue {
@@ -27,9 +28,9 @@ export function AuditorAuthProvider({ children }: { children: ReactNode }) {
   }, [navigate]);
 
   useEffect(() => {
-    setTokenGetter(() => accessToken);
+    setAuditorTokenGetter(() => accessToken);
     
-    setRefreshHandler(async () => {
+    setAuditorRefreshHandler(async () => {
       if (!refreshToken) return null;
       try {
         const response = await api.post<TokenResponse>('/auth/auditor/refresh', {
@@ -43,12 +44,12 @@ export function AuditorAuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    setLogoutHandler(handleLogout);
+    setAuditorLogoutHandler(handleLogout);
 
     return () => {
-      setTokenGetter(null);
-      setRefreshHandler(null);
-      setLogoutHandler(null);
+      setAuditorTokenGetter(null);
+      setAuditorRefreshHandler(null);
+      setAuditorLogoutHandler(null);
     };
   }, [accessToken, refreshToken, handleLogout]);
 

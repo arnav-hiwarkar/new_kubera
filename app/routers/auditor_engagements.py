@@ -50,7 +50,7 @@ async def list_engagements(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     result = await db.execute(
-        select(AuditEngagement)
+        select(AuditEngagement, AuditorEngagementGrant.status)
         .join(AuditorEngagementGrant, AuditEngagement.id == AuditorEngagementGrant.engagement_id)
         .where(
             and_(
@@ -59,7 +59,26 @@ async def list_engagements(
             )
         )
     )
-    return result.scalars().all()
+    
+    rows = result.all()
+    out = []
+    for eng, grant_status in rows:
+        # If the grant is accepted, the engagement is active from the auditor's perspective.
+        # This prevents Pydantic validation errors since 'accepted' is not a valid EngagementStatus.
+        display_status = grant_status
+        if grant_status == GrantStatus.accepted:
+            display_status = EngagementStatus.active
+            
+        out.append({
+            "id": eng.id,
+            "company_id": eng.company_id,
+            "period_label": eng.period_label,
+            "status": display_status,
+            "created_by": eng.created_by,
+            "created_at": eng.created_at,
+            "updated_at": eng.updated_at
+        })
+    return out
 
 
 @router.post("/engagements/{engagement_id}/accept")

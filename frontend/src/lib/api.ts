@@ -9,33 +9,21 @@ type TokenGetter = () => string | null;
 type RefreshHandler = () => Promise<string | null>;
 type LogoutHandler = () => void;
 
-let getToken: TokenGetter | null = null;
-let refreshTokenFn: RefreshHandler | null = null;
-let logoutFn: LogoutHandler | null = null;
+let getAppToken: TokenGetter | null = null;
+let getAuditorToken: TokenGetter | null = null;
+let appRefreshFn: RefreshHandler | null = null;
+let auditorRefreshFn: RefreshHandler | null = null;
+let appLogoutFn: LogoutHandler | null = null;
+let auditorLogoutFn: LogoutHandler | null = null;
 
-/**
- * Register a function that returns the current access token.
- * Called by auth contexts on mount.
- */
-export function setTokenGetter(fn: TokenGetter | null): void {
-  getToken = fn;
-}
+export function setAppTokenGetter(fn: TokenGetter | null): void { getAppToken = fn; }
+export function setAuditorTokenGetter(fn: TokenGetter | null): void { getAuditorToken = fn; }
 
-/**
- * Register a function that performs a token refresh and returns the new access token.
- * Called by auth contexts on mount.
- */
-export function setRefreshHandler(fn: RefreshHandler | null): void {
-  refreshTokenFn = fn;
-}
+export function setAppRefreshHandler(fn: RefreshHandler | null): void { appRefreshFn = fn; }
+export function setAuditorRefreshHandler(fn: RefreshHandler | null): void { auditorRefreshFn = fn; }
 
-/**
- * Register a function that performs logout (clears state, navigates away).
- * Called by auth contexts on mount.
- */
-export function setLogoutHandler(fn: LogoutHandler | null): void {
-  logoutFn = fn;
-}
+export function setAppLogoutHandler(fn: LogoutHandler | null): void { appLogoutFn = fn; }
+export function setAuditorLogoutHandler(fn: LogoutHandler | null): void { auditorLogoutFn = fn; }
 
 /**
  * Configured Axios instance for all API calls.
@@ -49,7 +37,8 @@ export const api = axios.create({
  */
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = getToken?.();
+    const isAuditorRoute = config.url?.startsWith('/auditor') || config.url?.startsWith('/auth/auditor');
+    const token = isAuditorRoute ? getAuditorToken?.() : getAppToken?.();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -80,19 +69,20 @@ api.interceptors.response.use(
       _retry?: boolean;
     };
 
-    // Only attempt refresh on 401, if we haven't already retried,
-    // and if a refresh handler is registered.
+    const isAuditorRoute = originalRequest.url?.startsWith('/auditor') || originalRequest.url?.startsWith('/auth/auditor');
+    const refreshFn = isAuditorRoute ? auditorRefreshFn : appRefreshFn;
+    const logoutHandler = isAuditorRoute ? auditorLogoutFn : appLogoutFn;
+
     if (
       error.response?.status !== 401 ||
       originalRequest._retry ||
-      !refreshTokenFn
+      !refreshFn
     ) {
       return Promise.reject(error);
     }
 
     originalRequest._retry = true;
 
-    // If a refresh is already in progress, wait for it.
     if (isRefreshing && refreshPromise) {
       try {
         const newToken = await refreshPromise;
@@ -101,14 +91,13 @@ api.interceptors.response.use(
           return api(originalRequest);
         }
       } catch {
-        logoutFn?.();
+        logoutHandler?.();
         return Promise.reject(error);
       }
     }
 
-    // Start a new refresh.
     isRefreshing = true;
-    refreshPromise = refreshTokenFn();
+    refreshPromise = refreshFn();
 
     try {
       const newToken = await refreshPromise;
@@ -116,11 +105,10 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return api(originalRequest);
       }
-      // Refresh returned null — token couldn't be refreshed.
-      logoutFn?.();
+      logoutHandler?.();
       return Promise.reject(error);
     } catch {
-      logoutFn?.();
+      logoutHandler?.();
       return Promise.reject(error);
     } finally {
       isRefreshing = false;

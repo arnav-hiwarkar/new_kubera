@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, setTokenGetter, setRefreshHandler, setLogoutHandler } from '@/lib/api';
+import { api, setAppTokenGetter, setAppRefreshHandler, setAppLogoutHandler } from '@/lib/api';
 import type { CompanyUserOut, TokenResponse, UserRole } from '@/types/auth';
 
 interface AppAuthContextValue {
@@ -27,9 +28,9 @@ export function AppAuthProvider({ children }: { children: ReactNode }) {
   }, [navigate]);
 
   useEffect(() => {
-    setTokenGetter(() => accessToken);
+    setAppTokenGetter(() => accessToken);
     
-    setRefreshHandler(async () => {
+    setAppRefreshHandler(async () => {
       if (!refreshToken) return null;
       try {
         const response = await api.post<TokenResponse>('/auth/company/refresh', {
@@ -43,12 +44,12 @@ export function AppAuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    setLogoutHandler(handleLogout);
+    setAppLogoutHandler(handleLogout);
 
     return () => {
-      setTokenGetter(null);
-      setRefreshHandler(null);
-      setLogoutHandler(null);
+      setAppTokenGetter(null);
+      setAppRefreshHandler(null);
+      setAppLogoutHandler(null);
     };
   }, [accessToken, refreshToken, handleLogout]);
 
