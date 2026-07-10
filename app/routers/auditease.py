@@ -176,9 +176,14 @@ async def invite_auditor(
     aud_res = await db.execute(select(Auditor).where(Auditor.email == invite.email))
     auditor = aud_res.scalar_one_or_none()
     if not auditor:
-        # In a real system, we might create a placeholder Auditor account and email an invite link.
-        # For V1 tests, we require the auditor account to exist (self-registration).
-        raise HTTPException(status_code=404, detail="Auditor account with this email not found. They must self-register first.")
+        # Create a placeholder auditor account so they can receive invites before registering
+        auditor = Auditor(
+            email=invite.email,
+            hashed_password="__pending__",
+            name="Pending Auditor"
+        )
+        db.add(auditor)
+        await db.flush() # get auditor.id
         
     grant = AuditorEngagementGrant(
         auditor_id=auditor.id,

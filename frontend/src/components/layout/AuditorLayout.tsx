@@ -1,7 +1,8 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, NavLink } from 'react-router-dom';
 import { useAuditorAuth } from '@/contexts/AuditorAuthContext';
-import { LogOut } from 'lucide-react';
+import { LogOut, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export function AuditorLayout() {
   const { user, logout } = useAuditorAuth();
@@ -15,6 +16,18 @@ export function AuditorLayout() {
             <span className="text-sm text-muted-foreground border-l border-sidebar-border pl-4">
               Auditor Portal
             </span>
+          </div>
+          <div className="flex flex-1 items-center gap-6 px-8">
+            <NavLink 
+              to="/auditor/engagements"
+              className={({ isActive }) => cn(
+                "flex items-center gap-2 text-sm font-medium transition-colors hover:text-primary",
+                isActive ? "text-primary" : "text-muted-foreground"
+              )}
+            >
+              <Briefcase className="h-4 w-4" />
+              Engagements
+            </NavLink>
           </div>
           
           <div className="flex items-center gap-4">

@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ImportTBModal } from '@/components/auditease/ImportTBModal';
+import { CreateEngagementModal } from '@/components/auditease/CreateEngagementModal';
 import { Upload, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -19,6 +20,7 @@ import { useNavigate } from 'react-router-dom';
 export default function AuditEasePage() {
   const navigate = useNavigate();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isCreateEngagementOpen, setIsCreateEngagementOpen] = useState(false);
 
   const { data: tbAccounts = [], isLoading: tbLoading } = useQuery({
     queryKey: ['auditease', 'trial-balance'],
@@ -99,7 +101,10 @@ export default function AuditEasePage() {
         <TabsContent value="engagements" className="flex-1 flex flex-col min-h-0 m-0">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-medium">Audit Engagements</h2>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <Button 
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={() => setIsCreateEngagementOpen(true)}
+            >
               <Plus className="mr-2 h-4 w-4" />
               New Engagement
             </Button>
@@ -155,6 +160,11 @@ export default function AuditEasePage() {
       <ImportTBModal 
         isOpen={isImportModalOpen} 
         onClose={() => setIsImportModalOpen(false)} 
+      />
+
+      <CreateEngagementModal 
+        isOpen={isCreateEngagementOpen}
+        onClose={() => setIsCreateEngagementOpen(false)}
       />
     </div>
   );

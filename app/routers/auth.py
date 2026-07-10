@@ -180,19 +180,31 @@ async def auditor_register(
     existing = await db.execute(
         select(Auditor).where(Auditor.email == body.email)
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
-        )
-    auditor = Auditor(
+    auditor_obj = existing.scalar_one_or_none()
+    
+    if auditor_obj:
+        if auditor_obj.hashed_password == "__pending__":
+            # Re-use the placeholder auditor account created by an invite
+            auditor_obj.hashed_password = hash_password(body.password)
+            auditor_obj.name = body.name
+            await db.commit()
+            await db.refresh(auditor_obj)
+            return auditor_obj
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered",
+            )
+            
+    auditor_obj = Auditor(
         email=body.email,
         hashed_password=hash_password(body.password),
         name=body.name,
     )
-    db.add(auditor)
-    await db.flush()
-    return AuditorOut.model_validate(auditor)
+    db.add(auditor_obj)
+    await db.commit()
+    await db.refresh(auditor_obj)
+    return AuditorOut.model_validate(auditor_obj)
 
 
 @router.post("/auditor/login", response_model=TokenResponse)

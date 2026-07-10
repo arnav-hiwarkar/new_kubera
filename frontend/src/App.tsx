@@ -63,7 +63,7 @@ export default function App() {
               <Route path="/auditor/register" element={<AuditorRegisterPage />} />
               <Route path="/auditor" element={<AuditorGuard />}>
                 <Route element={<AuditorLayout />}>
-                  <Route index element={<Placeholder title="Dashboard" />} />
+                  <Route index element={<Navigate to="engagements" replace />} />
                   <Route path="engagements">
                     <Route index element={<EngagementsPage />} />
                     <Route path=":id" element={<AuditorEngagementDetailPage />} />

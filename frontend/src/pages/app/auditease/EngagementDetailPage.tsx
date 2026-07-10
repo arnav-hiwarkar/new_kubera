@@ -1,13 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { auditeaseCompanyApi } from '@/api/auditease-company';
 import { useParams, Link } from 'react-router-dom';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, MessageSquare, FileText, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, MessageSquare, FileText, CheckCircle2, UserPlus } from 'lucide-react';
 import { format } from 'date-fns';
+import { InviteAuditorModal } from '@/components/auditease/InviteAuditorModal';
 
 export default function EngagementDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
   // Fetch all related data
   const { data: requirements = [], isLoading: reqLoading } = useQuery({
@@ -24,13 +27,19 @@ export default function EngagementDetailPage() {
 
   return (
     <div className="flex h-full flex-col gap-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link to="/app/auditease">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" asChild>
+            <Link to="/app/auditease">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <h1 className="text-2xl font-heading tracking-wide text-primary">Engagement Details</h1>
+        </div>
+        <Button onClick={() => setIsInviteModalOpen(true)} className="bg-secondary text-secondary-foreground hover:bg-secondary/90">
+          <UserPlus className="mr-2 h-4 w-4" />
+          Invite Auditor
         </Button>
-        <h1 className="text-2xl font-heading tracking-wide text-primary">Engagement Details</h1>
       </div>
 
       <Tabs defaultValue="requirements" className="flex-1 flex flex-col min-h-0">
@@ -128,6 +137,12 @@ export default function EngagementDetailPage() {
            </div>
         </TabsContent>
       </Tabs>
+
+      <InviteAuditorModal 
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        engagementId={id!}
+      />
     </div>
   );
 }
