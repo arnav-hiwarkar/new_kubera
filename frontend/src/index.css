@@ -1,0 +1,220 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Google Fonts – DM Serif Display, DM Sans, DM Mono */
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap");
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Theme – Kubera design tokens
+ * All colours use oklch() to stay consistent with the shadcn system.
+ * The app is always dark; there is no light-mode block.
+ */
+@theme inline {
+    /* ── Font families ── */
+    --font-sans: 'DM Sans', sans-serif;
+    --font-heading: 'DM Serif Display', serif;
+    --font-mono: 'DM Mono', monospace;
+
+    /* ── Colour aliases (shadcn plumbing) ── */
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+
+    /* ── Radius scale ── */
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ─────────────────────────────────────────────────
+ * :root — always-dark colour tokens (Kubera)
+ * surface-0  #0f1118  oklch(0.14 0.015 260)
+ * surface-1  #171b26  oklch(0.18 0.015 260)
+ * surface-2  #1f2333  oklch(0.22 0.015 260)
+ * surface-3  #2b3044  oklch(0.28 0.015 260)
+ * gold       #cda23a  oklch(0.74 0.14  80)
+ * gold-muted #7a6a3b  oklch(0.50 0.07  80)
+ * text-primary          oklch(0.90 0.01 260)
+ * text-secondary        oklch(0.55 0.01 260)
+ * text-on-gold #0f1118 oklch(0.14 0.015 260)
+ * ───────────────────────────────────────────────── */
+:root {
+    /* Surface / layout */
+    --background: oklch(0.18 0.015 260);          /* surface-1 */
+    --foreground: oklch(0.90 0.01 260);            /* text-primary */
+
+    /* Cards & popovers */
+    --card: oklch(0.22 0.015 260);                 /* surface-2 */
+    --card-foreground: oklch(0.90 0.01 260);
+    --popover: oklch(0.22 0.015 260);              /* surface-2 */
+    --popover-foreground: oklch(0.90 0.01 260);
+
+    /* Primary – gold accent */
+    --primary: oklch(0.74 0.14 80);                /* gold */
+    --primary-foreground: oklch(0.14 0.015 260);   /* text-on-gold / surface-0 */
+
+    /* Secondary – surface-3 */
+    --secondary: oklch(0.28 0.015 260);            /* surface-3 */
+    --secondary-foreground: oklch(0.90 0.01 260);
+
+    /* Muted */
+    --muted: oklch(0.28 0.015 260);                /* surface-3 */
+    --muted-foreground: oklch(0.55 0.01 260);      /* text-secondary */
+
+    /* Accent */
+    --accent: oklch(0.28 0.015 260);               /* surface-3 */
+    --accent-foreground: oklch(0.90 0.01 260);
+
+    /* Destructive */
+    --destructive: oklch(0.55 0.2 25);             /* ≈ hsl(0 55% 52%) */
+
+    /* Borders / inputs / ring */
+    --border: oklch(0.50 0.07 80 / 40%);           /* gold-muted @ 40% alpha */
+    --input: oklch(0.28 0.015 260);                /* surface-3 */
+    --ring: oklch(0.74 0.14 80);                   /* gold */
+
+    /* Radius */
+    --radius: 0.375rem;
+
+    /* Sidebar */
+    --sidebar: oklch(0.14 0.015 260);              /* surface-0 */
+    --sidebar-foreground: oklch(0.90 0.01 260);
+    --sidebar-primary: oklch(0.74 0.14 80);        /* gold */
+    --sidebar-primary-foreground: oklch(0.14 0.015 260);
+    --sidebar-accent: oklch(0.22 0.015 260);       /* surface-2 */
+    --sidebar-accent-foreground: oklch(0.90 0.01 260);
+    --sidebar-border: oklch(0.50 0.07 80 / 30%);   /* gold-muted @ 30% alpha */
+    --sidebar-ring: oklch(0.74 0.14 80);
+
+    /* Chart colours – gold tones */
+    --chart-1: oklch(0.74 0.14 80);                /* gold */
+    --chart-2: oklch(0.64 0.12 75);
+    --chart-3: oklch(0.55 0.10 70);
+    --chart-4: oklch(0.50 0.07 80);                /* gold-muted */
+    --chart-5: oklch(0.40 0.05 85);
+}
+
+/* ─────────────────────────────────────────────────
+ * Base layer
+ * ───────────────────────────────────────────────── */
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+
+    html {
+        font-size: 14px; /* 0.875rem at 16px browser default */
+        @apply font-sans antialiased;
+    }
+
+    body {
+        @apply bg-background text-foreground min-h-screen;
+    }
+
+    button:not(:disabled),
+    [role="button"]:not(:disabled) {
+        cursor: pointer;
+    }
+}
+
+/* ─────────────────────────────────────────────────
+ * Ledger-strip utility classes
+ * 3 px left-border accent strips for cards / rows
+ * ───────────────────────────────────────────────── */
+.ledger-strip-gold {
+    border-left: 3px solid oklch(0.74 0.14 80);        /* gold */
+}
+
+.ledger-strip-draft {
+    border-left: 3px solid oklch(0.55 0.01 260);       /* text-secondary / grey */
+}
+
+.ledger-strip-active {
+    border-left: 3px solid oklch(0.65 0.18 145);       /* green */
+}
+
+.ledger-strip-error {
+    border-left: 3px solid oklch(0.55 0.2 25);         /* destructive red */
+}
+
+.ledger-strip-muted {
+    border-left: 3px solid oklch(0.50 0.07 80 / 40%);  /* gold-muted / faint */
+}
+
+/* ─────────────────────────────────────────────────
+ * Custom scrollbar – dark theme
+ * ───────────────────────────────────────────────── */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: oklch(0.50 0.07 80 / 35%);            /* gold-muted faint */
+    border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.50 0.07 80 / 55%);
+}
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.50 0.07 80 / 35%) transparent;
+}
+
+/* ─────────────────────────────────────────────────
+ * Reduced-motion preference
+ * ───────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
