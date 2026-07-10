@@ -12,7 +12,8 @@
   - Layouts, Guards, Login forms, Contexts, JWT refresh logic
 - [x] **Phase 1: docVault** (Completed)
   - Buckets listing/creation, Document listing/upload/versions, Status changes
-- [ ] **Phase 2: AuditEase** (Not Started)
+- [x] **Phase 2: AuditEase** (Completed)
+  - TB import mapping, engagements list, engagement workspaces (company/auditor), requirements, queries, entries
 - [ ] **Phase 3: SecretarialEase & ROC UI** (Not Started)
 - [ ] **Phase 4: Custom Fields Infrastructure** (Not Started)
 - [ ] **Phase 5: Asset Management** (Not Started)

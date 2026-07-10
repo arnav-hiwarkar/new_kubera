@@ -17,6 +17,10 @@ import CompanyLoginPage from '@/pages/app/LoginPage';
 import AuditorLoginPage from '@/pages/auditor/LoginPage';
 import AuditorRegisterPage from '@/pages/auditor/RegisterPage';
 import DocVaultPage from '@/pages/app/docvault/DocVaultPage';
+import AuditEasePage from '@/pages/app/auditease/AuditEasePage';
+import EngagementDetailPage from '@/pages/app/auditease/EngagementDetailPage';
+import EngagementsPage from '@/pages/auditor/engagements/EngagementsPage';
+import AuditorEngagementDetailPage from '@/pages/auditor/engagements/AuditorEngagementDetailPage';
 
 const queryClient = new QueryClient();
 
@@ -36,7 +40,10 @@ export default function App() {
                 <Route element={<AppLayout />}>
                   <Route index element={<Placeholder title="Dashboard" />} />
                   <Route path="docvault/*" element={<DocVaultPage />} />
-                  <Route path="auditease/*" element={<Placeholder title="AuditEase" />} />
+                  <Route path="auditease">
+                    <Route index element={<AuditEasePage />} />
+                    <Route path="engagements/:id" element={<EngagementDetailPage />} />
+                  </Route>
                   <Route path="secretarial/*" element={<Placeholder title="Secretarial" />} />
                   <Route path="roc/*" element={<Placeholder title="ROC Compliance" />} />
                   <Route path="assets/*" element={<Placeholder title="Asset Management" />} />
@@ -56,8 +63,11 @@ export default function App() {
               <Route path="/auditor/register" element={<AuditorRegisterPage />} />
               <Route path="/auditor" element={<AuditorGuard />}>
                 <Route element={<AuditorLayout />}>
-                  <Route index element={<Placeholder title="Auditor Dashboard" />} />
-                  <Route path="engagements/*" element={<Placeholder title="Engagements" />} />
+                  <Route index element={<Placeholder title="Dashboard" />} />
+                  <Route path="engagements">
+                    <Route index element={<EngagementsPage />} />
+                    <Route path=":id" element={<AuditorEngagementDetailPage />} />
+                  </Route>
                 </Route>
               </Route>
 
