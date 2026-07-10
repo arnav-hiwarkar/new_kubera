@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Adjusted Trial Balance — AuditEase</title>
+  <meta name="description" content="View the adjusted trial balance after audit entries." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+
+    <nav class="audit-subnav" id="audit-subnav">
+      <a href="/audit/engagement.html" data-page="overview">Overview</a>
+      <a href="/audit/trial-balance.html" data-page="trial-balance">Trial Balance</a>
+      <a href="/audit/mapping.html" data-page="mapping">Mapping</a>
+      <a href="/audit/entries.html" data-page="entries">Entries</a>
+      <a href="/audit/adjusted-tb.html" class="active" data-page="adjusted-tb">Adjusted TB</a>
+      <a href="/audit/financials.html" data-page="financials">Financials</a>
+      <a href="/audit/queries.html" data-page="queries">Queries</a>
+      <a href="/audit/report.html" data-page="report">Report</a>
+    </nav>
+
+    <div class="page-content with-subnav" id="main-content">
+      <div class="audit-page-content audit-page-content--wide">
+
+      <div class="audit-page-header">
+        <h1>Adjusted Trial Balance</h1>
+        <button class="btn btn-primary" id="btn-approve-adj-tb">Approve</button>
+      </div>
+
+      <div class="stat-cards" id="adj-tb-stats">
+        <div class="stat-card">
+          <div class="stat-card-value" id="stat-total-accounts">—</div>
+          <div class="stat-card-label">Total Accounts</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-value" id="stat-adjustments">—</div>
+          <div class="stat-card-label">Adjustments</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-value" id="stat-total-debit">—</div>
+          <div class="stat-card-label">Total Debit</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-value" id="stat-total-credit">—</div>
+          <div class="stat-card-label">Total Credit</div>
+        </div>
+      </div>
+
+      <div id="adj-tb-balance-check"></div>
+
+      <div id="adj-tb-table-container">
+        <!-- adj-tb-table populated by JS -->
+      </div>
+
+      <div class="pagination" id="adj-tb-pagination"></div>
+
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-adjusted-tb.js"></script>
+</body>
+</html>

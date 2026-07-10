@@ -10,3 +10,7 @@ from app.models.auditease import (
     AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage, ReportTemplate
 )
 from app.models.compliance import ComplianceDomain, DocumentType, MeetingRecord
+from app.models.custom_fields import CustomFieldDefinition
+from app.models.assets import Asset
+from app.models.sales import SalesRecord
+from app.models.kra import KRAItem

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audit Entries — AuditEase</title>
+  <meta name="description" content="View and manage audit journal entries." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+
+    <nav class="audit-subnav" id="audit-subnav">
+      <a href="/audit/engagement.html" data-page="overview">Overview</a>
+      <a href="/audit/trial-balance.html" data-page="trial-balance">Trial Balance</a>
+      <a href="/audit/mapping.html" data-page="mapping">Mapping</a>
+      <a href="/audit/entries.html" class="active" data-page="entries">Entries</a>
+      <a href="/audit/adjusted-tb.html" data-page="adjusted-tb">Adjusted TB</a>
+      <a href="/audit/financials.html" data-page="financials">Financials</a>
+      <a href="/audit/queries.html" data-page="queries">Queries</a>
+      <a href="/audit/report.html" data-page="report">Report</a>
+    </nav>
+
+    <div class="page-content with-subnav" id="main-content">
+      <div class="audit-page-content">
+        <div class="audit-page-header">
+          <h1>Audit Entries</h1>
+          <a href="/audit/entry-form.html" class="btn btn-primary" id="btn-new-entry">+ New Entry</a>
+        </div>
+
+        <div class="audit-filter-bar" id="entries-filter-bar">
+          <div class="filter-chips" id="entry-type-chips">
+            <button class="filter-chip active" data-type="all" id="chip-all">All</button>
+            <button class="filter-chip" data-type="adjusting" id="chip-adjusting">Adjusting</button>
+            <button class="filter-chip" data-type="reclassification" id="chip-reclassification">Reclassification</button>
+            <button class="filter-chip" data-type="elimination" id="chip-elimination">Elimination</button>
+          </div>
+          <input type="text" class="input" id="search-entries" placeholder="Search entries…" />
+        </div>
+
+        <div id="entries-table-container">
+          <!-- Entries table populated by JS -->
+        </div>
+
+        <div class="pagination" id="entries-pagination"></div>
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-entries.js"></script>
+</body>
+</html>

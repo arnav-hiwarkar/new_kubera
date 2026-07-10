@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Annual Report — AuditEase</title>
+  <meta name="description" content="Generate and preview the annual audit report." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+
+    <nav class="audit-subnav" id="audit-subnav">
+      <a href="/audit/engagement.html" data-page="overview">Overview</a>
+      <a href="/audit/trial-balance.html" data-page="trial-balance">Trial Balance</a>
+      <a href="/audit/mapping.html" data-page="mapping">Mapping</a>
+      <a href="/audit/entries.html" data-page="entries">Entries</a>
+      <a href="/audit/adjusted-tb.html" data-page="adjusted-tb">Adjusted TB</a>
+      <a href="/audit/financials.html" data-page="financials">Financials</a>
+      <a href="/audit/queries.html" data-page="queries">Queries</a>
+      <a href="/audit/report.html" class="active" data-page="report">Report</a>
+    </nav>
+
+    <div class="page-content with-subnav" id="main-content">
+      <div class="audit-page-content audit-page-content--wide">
+
+      <div class="audit-page-header">
+        <h1>Annual Report</h1>
+        <button class="btn btn-primary" id="btn-generate-report">Generate Report</button>
+      </div>
+
+      <!-- Template Selector -->
+      <div class="audit-card" style="margin-bottom:24px;">
+        <h3 style="font-size:14px;margin-bottom:12px;">Report Template</h3>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+          <div class="entry-type-card selected" data-template="standard" id="tpl-standard">
+            <div class="type-title">Standard</div>
+            <div class="type-sub">Default audit report format</div>
+          </div>
+          <div class="entry-type-card" data-template="detailed" id="tpl-detailed">
+            <div class="type-title">Detailed</div>
+            <div class="type-sub">Includes all schedules</div>
+          </div>
+          <div class="entry-type-card" data-template="summary" id="tpl-summary">
+            <div class="type-title">Summary</div>
+            <div class="type-sub">Executive summary only</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Report Preview -->
+      <div class="report-preview" id="report-preview">
+        <div class="report-section">
+          <h3 id="report-title">Report Preview</h3>
+          <p id="report-body">Select a template and click "Generate Report" to preview your audit report.</p>
+        </div>
+      </div>
+
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-report.js"></script>
+</body>
+</html>

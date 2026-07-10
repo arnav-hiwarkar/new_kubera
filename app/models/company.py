@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import String, ForeignKey, LargeBinary, Enum as SAEnum
+from sqlalchemy import String, ForeignKey, LargeBinary, Enum as SAEnum, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +39,8 @@ class CompanyKey(Base, TimestampMixin):
 
 class UserRole(str, enum.Enum):
     admin = "admin"
+    manager = "manager"
+    employee = "employee"
 
 
 class CompanyUser(Base, TimestampMixin):
@@ -60,5 +62,12 @@ class CompanyUser(Base, TimestampMixin):
         default=UserRole.admin,
         nullable=False,
     )
+    manager_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True
+    )
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False, server_default="Unknown")
+    designation: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
 
     company = relationship("Company", back_populates="users")

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audit Entry — AuditEase</title>
+  <meta name="description" content="Create or edit an audit journal entry." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+
+    <nav class="audit-subnav" id="audit-subnav">
+      <a href="/audit/engagement.html" data-page="overview">Overview</a>
+      <a href="/audit/trial-balance.html" data-page="trial-balance">Trial Balance</a>
+      <a href="/audit/mapping.html" data-page="mapping">Mapping</a>
+      <a href="/audit/entries.html" class="active" data-page="entries">Entries</a>
+      <a href="/audit/adjusted-tb.html" data-page="adjusted-tb">Adjusted TB</a>
+      <a href="/audit/financials.html" data-page="financials">Financials</a>
+      <a href="/audit/queries.html" data-page="queries">Queries</a>
+      <a href="/audit/report.html" data-page="report">Report</a>
+    </nav>
+
+    <div class="page-content with-subnav" id="main-content">
+      <div class="audit-page-content audit-page-content--narrow">
+
+      <div class="audit-page-header">
+        <h1 id="entry-form-title">New Audit Entry</h1>
+      </div>
+
+      <!-- Entry Type Selector -->
+      <div class="entry-type-selector" id="entry-type-selector">
+        <div class="entry-type-card selected" data-type="adjusting" id="type-adjusting">
+          <div class="type-title">Adjusting</div>
+          <div class="type-sub">Correct misstatements</div>
+          <div class="type-schema">Dr ── Cr</div>
+        </div>
+        <div class="entry-type-card" data-type="reclassification" id="type-reclassification">
+          <div class="type-title">Reclassification</div>
+          <div class="type-sub">Reclassify balances</div>
+          <div class="type-schema">Dr ── Cr</div>
+        </div>
+        <div class="entry-type-card" data-type="elimination" id="type-elimination">
+          <div class="type-title">Elimination</div>
+          <div class="type-sub">Intercompany eliminations</div>
+          <div class="type-schema">Dr ── Cr</div>
+        </div>
+      </div>
+
+      <!-- Entry Details -->
+      <div class="audit-card" style="margin-bottom:20px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="form-group">
+            <label class="form-label" for="entry-ref">Reference</label>
+            <input type="text" class="input" id="entry-ref" name="entry-ref" placeholder="e.g. AJE-001" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="entry-date">Date</label>
+            <input type="date" class="input" id="entry-date" name="entry-date" />
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+          <label class="form-label" for="entry-narration">Narration</label>
+          <textarea class="input" id="entry-narration" name="entry-narration" rows="2" placeholder="Describe the purpose of this entry…"></textarea>
+        </div>
+      </div>
+
+      <!-- Debit / Credit Lines -->
+      <div class="entry-lines-builder" id="entry-lines-builder">
+        <div class="entry-lines-side debit">
+          <h4>Debit</h4>
+          <div id="debit-lines">
+            <!-- Debit line rows populated by JS -->
+          </div>
+          <button class="btn btn-ghost" id="btn-add-debit" style="margin-top:8px;font-size:12px;">+ Add Line</button>
+        </div>
+        <div class="entry-lines-side credit">
+          <h4>Credit</h4>
+          <div id="credit-lines">
+            <!-- Credit line rows populated by JS -->
+          </div>
+          <button class="btn btn-ghost" id="btn-add-credit" style="margin-top:8px;font-size:12px;">+ Add Line</button>
+        </div>
+      </div>
+
+      <!-- Balance Bar -->
+      <div class="entry-balance-bar" id="entry-balance-bar">
+        <span>Total Debit: <strong id="total-debit">0.00</strong></span>
+        <span id="balance-status" class="balanced">Balanced ✓</span>
+        <span>Total Credit: <strong id="total-credit">0.00</strong></span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display:flex;gap:12px;margin-top:24px;justify-content:flex-end;">
+        <a href="/audit/entries.html" class="btn btn-ghost" id="btn-cancel-entry">Cancel</a>
+        <button class="btn btn-ghost" id="btn-save-draft">Save as Draft</button>
+        <button class="btn btn-primary" id="btn-submit-entry">Submit Entry</button>
+      </div>
+
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-entry-form.js"></script>
+</body>
+</html>

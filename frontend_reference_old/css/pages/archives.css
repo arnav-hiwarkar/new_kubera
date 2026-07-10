@@ -1,0 +1,7 @@
+/* archives.css — Archives page (inherits vault.css, minimal overrides) */
+
+.archives-empty-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}

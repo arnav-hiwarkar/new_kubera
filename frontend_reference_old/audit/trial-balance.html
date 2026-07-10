@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trial Balance — AuditEase</title>
+  <meta name="description" content="Import and view the trial balance for this engagement." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+
+    <nav class="audit-subnav" id="audit-subnav">
+      <a href="/audit/engagement.html" data-page="overview">Overview</a>
+      <a href="/audit/trial-balance.html" class="active" data-page="trial-balance">Trial Balance</a>
+      <a href="/audit/mapping.html" data-page="mapping">Mapping</a>
+      <a href="/audit/entries.html" data-page="entries">Entries</a>
+      <a href="/audit/adjusted-tb.html" data-page="adjusted-tb">Adjusted TB</a>
+      <a href="/audit/financials.html" data-page="financials">Financials</a>
+      <a href="/audit/queries.html" data-page="queries">Queries</a>
+      <a href="/audit/report.html" data-page="report">Report</a>
+    </nav>
+
+    <div class="page-content with-subnav" id="main-content">
+      <div class="audit-page-content audit-page-content--wide">
+
+      <div class="audit-page-header">
+        <h1>Trial Balance</h1>
+      </div>
+
+      <div class="tab-buttons" id="tb-tabs">
+        <button class="tab-btn active" data-tab="import" id="tab-btn-import">Import</button>
+        <button class="tab-btn" data-tab="view" id="tab-btn-view">View</button>
+      </div>
+
+      <!-- Import Tab -->
+      <div id="tab-import">
+        <div class="wizard-steps" id="wizard-steps">
+          <div class="wizard-step active" data-step="1">1. Upload File</div>
+          <div class="wizard-step" data-step="2">2. Map Columns</div>
+          <div class="wizard-step" data-step="3">3. Preview &amp; Confirm</div>
+        </div>
+
+        <div id="wizard-container">
+          <!-- Step 1: Upload -->
+          <div id="wizard-step-1">
+            <div class="drop-zone" id="drop-zone">
+              <div class="drop-zone-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <p class="drop-zone-text">Drop your Trial Balance file here, or click to browse</p>
+              <p class="drop-zone-hint">Supports .xlsx, .xls, and .csv files</p>
+              <input type="file" id="tb-file-input" accept=".xlsx,.xls,.csv" style="display:none;" />
+            </div>
+          </div>
+
+          <!-- Step 2: Column Mapping -->
+          <div id="wizard-step-2" style="display:none;">
+
+            <!-- Sheet selector -->
+            <div style="margin-bottom:20px;">
+              <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;">
+                Sheet
+              </label>
+              <select id="sheet-select" style="padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-surface);color:var(--text-primary);min-width:280px;"></select>
+            </div>
+
+            <!-- Visual header row picker -->
+            <h3 style="font-size:15px;margin-bottom:8px;">Step 1 — Click your header row</h3>
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+              Many files have title rows before the real header. Click the row that contains your column names
+              (e.g. "Ledger Code", "Particulars"). Rows above it will be ignored.
+            </p>
+            <div style="overflow:auto; max-height:320px; border:1px solid var(--border); border-radius:6px;">
+              <table id="raw-row-picker-table" class="adj-tb-table" style="font-size:12px;">
+                <tbody id="raw-row-picker-body"></tbody>
+              </table>
+            </div>
+
+            <!-- Column mapper — only shown after a header row is picked -->
+            <div id="column-mapping-section" style="display:none; margin-top:24px;">
+              <h3 style="font-size:15px;margin-bottom:8px;">Step 2 — Map your columns</h3>
+              <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+                Choose which column from your file corresponds to each required field.
+              </p>
+              <div class="column-mapper" id="column-mapper"></div>
+              <div id="mapping-validation-error" class="balance-check unbalanced" style="display:none;"></div>
+
+              <h4 style="margin-top:24px;font-size:13px;">Live Preview</h4>
+              <div style="overflow-x:auto;">
+                <table id="mapping-preview-table" class="adj-tb-table">
+                  <thead>
+                    <tr>
+                      <th>Ledger Code</th><th>Ledger Name</th><th>Opening Bal.</th>
+                      <th>Debit</th><th>Credit</th><th>Closing Bal.</th><th>Will Import?</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mapping-preview-body"></tbody>
+                </table>
+              </div>
+              <p id="skip-summary-note" style="font-size:12px;color:var(--text-muted);margin-top:8px;"></p>
+            </div>
+
+            <div style="margin-top:24px; display:flex; gap:12px;">
+              <button type="button" class="btn btn-ghost" id="mapping-back-btn">← Back</button>
+              <button type="button" class="btn btn-primary" id="mapping-continue-btn" disabled>Next →</button>
+            </div>
+          </div>
+
+          <!-- Step 3: Preview -->
+          <div id="wizard-step-3" style="display:none;">
+            <h3 style="font-size:15px;margin-bottom:16px;">Preview &amp; Confirm</h3>
+            <div id="balance-check-container"></div>
+            <div id="duplicate-notice-container" style="margin-bottom: 16px;"></div>
+            <table class="preview-table" id="tb-preview-table">
+              <!-- Preview table populated by JS -->
+            </table>
+            <div style="display:flex;gap:12px;margin-top:20px;">
+              <button class="btn btn-ghost" id="btn-wizard-back-3">← Back</button>
+              <button class="btn btn-primary" id="btn-confirm-import">Confirm Import</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- View Tab -->
+      <div id="tab-view" style="display:none;">
+        <div id="tb-balance-status"></div>
+        <div id="tb-table-container">
+          <!-- TB table populated by JS -->
+        </div>
+        <div class="pagination" id="tb-pagination"></div>
+      </div>
+
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-trial-balance.js"></script>
+</body>
+</html>

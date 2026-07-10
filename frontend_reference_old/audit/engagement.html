@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Engagement — AuditEase</title>
+  <meta name="description" content="Audit engagement dashboard overview." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+
+    <nav class="audit-subnav" id="audit-subnav">
+      <a href="/audit/engagement.html" class="active" data-page="overview">Overview</a>
+      <a href="/audit/trial-balance.html" data-page="trial-balance">Trial Balance</a>
+      <a href="/audit/mapping.html" data-page="mapping">Mapping</a>
+      <a href="/audit/entries.html" data-page="entries">Entries</a>
+      <a href="/audit/adjusted-tb.html" data-page="adjusted-tb">Adjusted TB</a>
+      <a href="/audit/financials.html" data-page="financials">Financials</a>
+      <a href="/audit/queries.html" data-page="queries">Queries</a>
+      <a href="/audit/report.html" data-page="report">Report</a>
+    </nav>
+
+    <div class="page-content with-subnav" id="main-content">
+      <div class="audit-page-content">
+        <div class="audit-page-header" id="engagement-header">
+          <div>
+            <h1 id="engagement-title"><!-- Populated by JS --></h1>
+            <p id="engagement-subtitle" style="font-size:13px;color:var(--text-secondary);margin-top:4px;"></p>
+          </div>
+          <span class="audit-status-badge" id="engagement-status-badge"></span>
+        </div>
+
+        <div class="pipeline" id="pipeline-container">
+          <!-- Pipeline steps populated by JS -->
+        </div>
+
+        <div class="stat-cards" id="stat-cards">
+          <!-- Stat cards populated by JS -->
+        </div>
+
+        <div class="quick-actions" id="quick-actions">
+          <!-- Quick action buttons populated by JS -->
+        </div>
+        <div style="margin-top:28px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h2 style="font-size:15px;font-weight:600;color:var(--text-primary);">Assigned Auditors</h2>
+            <button class="btn btn-secondary" id="btn-manage-auditors" style="padding:5px 12px;font-size:12px;">Manage</button>
+          </div>
+          <div id="auditors-container" style="display:flex;flex-wrap:wrap;gap:8px;min-height:32px;">
+            <span style="color:var(--text-secondary);font-size:13px;">Loading…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-engagement.js"></script>
+</body>
+</html>

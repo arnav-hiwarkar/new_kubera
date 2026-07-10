@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Archives — AuditEase</title>
+  <meta name="description" content="View and manage archived audit documents. Unarchive documents to make them editable again." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/doc-dashboard.css" />
+  <link rel="stylesheet" href="/css/pages/vault.css" />
+  <link rel="stylesheet" href="/css/pages/archives.css" />
+</head>
+<body data-protected="true">
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+
+  <!-- Sub-Nav -->
+  <div class="subnav" style="margin-left:var(--sidebar-width);">
+    <div class="subnav-carousel">
+      <a href="/documents/vault.html" class="subnav-item">Document Vault</a>
+      <span class="subnav-item active">Archives</span>
+      <a href="/documents/dashboard.html" class="subnav-item">Dashboard</a>
+    </div>
+  </div>
+
+  <!-- Archives Layout -->
+  <div class="page-body" id="archives-body" style="margin-left:var(--sidebar-width);padding-top:var(--topbar-height);">
+    <div class="vault-layout">
+      <!-- Left: Filters -->
+      <aside class="vault-filters" aria-label="Filters">
+        <div>
+          <h1 class="vault-heading">Archives</h1>
+          <p class="vault-doc-count" id="vault-doc-count">— archived documents</p>
+          <p class="archives-empty-hint">Archived documents are read-only. Unarchive to edit.</p>
+        </div>
+        <div id="vault-filters-content">
+          <div style="padding:24px;text-align:center;"><span class="spinner"></span></div>
+        </div>
+      </aside>
+
+      <!-- Right: Document List -->
+      <div class="vault-list">
+        <div class="vault-list-header" id="vault-list-header">
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary);">Archived Documents</span>
+        </div>
+        <div class="vault-list-body" id="vault-list-body">
+          <div style="padding:24px;text-align:center;"><span class="spinner"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Action Bar -->
+    <div class="floating-action-bar" id="floating-bar">
+      <span><span class="fab-count">0</span> selected</span>
+      <div class="fab-divider"></div>
+      <button class="fab-btn" id="fab-archive-btn" style="color:var(--status-verified);">Unarchive Selected</button>
+      <button class="fab-btn" id="fab-download-btn">Download Selected</button>
+      <div class="fab-divider"></div>
+      <button class="fab-btn" id="fab-clear-btn">Clear</button>
+    </div>
+  </div>
+
+  <script src="../js/theme.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/topbar.js"></script>
+  <script src="../js/sidebar.js"></script>
+  <script src="../js/pages/vault.js"></script>
+</body>
+</html>

@@ -117,3 +117,37 @@ async def get_current_auditor(
 def get_tenant_scope(user):
     """Extract company_id from authenticated company user for tenant scoping."""
     return user.company_id
+
+
+def require_role(*allowed_roles):
+    """Dependency factory: raises 403 if the user's role is not in allowed_roles."""
+    from app.models.company import CompanyUser
+    async def checker(user: CompanyUser = Depends(get_current_company_user)):
+        if user.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return user
+    return checker
+
+
+async def get_direct_report_ids(manager_id: uuid.UUID, db: AsyncSession) -> list[uuid.UUID]:
+    """Return IDs of all direct reports for a manager."""
+    from app.models.company import CompanyUser
+    result = await db.execute(
+        select(CompanyUser.id).where(CompanyUser.manager_id == manager_id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_visible_user_ids(user, db: AsyncSession) -> list[uuid.UUID] | None:
+    """Return all user IDs this user is allowed to see data for. None if admin (sees all)."""
+    from app.models.company import UserRole
+    if user.role == UserRole.admin:
+        return None
+    ids = [user.id]
+    if user.role == UserRole.manager:
+        ids.extend(await get_direct_report_ids(user.id, db))
+    return ids
+
+from app.models.company import UserRole
+require_admin = require_role(UserRole.admin)
+require_manager_or_admin = require_role(UserRole.admin, UserRole.manager)

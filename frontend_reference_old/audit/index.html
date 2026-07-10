@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audit Engagements — AuditEase</title>
+  <meta name="description" content="View and manage all audit engagements." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+    <div class="page-content" id="main-content">
+      <div class="audit-page-content">
+        <div class="audit-page-header">
+          <h1>Audit Engagements</h1>
+          <a href="/audit/new.html" class="btn btn-primary" id="btn-new-engagement">+ New Engagement</a>
+        </div>
+
+        <div class="audit-filter-bar" id="filter-bar">
+          <input type="text" class="input" id="search-engagements" placeholder="Search engagements…" />
+          <select class="input" id="filter-status">
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="draft">Draft</option>
+            <option value="submitted">Submitted</option>
+            <option value="approved">Approved</option>
+          </select>
+        </div>
+
+        <div class="audit-cards-grid" id="engagements-grid">
+          <!-- Engagement cards populated by JS -->
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-list.js"></script>
+</body>
+</html>

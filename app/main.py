@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.routers import auth, activity, notifications, docvault, auditease, auditor_engagements, compliance
+from app.routers import auth, activity, notifications, docvault, auditease, auditor_engagements, compliance, users, custom_fields, assets, sales, kra
 
 app = FastAPI(
     title="Kubera V1",
@@ -11,6 +11,11 @@ app = FastAPI(
 )
 
 app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(custom_fields.router)
+app.include_router(assets.router)
+app.include_router(sales.router)
+app.include_router(kra.router)
 app.include_router(activity.router)
 app.include_router(notifications.router)
 app.include_router(docvault.router)

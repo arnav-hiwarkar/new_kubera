@@ -83,6 +83,7 @@ async def create_company(
         company_id=company.id,
         email=body.admin.email,
         hashed_password=hash_password(body.admin.password),
+        full_name=body.admin.email.split("@")[0],
     )
     db.add(user)
     await db.flush()
@@ -122,6 +123,8 @@ async def company_login(
     return TokenResponse(
         access_token=create_access_token(user.id, "company_user"),
         refresh_token=create_refresh_token(user.id, "company_user"),
+        role=user.role,
+        full_name=user.full_name,
     )
 
 
@@ -148,6 +151,8 @@ async def company_refresh(
     return TokenResponse(
         access_token=create_access_token(user.id, "company_user"),
         refresh_token=create_refresh_token(user.id, "company_user"),
+        role=user.role,
+        full_name=user.full_name,
     )
 
 

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Financial Statements — AuditEase</title>
+  <meta name="description" content="View generated financial statements — Balance Sheet and Profit & Loss." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+
+    <nav class="audit-subnav" id="audit-subnav">
+      <a href="/audit/engagement.html" data-page="overview">Overview</a>
+      <a href="/audit/trial-balance.html" data-page="trial-balance">Trial Balance</a>
+      <a href="/audit/mapping.html" data-page="mapping">Mapping</a>
+      <a href="/audit/entries.html" data-page="entries">Entries</a>
+      <a href="/audit/adjusted-tb.html" data-page="adjusted-tb">Adjusted TB</a>
+      <a href="/audit/financials.html" class="active" data-page="financials">Financials</a>
+      <a href="/audit/queries.html" data-page="queries">Queries</a>
+      <a href="/audit/report.html" data-page="report">Report</a>
+    </nav>
+
+    <div class="page-content with-subnav" id="main-content">
+      <div class="audit-page-content">
+
+      <div class="audit-page-header">
+        <h1>Financial Statements</h1>
+        <button class="btn btn-primary" id="btn-approve-financials">Approve</button>
+      </div>
+
+      <div class="tab-buttons" id="fs-tabs">
+        <button class="tab-btn active" data-tab="balance-sheet" id="tab-btn-bs">Balance Sheet</button>
+        <button class="tab-btn" data-tab="pnl" id="tab-btn-pnl">Profit &amp; Loss</button>
+      </div>
+
+      <div id="tab-balance-sheet">
+        <div class="financial-statement" id="fs-balance-sheet">
+          <!-- Balance Sheet populated by JS -->
+        </div>
+      </div>
+
+      <div id="tab-pnl" style="display:none;">
+        <div class="financial-statement" id="fs-pnl">
+          <!-- Profit & Loss populated by JS -->
+        </div>
+      </div>
+
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-financials.js"></script>
+</body>
+</html>

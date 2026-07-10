@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audit — AuditEase</title>
+  <meta name="description" content="Audit engagement and working paper management — coming soon." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <script src="/js/theme.js"></script>
+  <style>
+    .coming-soon { display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - var(--topbar-height));padding-left:var(--sidebar-width);text-align:center;gap:16px; }
+    .coming-soon-icon { width:72px;height:72px;background:var(--bg-raised);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:8px; }
+    .coming-soon h1 { font-size:28px;letter-spacing:-0.02em; }
+    .coming-soon p { color:var(--text-secondary);font-size:15px; }
+    .badge-soon { background:var(--accent-subtle);color:var(--accent);padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase; }
+  </style>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="coming-soon" role="main">
+    <div class="coming-soon-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5">
+        <path d="M9 11l3 3L22 4"/>
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+      </svg>
+    </div>
+    <span class="badge-soon">Coming Soon</span>
+    <h1>Audit</h1>
+    <p>Audit engagement tracking, working papers, and compliance documentation will appear here.</p>
+    <a href="/index.html" class="btn btn-ghost">← Back to Home</a>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      window.AE.initTopbar({ showBack: true });
+      window.AE.initSidebar('audit');
+    });
+  </script>
+</body>
+</html>

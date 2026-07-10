@@ -1,0 +1,304 @@
+/* =====================================================================
+   vault.css — Document Vault page styles
+   ===================================================================== */
+
+.vault-layout {
+  display: flex;
+  height: calc(100vh - var(--topbar-height) - var(--subnav-height));
+  overflow: hidden;
+}
+
+/* ── Left Filter Column ───────────────────────────────────────────────── */
+.vault-filters {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 16px;
+  gap: 16px;
+}
+
+.vault-heading {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.vault-doc-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.search-input-wrap {
+  position: relative;
+}
+
+.search-input-wrap svg {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.search-input-wrap input {
+  padding-left: 32px;
+}
+
+/* ── Filter Groups ────────────────────────────────────────────────────── */
+.filter-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+/* ── Status chips ─────────────────────────────────────────────────────── */
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ── Active Filters Bar ───────────────────────────────────────────────── */
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.filter-chip-remove {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+}
+
+.filter-chip-remove:hover {
+  opacity: 1;
+}
+
+.clear-all-btn {
+  font-size: 11px;
+  color: var(--status-action);
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-weight: 500;
+  transition: opacity var(--transition-fast);
+}
+
+.clear-all-btn:hover {
+  opacity: 0.8;
+}
+
+/* ── Document List (Right Column) ─────────────────────────────────────── */
+.vault-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.vault-list-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  flex-shrink: 0;
+}
+
+.vault-list-body {
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ── Vault Table ──────────────────────────────────────────────────────── */
+.vault-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 700px;
+}
+
+.vault-table th {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  white-space: nowrap;
+}
+
+.vault-table td {
+  padding: 9px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.vault-table tbody tr {
+  transition: background var(--transition-fast);
+}
+
+.vault-table tbody tr:hover {
+  background: var(--bg-raised);
+}
+
+.vault-table tbody tr.selected {
+  background: var(--accent-subtle);
+}
+
+.vault-table td .doc-filename {
+  font-weight: 500;
+  color: var(--text-primary);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.vault-table td .doc-filename:hover {
+  color: var(--accent);
+}
+
+/* ── Checkbox ─────────────────────────────────────────────────────────── */
+input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ── Floating Multi-select Bar ────────────────────────────────────────── */
+.floating-action-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--text-primary);
+  color: var(--bg-surface);
+  padding: 10px 16px;
+  border-radius: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 600;
+  transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1), opacity 250ms ease;
+  opacity: 0;
+  white-space: nowrap;
+}
+
+.floating-action-bar.visible {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.floating-action-bar .fab-count {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.floating-action-bar .fab-btn {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  font-family: inherit;
+  transition: background var(--transition-fast);
+}
+
+.floating-action-bar .fab-btn:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+.floating-action-bar .fab-btn.fab-danger {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+.floating-action-bar .fab-btn.fab-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.floating-action-bar .fab-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255,255,255,0.15);
+}

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New Engagement — AuditEase</title>
+  <meta name="description" content="Create a new audit engagement." />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+    <div class="page-content" id="main-content">
+      <div class="audit-page-content audit-page-content--narrow">
+        <div class="audit-page-header">
+          <h1>New Engagement</h1>
+        </div>
+
+        <form id="form-new-engagement" class="audit-card" style="max-width:600px;">
+          <div class="form-group" style="margin-bottom:16px;">
+            <label class="form-label" for="client_name">Client Name</label>
+            <input type="text" class="input" id="client_name" name="client_name" required placeholder="e.g. Acme Corp" />
+          </div>
+
+          <div class="form-group" style="margin-bottom:16px;">
+            <label class="form-label" for="financial_year">Financial Year</label>
+            <input type="text" class="input" id="financial_year" name="financial_year" required placeholder="e.g. 2025-26" />
+          </div>
+
+          <div class="form-group" style="margin-bottom:16px;">
+            <label class="form-label" for="period_start">Period Start</label>
+            <input type="date" class="input" id="period_start" name="period_start" required />
+          </div>
+
+          <div class="form-group" style="margin-bottom:24px;">
+            <label class="form-label" for="period_end">Period End</label>
+            <input type="date" class="input" id="period_end" name="period_end" required />
+          </div>
+
+          <div class="form-group" style="margin-bottom:24px;">
+            <label class="form-label">Assign Auditors <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+            <div id="auditors-list" style="display:flex;flex-direction:column;gap:8px;padding:12px;background:var(--bg-raised);border-radius:6px;border:1px solid var(--border);">
+              <span style="color:var(--text-secondary);font-size:13px;">Loading auditors…</span>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:12px;">
+            <a href="/audit/index.html" class="btn btn-ghost" id="btn-cancel">Cancel</a>
+            <button type="submit" class="btn btn-primary" id="btn-create-engagement">Create Engagement</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-new.js"></script>
+</body>
+</html>

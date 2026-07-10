@@ -1,0 +1,154 @@
+/* =====================================================================
+   home.css — Home page specific styles
+   ===================================================================== */
+
+.home-content {
+  padding: 32px 32px 32px calc(var(--sidebar-width) + 32px);
+  min-height: calc(100vh - var(--topbar-height));
+  display: flex;
+  flex-direction: column;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 20px;
+  flex: 1;
+  min-height: calc(100vh - var(--topbar-height) - 64px);
+}
+
+/* ── Module Cards ─────────────────────────────────────────────────────── */
+.module-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--transition-med);
+  min-height: 240px;
+}
+
+.module-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--transition-med);
+}
+
+.module-card:hover::before {
+  opacity: 1;
+}
+
+.module-card-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.module-card-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-med);
+}
+
+.module-card-icon svg {
+  width: 28px;
+  height: 28px;
+  color: var(--accent);
+  transition: color var(--transition-med);
+}
+
+.module-card-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  transition: all var(--transition-med);
+  letter-spacing: -0.02em;
+}
+
+.module-card-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-width: 220px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: all var(--transition-med);
+}
+
+.module-card:hover .module-card-title {
+  color: #fff;
+  font-size: 18px;
+}
+
+.module-card:hover .module-card-desc {
+  opacity: 1;
+  transform: translateY(0);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.module-card:hover .module-card-icon {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.module-card:hover .module-card-icon svg {
+  color: #fff;
+}
+
+.module-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.3);
+}
+
+/* ── Home header ──────────────────────────────────────────────────────── */
+.home-header {
+  margin-bottom: 28px;
+}
+
+.home-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.home-header p {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+  .home-content {
+    padding: 16px;
+  }
+
+  .home-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    min-height: auto;
+  }
+
+  .module-card {
+    min-height: 160px;
+  }
+}

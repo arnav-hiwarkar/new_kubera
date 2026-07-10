@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Queries — AuditEase</title>
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/topbar.css" />
+  <link rel="stylesheet" href="/css/sidebar.css" />
+  <link rel="stylesheet" href="/css/pages/audit.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="topbar-mount"></div>
+  <div id="sidebar-mount"></div>
+  <main class="page-layout">
+    <nav class="audit-subnav" id="audit-subnav">
+      <a href="/audit/engagement.html" data-page="overview">Overview</a>
+      <a href="/audit/trial-balance.html" data-page="trial-balance">Trial Balance</a>
+      <a href="/audit/mapping.html" data-page="mapping">Mapping</a>
+      <a href="/audit/entries.html" data-page="entries">Entries</a>
+      <a href="/audit/adjusted-tb.html" data-page="adjusted-tb">Adjusted TB</a>
+      <a href="/audit/financials.html" data-page="financials">Financials</a>
+      <a href="/audit/queries.html" class="active" data-page="queries">Queries</a>
+      <a href="/audit/report.html" data-page="report">Report</a>
+    </nav>
+    <div class="page-content with-subnav" id="main-content">
+      <div class="audit-page-content audit-page-content--wide" style="padding-top:24px;">
+        <div class="audit-page-header" style="margin-bottom:20px;">
+          <h1>Queries</h1>
+          <button class="btn btn-primary" id="btn-new-query">+ New Query</button>
+        </div>
+        <div class="queries-layout" id="queries-layout">
+          <div class="queries-left" id="queries-left">
+            <div class="queries-list-header">
+              <span id="queries-count" style="font-size:12px;color:var(--text-muted);">Loading…</span>
+            </div>
+            <div class="queries-list-body" id="queries-list-body">
+              <div style="padding:32px;text-align:center;"><span class="spinner"></span></div>
+            </div>
+          </div>
+          <div class="queries-right" id="queries-right">
+            <div class="queries-empty-state">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <p>Select a query to view the conversation thread</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/pages/audit-queries.js"></script>
+</body>
+</html>
