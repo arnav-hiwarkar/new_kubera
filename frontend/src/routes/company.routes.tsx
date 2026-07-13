@@ -8,6 +8,7 @@ import { UsersDirectory } from '@/pages/company/UsersDirectory'
 import { DocVaultPage } from '@/pages/company/docvault/DocVaultPage'
 import { KraPage } from '@/pages/company/kra/KraPage'
 import { AssetsPage } from '@/pages/company/assets/AssetsPage'
+import { SalesPage } from '@/pages/company/sales/SalesPage'
 import { CustomFieldsPage } from '@/pages/company/customfields/CustomFieldsPage'
 import { EngagementsPage } from '@/pages/company/auditease/EngagementsPage'
 import { EngagementWorkspace } from '@/pages/company/auditease/EngagementWorkspace'
@@ -41,16 +42,7 @@ export const companyRoutes: RouteObject = {
             { path: 'users', element: <UsersDirectory /> },
             { path: 'kra', element: <KraPage /> },
             { path: 'assets', element: <AssetsPage /> },
-            {
-              path: 'sales',
-              element: (
-                <ModulePlaceholder
-                  title="Sales"
-                  description="Sales pipeline and deal tracking"
-                  endpoints={['/api/v1/sales', '/api/v1/sales/aggregate']}
-                />
-              ),
-            },
+            { path: 'sales', element: <SalesPage /> },
             { path: 'custom-fields', element: <CustomFieldsPage /> },
             { path: 'docvault', element: <DocVaultPage /> },
             {

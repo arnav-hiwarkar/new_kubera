@@ -1,8 +1,18 @@
 import uuid
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.sales import SalesStatus
+
+
+class SalesSheetInfo(BaseModel):
+    name: str
+    headers: List[str]
+    preview_rows: List[List[Any]]
+
+
+class SalesImportInspectResponse(BaseModel):
+    sheets: List[SalesSheetInfo]
 
 class SalesRecordCreate(BaseModel):
     client_name: str

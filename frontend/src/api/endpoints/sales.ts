@@ -4,6 +4,7 @@ import type {
   SalesRecordCreate,
   SalesRecordUpdate,
   ImportResult,
+  SalesImportInspectResponse,
 } from '@/api/types'
 
 export interface SalesAggregateRow {
@@ -21,6 +22,8 @@ export const salesApi = {
     companyClient.post<SalesRecordResponse>('/api/v1/sales', { body }),
   update: (id: string, body: SalesRecordUpdate) =>
     companyClient.patch<SalesRecordResponse>(`/api/v1/sales/${id}`, { body }),
+  inspectImport: (formData: FormData) =>
+    companyClient.post<SalesImportInspectResponse>('/api/v1/sales/import/inspect', { formData }),
   import: (formData: FormData) =>
     companyClient.post<ImportResult>('/api/v1/sales/import', { formData }),
   exportExcel: () =>

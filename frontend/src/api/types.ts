@@ -36,6 +36,8 @@ export type AssetSheetInfo = S['AssetSheetInfo']
 export type SalesRecordResponse = S['SalesRecordResponse']
 export type SalesRecordCreate = S['SalesRecordCreate']
 export type SalesRecordUpdate = S['SalesRecordUpdate']
+export type SalesImportInspectResponse = S['SalesImportInspectResponse']
+export type SalesSheetInfo = S['SalesSheetInfo']
 
 // KRA
 export type KRAResponse = S['KRAResponse']

@@ -464,6 +464,26 @@ export interface paths {
         patch: operations["update_sales_record_api_v1_sales__sales_id__patch"];
         trace?: never;
     };
+    "/api/v1/sales/import/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect Sales Import
+         * @description Return the uploaded spreadsheet's sheets/headers/preview for the mapping step.
+         */
+        post: operations["inspect_sales_import_api_v1_sales_import_inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sales/import": {
         parameters: {
             query?: never;
@@ -1745,6 +1765,14 @@ export interface components {
              */
             file: string;
         };
+        /** Body_inspect_sales_import_api_v1_sales_import_inspect_post */
+        Body_inspect_sales_import_api_v1_sales_import_inspect_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
         /** Body_inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post */
         Body_inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post: {
             /**
@@ -2561,6 +2589,11 @@ export interface components {
              */
             updated_at: string;
         };
+        /** SalesImportInspectResponse */
+        SalesImportInspectResponse: {
+            /** Sheets */
+            sheets: components["schemas"]["SalesSheetInfo"][];
+        };
         /** SalesRecordCreate */
         SalesRecordCreate: {
             /** Client Name */
@@ -2638,6 +2671,15 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** SalesSheetInfo */
+        SalesSheetInfo: {
+            /** Name */
+            name: string;
+            /** Headers */
+            headers: string[];
+            /** Preview Rows */
+            preview_rows: unknown[][];
         };
         /**
          * SalesStatus
@@ -3801,6 +3843,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SalesRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_sales_import_api_v1_sales_import_inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_inspect_sales_import_api_v1_sales_import_inspect_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesImportInspectResponse"];
                 };
             };
             /** @description Validation Error */
