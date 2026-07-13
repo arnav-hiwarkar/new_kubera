@@ -1,7 +1,8 @@
 import uuid
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Response
+import aiofiles
 from pydantic import BaseModel
 from sqlalchemy import select, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.auth import get_current_auditor
 from app.models.auditor import Auditor
+from app.models.docvault import Document, DocumentVersion
 from app.models.auditease import (
     AuditEngagement, AuditorEngagementGrant, AuditEntry, AuditEntryLine,
     RequirementRequest, Query, QueryMessage, TrialBalanceAccount,
@@ -21,6 +23,10 @@ from app.schemas.auditease import (
     QueryCreate, QueryResponse, QueryMessageCreate, QueryMessageResponse,
     TrialBalanceAccountResponse
 )
+from app.schemas.docvault import DocumentResponse
+from app.services import document_access as doc_access
+from app.encryption import decrypt_dek, decrypt_file_data
+from app.routers.docvault import get_company_kek
 
 router = APIRouter(prefix="/api/v1/auditor", tags=["auditease-auditor"])
 
@@ -178,11 +184,12 @@ async def create_requirement(
 @router.post("/engagements/{engagement_id}/queries", response_model=QueryResponse)
 async def create_query(
     engagement_id: uuid.UUID,
-    query: QueryCreate,
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    db: Annotated[AsyncSession, Depends(get_db)],
+    initial_message: Annotated[str, Form(...)],
+    file: Annotated[Optional[UploadFile], File()] = None,
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id)
     
     db_query = Query(
         engagement_id=engagement_id,
@@ -191,12 +198,19 @@ async def create_query(
     db.add(db_query)
     await db.flush()
     
+    attached_document_id = None
+    if file:
+        doc = await doc_access.create_attachment_document(
+            db, company_id=eng.company_id, file=file, created_by=None, grant_auditor_id=current_auditor.id
+        )
+        attached_document_id = doc.id
+        
     msg = QueryMessage(
         query_id=db_query.id,
         sender_type=SenderType.auditor,
         sender_id=current_auditor.id,
-        text=query.initial_message,
-        attached_document_id=query.attached_document_id
+        text=initial_message,
+        attached_document_id=attached_document_id
     )
     db.add(msg)
     await db.commit()
@@ -209,25 +223,131 @@ async def create_query(
 async def add_query_message(
     engagement_id: uuid.UUID,
     query_id: uuid.UUID,
-    msg: QueryMessageCreate,
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    db: Annotated[AsyncSession, Depends(get_db)],
+    text: Annotated[str, Form(...)],
+    file: Annotated[Optional[UploadFile], File()] = None,
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id)
     
     q_res = await db.execute(select(Query).where(and_(Query.id == query_id, Query.engagement_id == engagement_id)))
     query = q_res.scalar_one_or_none()
     if not query or query.status == QueryStatus.closed:
         raise HTTPException(status_code=400, detail="Query not found or closed")
         
+    attached_document_id = None
+    if file:
+        doc = await doc_access.create_attachment_document(
+            db, company_id=eng.company_id, file=file, created_by=None, grant_auditor_id=current_auditor.id
+        )
+        attached_document_id = doc.id
+        
     db_msg = QueryMessage(
         query_id=query_id,
         sender_type=SenderType.auditor,
         sender_id=current_auditor.id,
-        text=msg.text,
-        attached_document_id=msg.attached_document_id
+        text=text,
+        attached_document_id=attached_document_id
     )
     db.add(db_msg)
     await db.commit()
     await db.refresh(db_msg)
     return db_msg
+
+
+@router.get("/engagements/{engagement_id}/requirement-requests", response_model=List[RequirementRequestResponse])
+async def list_requirements(
+    engagement_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    reqs = await db.execute(select(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id))
+    return reqs.scalars().all()
+
+
+@router.get("/engagements/{engagement_id}/queries", response_model=List[QueryResponse])
+async def list_queries(
+    engagement_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    queries = await db.execute(select(Query).options(selectinload(Query.messages)).where(Query.engagement_id == engagement_id))
+    return queries.scalars().all()
+
+
+@router.post("/engagements/{engagement_id}/queries/{query_id}/close", response_model=QueryResponse)
+async def close_query(
+    engagement_id: uuid.UUID,
+    query_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    q_res = await db.execute(select(Query).options(selectinload(Query.messages)).where(and_(Query.id == query_id, Query.engagement_id == engagement_id)))
+    query = q_res.scalar_one_or_none()
+    if not query:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if query.opened_by != current_auditor.id:
+        raise HTTPException(status_code=403, detail="Only the opener can close this query")
+        
+    query.status = QueryStatus.closed
+    await db.commit()
+    await db.refresh(query)
+    return query
+
+
+@router.get("/documents/{document_id}", response_model=DocumentResponse)
+async def get_document(
+    document_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    doc = await doc_access.auditor_can_access_document(db, current_auditor.id, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found or access denied")
+        
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == document_id)
+    )
+    return result.scalar_one()
+
+
+@router.get("/documents/{document_id}/download")
+async def download_document(
+    document_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    doc = await doc_access.auditor_can_access_document(db, current_auditor.id, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found or access denied")
+        
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == document_id)
+    )
+    doc_full = result.scalar_one()
+    
+    if not doc_full.current_version_id:
+        raise HTTPException(status_code=404, detail="No versions available")
+    version = next((v for v in doc_full.versions if v.id == doc_full.current_version_id), None)
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+        
+    company_kek = await get_company_kek(db, doc_full.company_id)
+    raw_dek = decrypt_dek(version.encrypted_dek, version.dek_nonce, company_kek)
+    
+    async with aiofiles.open(version.storage_path, "rb") as f:
+        file_content = await f.read()
+        
+    nonce = file_content[:12]
+    ciphertext = file_content[12:]
+    
+    plaintext = decrypt_file_data(ciphertext, nonce, raw_dek)
+    
+    return Response(
+        content=plaintext, 
+        media_type=version.mime_type,
+        headers={"Content-Disposition": f'attachment; filename="{version.original_filename}"'}
+    )

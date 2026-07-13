@@ -28,3 +28,80 @@ export function useAuditorTrialBalance(engagementId: string) {
     enabled: !!engagementId,
   })
 }
+
+// --- Requirements ---
+
+export function useAuditorListRequirements(engagementId: string) {
+  return useQuery({
+    queryKey: ['auditor', 'requirements', engagementId],
+    queryFn: () => auditorEngagementsApi.listRequirements(engagementId),
+    enabled: !!engagementId,
+  })
+}
+
+export function useAuditorCreateRequirement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, body }: { engagementId: string; body: import('@/api/types').RequirementRequestCreate }) =>
+      auditorEngagementsApi.createRequirement(engagementId, body),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditor', 'requirements', engagementId] }),
+  })
+}
+
+// --- Queries ---
+
+export function useAuditorListQueries(engagementId: string) {
+  return useQuery({
+    queryKey: ['auditor', 'queries', engagementId],
+    queryFn: () => auditorEngagementsApi.listQueries(engagementId),
+    enabled: !!engagementId,
+    refetchInterval: 5000,
+  })
+}
+
+export function useAuditorCreateQuery() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, formData }: { engagementId: string; formData: FormData }) =>
+      auditorEngagementsApi.createQuery(engagementId, formData),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditor', 'queries', engagementId] }),
+  })
+}
+
+export function useAuditorAddQueryMessage() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, queryId, formData }: { engagementId: string; queryId: string; formData: FormData }) =>
+      auditorEngagementsApi.addQueryMessage(engagementId, queryId, formData),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditor', 'queries', engagementId] }),
+  })
+}
+
+export function useAuditorCloseQuery() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, queryId }: { engagementId: string; queryId: string }) =>
+      auditorEngagementsApi.closeQuery(engagementId, queryId),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditor', 'queries', engagementId] }),
+  })
+}
+
+// --- Documents ---
+
+export function useAuditorGetDocument(documentId: string) {
+  return useQuery({
+    queryKey: ['auditor', 'document', documentId],
+    queryFn: () => auditorEngagementsApi.getDocument(documentId),
+    enabled: !!documentId,
+  })
+}
+
+export function useAuditorDownloadDocument() {
+  return useMutation({
+    mutationFn: (documentId: string) => auditorEngagementsApi.downloadDocument(documentId),
+  })
+}

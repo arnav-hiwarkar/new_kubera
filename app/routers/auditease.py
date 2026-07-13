@@ -671,9 +671,11 @@ async def list_queries(
 async def add_query_message(
     engagement_id: uuid.UUID,
     query_id: uuid.UUID,
-    msg: QueryMessageCreate,
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    db: Annotated[AsyncSession, Depends(get_db)],
+    text: Annotated[str, Form(...)],
+    attached_document_id: Annotated[Optional[uuid.UUID], Form()] = None,
+    file: Annotated[Optional[UploadFile], File()] = None,
 ):
     result = await db.execute(select(AuditEngagement).where(and_(AuditEngagement.id == engagement_id, AuditEngagement.company_id == current_user.company_id)))
     if not result.scalar_one_or_none():
@@ -684,26 +686,34 @@ async def add_query_message(
     if not query or query.status == QueryStatus.closed:
         raise HTTPException(status_code=400, detail="Query not found or closed")
         
-    if msg.attached_document_id:
+    final_attached_document_id = None
+    if attached_document_id:
         from app.models.docvault import Document, DocumentAccessOverride, PrincipalType
-        doc_res = await db.execute(select(Document).where(and_(Document.id == msg.attached_document_id, Document.company_id == current_user.company_id)))
+        doc_res = await db.execute(select(Document).where(and_(Document.id == attached_document_id, Document.company_id == current_user.company_id)))
         if not doc_res.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Document not found")
             
         grant = DocumentAccessOverride(
-            document_id=msg.attached_document_id,
+            document_id=attached_document_id,
             principal_type=PrincipalType.auditor,
             principal_id=query.opened_by,
             permission_level="read"
         )
         db.add(grant)
+        final_attached_document_id = attached_document_id
+    elif file:
+        from app.services import document_access as doc_access
+        doc = await doc_access.create_attachment_document(
+            db, company_id=current_user.company_id, file=file, created_by=current_user.id, grant_auditor_id=query.opened_by
+        )
+        final_attached_document_id = doc.id
         
     message = QueryMessage(
         query_id=query_id,
         sender_type=SenderType.company_user,
         sender_id=current_user.id,
-        text=msg.text,
-        attached_document_id=msg.attached_document_id
+        text=text,
+        attached_document_id=final_attached_document_id
     )
     db.add(message)
     await db.commit()

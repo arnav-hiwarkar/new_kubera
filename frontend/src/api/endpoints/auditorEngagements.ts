@@ -10,6 +10,7 @@ import type {
   QueryResponse,
   QueryMessageCreate,
   QueryMessageResponse,
+  DocumentResponse,
 } from '@/api/types'
 
 /**
@@ -29,16 +30,28 @@ export const auditorEngagementsApi = {
     auditorClient.post<AuditEntryResponse>(`/api/v1/auditor/engagements/${id}/entries`, {
       body,
     }),
+  listRequirements: (id: string) =>
+    auditorClient.get<RequirementRequestResponse[]>(
+      `/api/v1/auditor/engagements/${id}/requirement-requests`,
+    ),
   createRequirement: (id: string, body: RequirementRequestCreate) =>
     auditorClient.post<RequirementRequestResponse>(
       `/api/v1/auditor/engagements/${id}/requirement-requests`,
       { body },
     ),
-  createQuery: (id: string, body: QueryCreate) =>
-    auditorClient.post<QueryResponse>(`/api/v1/auditor/engagements/${id}/queries`, { body }),
-  addQueryMessage: (id: string, queryId: string, body: QueryMessageCreate) =>
+  listQueries: (id: string) =>
+    auditorClient.get<QueryResponse[]>(`/api/v1/auditor/engagements/${id}/queries`),
+  createQuery: (id: string, formData: FormData) =>
+    auditorClient.post<QueryResponse>(`/api/v1/auditor/engagements/${id}/queries`, { formData }),
+  addQueryMessage: (id: string, queryId: string, formData: FormData) =>
     auditorClient.post<QueryMessageResponse>(
       `/api/v1/auditor/engagements/${id}/queries/${queryId}/messages`,
-      { body },
+      { formData },
     ),
+  closeQuery: (id: string, queryId: string) =>
+    auditorClient.post<QueryResponse>(`/api/v1/auditor/engagements/${id}/queries/${queryId}/close`),
+  getDocument: (id: string) =>
+    auditorClient.get<DocumentResponse>(`/api/v1/auditor/documents/${id}`),
+  downloadDocument: (id: string) =>
+    auditorClient.get<Blob>(`/api/v1/auditor/documents/${id}/download`, { responseType: 'blob' }),
 }

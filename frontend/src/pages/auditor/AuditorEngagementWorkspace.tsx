@@ -5,8 +5,11 @@ import { cn } from '@/lib/cn'
 import { formatMoney } from '@/lib/format'
 import { useAuditorEngagements, useAuditorTrialBalance } from '@/api/hooks/auditorEngagements'
 import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable'
+import { RequirementsTab } from './RequirementsTab'
+import { QueriesTab } from './QueriesTab'
+import { useAuditorListRequirements, useAuditorListQueries } from '@/api/hooks/auditorEngagements'
 
-type Tab = 'overview' | 'trial-balance'
+type Tab = 'overview' | 'trial-balance' | 'requirements' | 'queries'
 
 export function AuditorEngagementWorkspace() {
   const { engagementId = '' } = useParams()
@@ -14,6 +17,8 @@ export function AuditorEngagementWorkspace() {
 
   const { data: engagements = [], isLoading } = useAuditorEngagements()
   const { data: accounts = [], isLoading: tbLoading } = useAuditorTrialBalance(engagementId)
+  const { data: reqs = [] } = useAuditorListRequirements(engagementId)
+  const { data: queries = [] } = useAuditorListQueries(engagementId)
   const eng = engagements.find((e) => e.id === engagementId)
 
   const [tab, setTab] = useState<Tab>('overview')
@@ -34,6 +39,8 @@ export function AuditorEngagementWorkspace() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'trial-balance', label: 'Trial Balance' },
+    { id: 'requirements', label: 'Requirements' },
+    { id: 'queries', label: 'Queries' },
   ]
 
   return (
@@ -97,10 +104,25 @@ export function AuditorEngagementWorkspace() {
                   : `No · Dr ${formatMoney(totalDebit)} / Cr ${formatMoney(totalCredit)}`}
             </div>
           </Card>
+          <Card>
+            <div className="text-sm text-text-muted">Requirements</div>
+            <div className="mt-1 text-2xl font-semibold text-text-primary">
+              {reqs.filter(r => r.status === 'open').length} <span className="text-base font-normal text-text-muted">open</span>
+            </div>
+          </Card>
+          <Card>
+            <div className="text-sm text-text-muted">Queries</div>
+            <div className="mt-1 text-2xl font-semibold text-text-primary">
+              {queries.filter(q => q.status === 'open').length} <span className="text-base font-normal text-text-muted">open</span>
+            </div>
+          </Card>
         </div>
       )}
 
       {tab === 'trial-balance' && <TrialBalanceTable accounts={accounts} loading={tbLoading} />}
+      
+      {tab === 'requirements' && <RequirementsTab engagementId={eng.id} />}
+      {tab === 'queries' && <QueriesTab engagementId={eng.id} />}
     </div>
   )
 }

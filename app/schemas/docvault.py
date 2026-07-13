@@ -14,7 +14,7 @@ class BucketResponse(BaseModel):
     id: uuid.UUID
     name: str
     company_id: uuid.UUID
-    created_by: uuid.UUID
+    created_by: Optional[uuid.UUID]
     created_at: datetime
     updated_at: datetime
 
@@ -28,7 +28,7 @@ class DocumentVersionResponse(BaseModel):
     mime_type: str
     size_bytes: int
     checksum: str
-    uploaded_by: uuid.UUID
+    uploaded_by: Optional[uuid.UUID]
     uploaded_at: datetime
     version_number: int
 
@@ -45,7 +45,7 @@ class DocumentResponse(BaseModel):
     doc_type_id: Optional[uuid.UUID]
     tags: List[str]
     is_editable: bool
-    created_by: uuid.UUID
+    created_by: Optional[uuid.UUID]
     created_at: datetime
     updated_at: datetime
     versions: List[DocumentVersionResponse] = []

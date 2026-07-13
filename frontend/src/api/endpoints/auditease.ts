@@ -96,9 +96,9 @@ export const auditeaseCompanyApi = {
     ),
   listQueries: (engagementId: string) =>
     companyClient.get<QueryResponse[]>(`/api/v1/auditease/engagements/${engagementId}/queries`),
-  addQueryMessage: (engagementId: string, queryId: string, body: QueryMessageCreate) =>
+  addQueryMessage: (engagementId: string, queryId: string, formData: FormData) =>
     companyClient.post<QueryMessageResponse>(
       `/api/v1/auditease/engagements/${engagementId}/queries/${queryId}/messages`,
-      { body },
+      { formData },
     ),
 }

@@ -1079,7 +1079,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Requirements */
+        get: operations["list_requirements_api_v1_auditor_engagements__engagement_id__requirement_requests_get"];
         put?: never;
         /** Create Requirement */
         post: operations["create_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests_post"];
@@ -1096,7 +1097,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Queries */
+        get: operations["list_queries_api_v1_auditor_engagements__engagement_id__queries_get"];
         put?: never;
         /** Create Query */
         post: operations["create_query_api_v1_auditor_engagements__engagement_id__queries_post"];
@@ -1117,6 +1119,57 @@ export interface paths {
         put?: never;
         /** Add Query Message */
         post: operations["add_query_message_api_v1_auditor_engagements__engagement_id__queries__query_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditor/engagements/{engagement_id}/queries/{query_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Query */
+        post: operations["close_query_api_v1_auditor_engagements__engagement_id__queries__query_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditor/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document */
+        get: operations["get_document_api_v1_auditor_documents__document_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditor/documents/{document_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Document */
+        get: operations["download_document_api_v1_auditor_documents__document_id__download_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1521,6 +1574,29 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** Body_add_query_message_api_v1_auditease_engagements__engagement_id__queries__query_id__messages_post */
+        Body_add_query_message_api_v1_auditease_engagements__engagement_id__queries__query_id__messages_post: {
+            /** Text */
+            text: string;
+            /** Attached Document Id */
+            attached_document_id?: string | null;
+            /** File */
+            file?: string | null;
+        };
+        /** Body_add_query_message_api_v1_auditor_engagements__engagement_id__queries__query_id__messages_post */
+        Body_add_query_message_api_v1_auditor_engagements__engagement_id__queries__query_id__messages_post: {
+            /** Text */
+            text: string;
+            /** File */
+            file?: string | null;
+        };
+        /** Body_create_query_api_v1_auditor_engagements__engagement_id__queries_post */
+        Body_create_query_api_v1_auditor_engagements__engagement_id__queries_post: {
+            /** Initial Message */
+            initial_message: string;
+            /** File */
+            file?: string | null;
+        };
         /** Body_import_assets_api_v1_assets_import_post */
         Body_import_assets_api_v1_assets_import_post: {
             /**
@@ -1607,11 +1683,8 @@ export interface components {
              * Format: uuid
              */
             company_id: string;
-            /**
-             * Created By
-             * Format: uuid
-             */
-            created_by: string;
+            /** Created By */
+            created_by: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1805,11 +1878,8 @@ export interface components {
             tags: string[];
             /** Is Editable */
             is_editable: boolean;
-            /**
-             * Created By
-             * Format: uuid
-             */
-            created_by: string;
+            /** Created By */
+            created_by: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1905,11 +1975,8 @@ export interface components {
             size_bytes: number;
             /** Checksum */
             checksum: string;
-            /**
-             * Uploaded By
-             * Format: uuid
-             */
-            uploaded_by: string;
+            /** Uploaded By */
+            uploaded_by: string | null;
             /**
              * Uploaded At
              * Format: date-time
@@ -2168,20 +2235,6 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-        };
-        /** QueryCreate */
-        QueryCreate: {
-            /** Initial Message */
-            initial_message: string;
-            /** Attached Document Id */
-            attached_document_id?: string | null;
-        };
-        /** QueryMessageCreate */
-        QueryMessageCreate: {
-            /** Text */
-            text: string;
-            /** Attached Document Id */
-            attached_document_id?: string | null;
         };
         /** QueryMessageResponse */
         QueryMessageResponse: {
@@ -4782,7 +4835,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["QueryMessageCreate"];
+                "multipart/form-data": components["schemas"]["Body_add_query_message_api_v1_auditease_engagements__engagement_id__queries__query_id__messages_post"];
             };
         };
         responses: {
@@ -4923,6 +4976,37 @@ export interface operations {
             };
         };
     };
+    list_requirements_api_v1_auditor_engagements__engagement_id__requirement_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequirementRequestResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests_post: {
         parameters: {
             query?: never;
@@ -4958,6 +5042,37 @@ export interface operations {
             };
         };
     };
+    list_queries_api_v1_auditor_engagements__engagement_id__queries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_query_api_v1_auditor_engagements__engagement_id__queries_post: {
         parameters: {
             query?: never;
@@ -4969,7 +5084,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["QueryCreate"];
+                "multipart/form-data": components["schemas"]["Body_create_query_api_v1_auditor_engagements__engagement_id__queries_post"];
             };
         };
         responses: {
@@ -5005,7 +5120,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["QueryMessageCreate"];
+                "multipart/form-data": components["schemas"]["Body_add_query_message_api_v1_auditor_engagements__engagement_id__queries__query_id__messages_post"];
             };
         };
         responses: {
@@ -5016,6 +5131,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QueryMessageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_query_api_v1_auditor_engagements__engagement_id__queries__query_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                query_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_api_v1_auditor_documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_document_api_v1_auditor_documents__document_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

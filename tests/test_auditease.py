@@ -408,11 +408,11 @@ async def test_requirements_and_queries(client: AsyncClient):
     resp = await client.patch(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/fulfill", json={"document_id": doc_id}, headers=co_headers)
     assert resp.status_code == 200
 
-    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries", json={"initial_message": "What is this?"}, headers=aud_headers)
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries", data={"initial_message": "What is this?"}, headers=aud_headers)
     assert resp.status_code == 200
     query_id = resp.json()["id"]
 
-    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/queries/{query_id}/messages", json={"text": "Here is the doc", "attached_document_id": doc_id}, headers=co_headers)
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/queries/{query_id}/messages", data={"text": "Here is the doc", "attached_document_id": doc_id}, headers=co_headers)
     assert resp.status_code == 200
 
 
@@ -436,4 +436,71 @@ async def test_auditease_cross_tenant_leak(client: AsyncClient):
 
     # B cannot close A's engagement
     resp = await client.patch(f"/api/v1/auditease/engagements/{eng_id}/close", headers=headers_b)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_auditor_document_access_and_queries(client: AsyncClient):
+    await create_test_company(client, email="co4@a.com", password="pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co4@a.com', password='pass')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "aud4@a.com", "password": "pass", "name": "Auditor"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud4@a.com", "password": "pass"})
+    aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    
+    # second auditor for cross-check
+    await client.post("/api/v1/auth/auditor/register", json={"email": "aud_other@a.com", "password": "pass", "name": "Other"})
+    resp2 = await client.post("/api/v1/auth/auditor/login", json={"email": "aud_other@a.com", "password": "pass"})
+    aud_other_headers = {"Authorization": f"Bearer {resp2.json()['access_token']}"}
+
+    eng_id = await make_engagement(client, co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "aud4@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+    
+    # Auditor raises a query with a file
+    files = {'file': ('query_doc.txt', b'query content', 'text/plain')}
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries", data={"initial_message": "Query 1"}, files=files, headers=aud_headers)
+    assert resp.status_code == 200
+    query_id = resp.json()["id"]
+    q_msg = resp.json()["messages"][0]
+    q_doc_id = q_msg["attached_document_id"]
+    assert q_doc_id is not None
+    
+    # Auditor can download it
+    resp = await client.get(f"/api/v1/auditor/documents/{q_doc_id}/download", headers=aud_headers)
+    assert resp.status_code == 200
+    assert resp.content == b'query content'
+    
+    # Other auditor cannot access it
+    resp = await client.get(f"/api/v1/auditor/documents/{q_doc_id}/download", headers=aud_other_headers)
+    assert resp.status_code == 404
+    
+    # Company responds with file
+    c_files = {'file': ('reply_doc.txt', b'reply content', 'text/plain')}
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/queries/{query_id}/messages", data={"text": "Here is reply"}, files=c_files, headers=co_headers)
+    assert resp.status_code == 200
+    c_doc_id = resp.json()["attached_document_id"]
+    
+    # Auditor can download reply file
+    resp = await client.get(f"/api/v1/auditor/documents/{c_doc_id}/download", headers=aud_headers)
+    assert resp.status_code == 200
+    assert resp.content == b'reply content'
+    
+    # Auditor lists queries
+    resp = await client.get(f"/api/v1/auditor/engagements/{eng_id}/queries", headers=aud_headers)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+    
+    # Auditor closes query
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries/{query_id}/close", headers=aud_headers)
+    assert resp.status_code == 200
+    
+    # Can no longer add messages
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries/{query_id}/messages", data={"text": "late"}, headers=aud_headers)
+    assert resp.status_code == 400
+    
+    # Company closes engagement
+    await client.patch(f"/api/v1/auditease/engagements/{eng_id}/close", headers=co_headers)
+    
+    # Auditor can no longer download documents
+    resp = await client.get(f"/api/v1/auditor/documents/{c_doc_id}/download", headers=aud_headers)
     assert resp.status_code == 404

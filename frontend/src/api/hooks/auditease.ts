@@ -171,3 +171,45 @@ export function useUnmapLedgers() {
       qc.invalidateQueries({ queryKey: auditeaseKeys.trialBalance(engagementId) }),
   })
 }
+
+
+// --- Requirements ---
+
+export function useListRequirements(engagementId: string) {
+  return useQuery({
+    queryKey: ['auditease', 'requirements', engagementId],
+    queryFn: () => auditeaseCompanyApi.listRequirements(engagementId),
+    enabled: !!engagementId,
+  })
+}
+
+export function useFulfillRequirement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, reqId, body }: { engagementId: string; reqId: string; body: import('@/api/types').RequirementFulfill }) =>
+      auditeaseCompanyApi.fulfillRequirement(engagementId, reqId, body),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditease', 'requirements', engagementId] }),
+  })
+}
+
+// --- Queries ---
+
+export function useListQueries(engagementId: string) {
+  return useQuery({
+    queryKey: ['auditease', 'queries', engagementId],
+    queryFn: () => auditeaseCompanyApi.listQueries(engagementId),
+    enabled: !!engagementId,
+    refetchInterval: 5000,
+  })
+}
+
+export function useAddQueryMessage() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, queryId, formData }: { engagementId: string; queryId: string; formData: FormData }) =>
+      auditeaseCompanyApi.addQueryMessage(engagementId, queryId, formData),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditease', 'queries', engagementId] }),
+  })
+}

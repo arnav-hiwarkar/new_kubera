@@ -17,8 +17,11 @@ import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable'
 import { ImportTrialBalanceModal } from './ImportTrialBalanceModal'
 import { InviteAuditorModal } from './InviteAuditorModal'
 import { MappingTab } from './MappingTab'
+import { RequirementsTab } from './RequirementsTab'
+import { QueriesTab } from './QueriesTab'
+import { useListRequirements, useListQueries } from '@/api/hooks/auditease'
 
-type Tab = 'overview' | 'trial-balance' | 'mapping'
+type Tab = 'overview' | 'trial-balance' | 'mapping' | 'requirements' | 'queries'
 
 export function EngagementWorkspace() {
   const { engagementId = '' } = useParams()
@@ -28,6 +31,9 @@ export function EngagementWorkspace() {
   const { data: eng, isLoading } = useEngagement(engagementId)
   const { data: accounts = [], isLoading: tbLoading } = useCompanyTrialBalance(engagementId)
   const closeEng = useCloseEngagement()
+
+  const { data: reqs = [] } = useListRequirements(engagementId)
+  const { data: queries = [] } = useListQueries(engagementId)
 
   const [tab, setTab] = useState<Tab>('overview')
   const [importOpen, setImportOpen] = useState(false)
@@ -61,6 +67,8 @@ export function EngagementWorkspace() {
     { id: 'overview', label: 'Overview' },
     { id: 'trial-balance', label: 'Trial Balance' },
     { id: 'mapping', label: 'Mapping' },
+    { id: 'requirements', label: 'Requirements' },
+    { id: 'queries', label: 'Queries' },
   ]
 
   return (
@@ -157,6 +165,18 @@ export function EngagementWorkspace() {
                   : `No · Dr ${formatMoney(totalDebit)} / Cr ${formatMoney(totalCredit)}`}
             </div>
           </Card>
+          <Card>
+            <div className="text-sm text-text-muted">Requirements</div>
+            <div className="mt-1 text-2xl font-semibold text-text-primary">
+              {reqs.filter(r => r.status === 'open').length} <span className="text-base font-normal text-text-muted">open</span>
+            </div>
+          </Card>
+          <Card>
+            <div className="text-sm text-text-muted">Queries</div>
+            <div className="mt-1 text-2xl font-semibold text-text-primary">
+              {queries.filter(q => q.status === 'open').length} <span className="text-base font-normal text-text-muted">open</span>
+            </div>
+          </Card>
         </div>
       )}
 
@@ -181,6 +201,9 @@ export function EngagementWorkspace() {
 
       {/* Mapping */}
       {tab === 'mapping' && <MappingTab engagementId={eng.id} />}
+
+      {tab === 'requirements' && <RequirementsTab engagementId={eng.id} />}
+      {tab === 'queries' && <QueriesTab engagementId={eng.id} />}
 
       {importOpen && (
         <ImportTrialBalanceModal
