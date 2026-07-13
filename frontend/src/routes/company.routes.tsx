@@ -6,6 +6,7 @@ import { CompanyLogin } from '@/pages/company/CompanyLogin'
 import { Dashboard } from '@/pages/company/Dashboard'
 import { UsersDirectory } from '@/pages/company/UsersDirectory'
 import { DocVaultPage } from '@/pages/company/docvault/DocVaultPage'
+import { KraPage } from '@/pages/company/kra/KraPage'
 import { EngagementsPage } from '@/pages/company/auditease/EngagementsPage'
 import { EngagementWorkspace } from '@/pages/company/auditease/EngagementWorkspace'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
@@ -36,16 +37,7 @@ export const companyRoutes: RouteObject = {
           children: [
             { index: true, element: <Dashboard /> },
             { path: 'users', element: <UsersDirectory /> },
-            {
-              path: 'kra',
-              element: (
-                <ModulePlaceholder
-                  title="KRA & Appraisals"
-                  description="Key result areas and performance review cycles"
-                  endpoints={['/api/v1/kra']}
-                />
-              ),
-            },
+            { path: 'kra', element: <KraPage /> },
             {
               path: 'assets',
               element: (
