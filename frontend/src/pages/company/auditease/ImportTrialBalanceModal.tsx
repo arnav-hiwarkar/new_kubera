@@ -8,9 +8,10 @@ import {
   FullPageSpinner,
   useToast,
 } from '@/components/ui'
+import { useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/api/http'
 import type { TBColumnMap, TBSheetInfo, TBImportResult } from '@/api/types'
-import { useInspectTrialBalance, useImportTrialBalance } from '@/api/hooks/auditease'
+import { useInspectTrialBalance, useImportTrialBalance, auditeaseKeys } from '@/api/hooks/auditease'
 
 interface FieldDef {
   key: keyof TBColumnMap
@@ -55,6 +56,7 @@ export function ImportTrialBalanceModal({
   engagementId: string
 }) {
   const toast = useToast()
+  const qc = useQueryClient()
   const inspect = useInspectTrialBalance()
   const importTb = useImportTrialBalance()
 
@@ -63,6 +65,7 @@ export function ImportTrialBalanceModal({
   const [sheetName, setSheetName] = useState('')
   const [map, setMap] = useState<Partial<TBColumnMap>>({})
   const [result, setResult] = useState<TBImportResult | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
 
   const activeSheet = useMemo(
     () => sheets.find((s) => s.name === sheetName) ?? sheets[0],
@@ -75,11 +78,17 @@ export function ImportTrialBalanceModal({
     setSheetName('')
     setMap({})
     setResult(null)
+    setImportError(null)
     inspect.reset()
     importTb.reset()
   }
 
   const close = () => {
+    // Force-refresh the trial balance data when closing after a successful import
+    if (result && result.imported > 0) {
+      qc.invalidateQueries({ queryKey: auditeaseKeys.trialBalance(engagementId) })
+      qc.invalidateQueries({ queryKey: auditeaseKeys.engagement(engagementId) })
+    }
     reset()
     onClose()
   }
@@ -88,6 +97,7 @@ export function ImportTrialBalanceModal({
     const f = files[0]
     if (!f) return
     setFile(f)
+    setImportError(null)
     const fd = new FormData()
     fd.append('file', f)
     try {
@@ -97,7 +107,10 @@ export function ImportTrialBalanceModal({
       setSheetName(first?.name ?? '')
       setMap(guessMap(first?.headers ?? []))
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Could not read file')
+      console.error('[TB Inspect] failed:', e)
+      const msg = e instanceof ApiError ? e.message : 'Could not read file'
+      toast.error(msg)
+      setImportError(msg)
       setFile(null)
     }
   }
@@ -113,6 +126,7 @@ export function ImportTrialBalanceModal({
 
   const runImport = async () => {
     if (!file || !canImport) return
+    setImportError(null)
     const columnMap: TBColumnMap = {
       ledger_code: map.ledger_code || null,
       ledger_name: map.ledger_name!,
@@ -127,10 +141,20 @@ export function ImportTrialBalanceModal({
     if (sheetName) fd.append('sheet', sheetName)
     try {
       const res = await importTb.mutateAsync({ engagementId, formData: fd })
+      console.log('[TB Import] success:', res.imported, 'imported,', res.skipped, 'skipped')
       setResult(res)
+      // Eagerly invalidate so the TB tab is already refreshed when the user closes the modal
+      qc.invalidateQueries({ queryKey: auditeaseKeys.trialBalance(engagementId) })
       toast.success(`Imported ${res.imported} ledger${res.imported === 1 ? '' : 's'}`)
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Import failed')
+      console.error('[TB Import] failed:', e)
+      const msg = e instanceof ApiError
+        ? e.message
+        : e instanceof Error
+          ? e.message
+          : 'Import failed — check the browser console for details'
+      setImportError(msg)
+      toast.error(msg)
     }
   }
 
@@ -292,6 +316,12 @@ export function ImportTrialBalanceModal({
             <p className="text-xs text-status-action">
               Map required columns: {missingRequired.join(', ')}
             </p>
+          )}
+
+          {importError && (
+            <div className="rounded-card border border-status-action/40 bg-status-action/5 px-3 py-2 text-sm text-status-action">
+              <strong>Error:</strong> {importError}
+            </div>
           )}
         </div>
       )}

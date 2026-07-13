@@ -141,12 +141,16 @@ async def import_trial_balance(
         )
         db.add(acc)
         accounts.append(acc)
+    await db.flush()
     await db.commit()
     for acc in accounts:
         await db.refresh(acc)
 
-    total_debit = float(sum(a.debit for a in accounts))
-    total_credit = float(sum(a.credit for a in accounts))
+    total_debit = float(sum(float(a.debit) for a in accounts))
+    total_credit = float(sum(float(a.credit) for a in accounts))
+    # Set mapped_group_path on each account for serialization (freshly imported = no mapping)
+    for acc in accounts:
+        acc.mapped_group_path = None  # type: ignore[attr-defined]
     return TBImportResult(
         imported=len(accounts),
         skipped=len(errors),
