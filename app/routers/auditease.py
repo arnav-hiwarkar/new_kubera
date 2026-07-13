@@ -509,6 +509,13 @@ async def delete_engagement(
             status_code=409,
             detail="An active engagement cannot be deleted — close it first.",
         )
+    # These children reference the engagement without an ON DELETE CASCADE FK, so
+    # remove them explicitly first (their own children — entry lines, query
+    # messages — cascade via their FKs). Trial-balance accounts, auditor grants and
+    # pending invites do have cascade and are handled by deleting the engagement.
+    await db.execute(delete(AuditEntry).where(AuditEntry.engagement_id == engagement_id))
+    await db.execute(delete(Query).where(Query.engagement_id == engagement_id))
+    await db.execute(delete(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id))
     await db.delete(eng)
     await db.commit()
     return None

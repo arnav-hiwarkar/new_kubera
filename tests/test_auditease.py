@@ -571,6 +571,39 @@ async def test_entry_lines_include_ledger_name(client: AsyncClient):
     assert ap_lines[loan["id"]]["ledger_name"] == "Loan"
 
 
+@pytest.mark.asyncio
+async def test_delete_closed_engagement_with_children(client: AsyncClient):
+    """A closed engagement that accumulated entries, a query and a requirement must
+    still delete cleanly (regression: FK 500 when children weren't cascaded)."""
+    await create_test_company(client, email="delc@a.com", password="pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='delc@a.com', password='pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    imp = await import_tb(client, eng_id, co_headers)
+    ledgers = imp.json()["accounts"]
+    aud_headers = await _accept_auditor(client, co_headers, eng_id, "delcaud@a.com")
+
+    # Auditor adds an entry, a requirement and a query (the previously-uncascaded rows).
+    await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/entries",
+        json={"description": "Adj", "lines": [
+            {"ledger_id": ledgers[0]["id"], "side": "debit", "amount": 100},
+            {"ledger_id": ledgers[1]["id"], "side": "credit", "amount": 100},
+        ]},
+        headers=aud_headers,
+    )
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", json={"description": "docs"}, headers=aud_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries", data={"initial_message": "hi"}, headers=aud_headers)
+
+    # Close, then delete — must succeed, not 500.
+    await client.patch(f"/api/v1/auditease/engagements/{eng_id}/close", headers=co_headers)
+    resp = await client.delete(f"/api/v1/auditease/engagements/{eng_id}", headers=co_headers)
+    assert resp.status_code == 204, resp.text
+
+    # Gone.
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}", headers=co_headers)
+    assert resp.status_code == 404
+
+
 REPORT_CSV = (
     b"Code,Name,Opening,Debit,Credit,Closing\n"
     b"A1,Cash,0,0,0,1000\n"
