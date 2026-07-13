@@ -33,6 +33,13 @@ current behaviour). When `true`, the `is_active == True` filter is dropped so th
 admin screen can show deactivated fields and reactivate them. Ordering by
 `display_order` is unchanged.
 
+### 1c. `purchase_date` importable
+The asset importer's `base_validators` gains `purchase_date`, using a
+`_parse_import_date` helper that accepts date/datetime cell objects (from openpyxl)
+and ISO / common day-first & month-first string formats, raising `ValueError` on
+unparseable input (which the importer records as a per-row error). Already applied
+to `app/routers/assets.py`.
+
 No other backend changes. No DB migration.
 
 ---
@@ -107,15 +114,16 @@ Mirrors the AuditEase TB import (inspect → map → import):
 2. **Inspect** — call `import/inspect`; show detected columns + a few preview rows.
 3. **Map** — for each importable target field
    (`asset_name` [required], `category` [required], `serial_number`, `status`,
-   `purchase_cost`, and each active custom-field key) pick a source column or
-   leave unmapped. Enforce that the two required targets are mapped before import.
+   `purchase_date`, `purchase_cost`, and each active custom-field key) pick a
+   source column or leave unmapped. Enforce that the two required targets are
+   mapped before import.
 4. **Import** — `POST /import` with the same `File` + `mappings` JSON
    (`[{source_column, target_field}]`), then show the `ImportResult`
    (`imported`, `skipped`, per-row `errors`). On success, invalidate the list.
 
-Note: only the five base targets above plus custom-field keys are importable;
-`purchase_date`, `depreciation_rate`, `custodian_id`, `document_id` are not import
-targets in the backend and are omitted from the mapping UI.
+Note: only the six base targets above plus custom-field keys are importable;
+`depreciation_rate`, `custodian_id`, `document_id` are not import targets in the
+backend and are omitted from the mapping UI.
 
 ---
 
@@ -144,8 +152,9 @@ sidebar entries already point at these paths — no nav change needed.
   fields; duplicate-key `409`; module scoping; admin-only guard.
 - `tests/test_assets.py`: CRUD; custom-field validation on create (required +
   type + dropdown); import inspect returns headers; import with a mapping
-  (imported + skipped rows with errors); export returns a spreadsheet; admin-only
-  guards; non-admin custodian scoping on list.
+  including `purchase_date` (imported rows carry the parsed date; a bad-date row
+  is skipped with an error); export returns a spreadsheet; admin-only guards;
+  non-admin custodian scoping on list.
 
 **Frontend**
 - `customfields.test.tsx`: renders active + inactive fields, create flow calls the
