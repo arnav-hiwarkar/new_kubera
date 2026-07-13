@@ -2,7 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -201,10 +201,33 @@ async def auditor_register(
         hashed_password=hash_password(body.password),
         name=body.name,
     )
+<<<<<<< HEAD
     db.add(auditor_obj)
     await db.commit()
     await db.refresh(auditor_obj)
     return AuditorOut.model_validate(auditor_obj)
+=======
+    db.add(auditor)
+    await db.flush()
+
+    # Convert any pending engagement invites addressed to this email into grants.
+    from app.models.auditease import PendingAuditorInvite, AuditorEngagementGrant, GrantStatus
+    pend_res = await db.execute(
+        select(PendingAuditorInvite).where(
+            func.lower(PendingAuditorInvite.email) == body.email.strip().lower()
+        )
+    )
+    pendings = pend_res.scalars().all()
+    for pend in pendings:
+        db.add(AuditorEngagementGrant(
+            auditor_id=auditor.id,
+            engagement_id=pend.engagement_id,
+            status=GrantStatus.invited,
+        ))
+        await db.delete(pend)
+
+    return AuditorOut.model_validate(auditor)
+>>>>>>> new_frontend
 
 
 @router.post("/auditor/login", response_model=TokenResponse)

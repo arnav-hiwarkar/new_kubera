@@ -91,3 +91,48 @@ async def test_cross_tenant_compliance(client: AsyncClient):
     # C2 cannot update C1 dt
     resp = await client.put(f"/api/v1/secretarial/document-types/{dt_id}", json={"name": "Hacked"}, headers=h2)
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_record_date_roundtrip(client: AsyncClient):
+    await create_test_company(client, email="rd@a.com", password="pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='rd@a.com', password='pass')}"}
+
+    dt_id = (await client.post("/api/v1/roc/document-types", json={"name": "Monthly Return"}, headers=headers)).json()["id"]
+    resp = await client.post(
+        "/api/v1/roc/meeting-records",
+        json={"doc_type_id": dt_id, "record_date": "2026-07-05", "structured_metadata": {"ref": "R-1"}},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["record_date"] == "2026-07-05"
+
+    rows = (await client.get("/api/v1/roc/meeting-records", headers=headers)).json()
+    assert rows[0]["record_date"] == "2026-07-05"
+
+
+@pytest.mark.asyncio
+async def test_delete_type_guarded_by_records(client: AsyncClient):
+    await create_test_company(client, email="del@a.com", password="pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@a.com', password='pass')}"}
+
+    # Type with a record cannot be deleted
+    used = (await client.post("/api/v1/secretarial/document-types", json={"name": "Used"}, headers=headers)).json()["id"]
+    await client.post("/api/v1/secretarial/meeting-records", json={"doc_type_id": used}, headers=headers)
+    resp = await client.delete(f"/api/v1/secretarial/document-types/{used}", headers=headers)
+    assert resp.status_code == 409
+
+    # An empty type deletes fine
+    empty = (await client.post("/api/v1/secretarial/document-types", json={"name": "Empty"}, headers=headers)).json()["id"]
+    resp = await client.delete(f"/api/v1/secretarial/document-types/{empty}", headers=headers)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_record_rejects_wrong_domain_type(client: AsyncClient):
+    await create_test_company(client, email="dom@a.com", password="pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='dom@a.com', password='pass')}"}
+    roc_dt = (await client.post("/api/v1/roc/document-types", json={"name": "ROC only"}, headers=headers)).json()["id"]
+    # Using a ROC type under the secretarial domain must be rejected.
+    resp = await client.post("/api/v1/secretarial/meeting-records", json={"doc_type_id": roc_dt}, headers=headers)
+    assert resp.status_code == 400

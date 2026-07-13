@@ -1,7 +1,7 @@
 import uuid
 import enum
 from sqlalchemy import String, ForeignKey, LargeBinary, Enum as SAEnum, Boolean
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -69,5 +69,6 @@ class CompanyUser(Base, TimestampMixin):
     designation: Mapped[str | None] = mapped_column(String(255), nullable=True)
     department: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
+    accessible_modules: Mapped[list[str]] = mapped_column(JSONB, server_default='[]', nullable=False)
 
     company = relationship("Company", back_populates="users")

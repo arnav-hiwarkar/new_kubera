@@ -4,10 +4,11 @@ import aiofiles
 from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Response
-from sqlalchemy import select, and_, or_, update, desc
+from sqlalchemy import select, and_, or_, update, desc, String, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.database import get_db
 from app.auth import get_current_company_user
 from app.models.company import CompanyUser, CompanyKey
@@ -117,9 +118,9 @@ async def handle_file_upload(
     company_kek = await get_company_kek(db, company_id)
     encrypted_dek, dek_nonce_for_kek = encrypt_dek(raw_dek, company_kek)
     
-    # Store file locally (for V1 testing)
-    # The file path format is /data/vault/{company_id}/{uuid}.enc
-    vault_dir = f"/data/vault/{company_id}"
+    # Store file locally (for V1 testing).
+    # Path format is {VAULT_STORAGE_PATH}/{company_id}/{uuid}.enc (default /data/vault).
+    vault_dir = f"{get_settings().VAULT_STORAGE_PATH}/{company_id}"
     os.makedirs(vault_dir, exist_ok=True)
     
     file_uuid = str(uuid.uuid4())
@@ -259,10 +260,12 @@ async def search_documents(
                 or_(
                     Document.title.ilike(search_term),
                     Document.status.cast(String).ilike(search_term),
-                    Bucket.name.ilike(search_term)
-                )
+                    func.array_to_string(Document.tags, ",").ilike(search_term),
+                    Bucket.name.ilike(search_term),
+                ),
             )
         )
+        .order_by(desc(Document.created_at))
     )
     result = await db.execute(query)
     return result.scalars().all()

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Logs
 logs
 *.log
@@ -7,10 +8,13 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+=======
+>>>>>>> new_frontend
 node_modules
 dist
 dist-ssr
 *.local
+<<<<<<< HEAD
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +26,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+=======
+.DS_Store
+coverage
+>>>>>>> new_frontend

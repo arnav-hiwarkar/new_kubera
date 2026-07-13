@@ -23,7 +23,9 @@ class Bucket(Base, TimestampMixin, TenantScopedMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=False)
+    # Nullable so system buckets (e.g. "Audit Attachments") can be created during
+    # an auditor's action, when there is no company user to attribute.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True)
 
 
 class Document(Base, TimestampMixin, TenantScopedMixin):
@@ -37,7 +39,8 @@ class Document(Base, TimestampMixin, TenantScopedMixin):
     doc_type_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True) # Will point to DocumentType in later phases
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False)
     is_editable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=False)
+    # Nullable for auditor-uploaded audit attachments (no company_users row for an auditor).
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True)
 
     versions = relationship("DocumentVersion", back_populates="document", foreign_keys="[DocumentVersion.document_id]")
 
@@ -55,7 +58,7 @@ class DocumentVersion(Base):
     encrypted_dek: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     dek_nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     
-    uploaded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=False)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
 

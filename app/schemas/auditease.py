@@ -1,25 +1,38 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.auditease import EngagementStatus, GrantStatus, AuditEntryStatus, EntryLineSide, RequestStatus, QueryStatus, SenderType
 
 
 # --- Ledger & Trial Balance ---
 
-class LedgerGroupBase(BaseModel):
-    name: str
-    parent_id: Optional[uuid.UUID] = None
-    has_children: bool = False
-
-class LedgerGroupCreate(LedgerGroupBase):
-    pass
-
-class LedgerGroupResponse(LedgerGroupBase):
+class LedgerGroupResponse(BaseModel):
     id: uuid.UUID
     company_id: Optional[uuid.UUID]
+    parent_id: Optional[uuid.UUID]
+    name: str
+    level: int
+    has_children: bool
     model_config = {"from_attributes": True}
+
+class LedgerGroupCreate(BaseModel):
+    name: str
+    parent_id: uuid.UUID  # top groups are seeded/read-only; a new group always has a parent
+
+class LedgerGroupRename(BaseModel):
+    name: str
+
+class MapLedgerRequest(BaseModel):
+    group_id: uuid.UUID
+
+class BulkMapRequest(BaseModel):
+    ledger_ids: List[uuid.UUID]
+    group_id: uuid.UUID
+
+class UnmapRequest(BaseModel):
+    ledger_ids: List[uuid.UUID]
 
 class TrialBalanceAccountBase(BaseModel):
     ledger_code: Optional[str] = None
@@ -36,9 +49,44 @@ class TrialBalanceAccountBase(BaseModel):
 class TrialBalanceAccountResponse(TrialBalanceAccountBase):
     id: uuid.UUID
     company_id: uuid.UUID
+    engagement_id: uuid.UUID
+    # Resolved group path root→leaf (e.g. ["Assets", "Current Assets", "Cash"]), for display.
+    mapped_group_path: Optional[List[str]] = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+
+# --- Trial Balance import (server-side, two-call) ---
+
+class TBSheetInfo(BaseModel):
+    name: str
+    headers: List[str]
+    preview_rows: List[List[Any]]  # first N data rows, raw cell values as strings
+
+
+class TBInspectResponse(BaseModel):
+    sheets: List[TBSheetInfo]
+
+
+class TBColumnMap(BaseModel):
+    """Maps each DB field to a source column header. `ledger_code` optional."""
+    ledger_code: Optional[str] = None
+    ledger_name: str
+    opening_balance: str
+    debit: str
+    credit: str
+    closing_balance: str
+
+
+class TBImportResult(BaseModel):
+    imported: int
+    skipped: int
+    errors: List[dict]
+    total_debit: float
+    total_credit: float
+    balanced: bool
+    accounts: List[TrialBalanceAccountResponse]
 
 
 # --- Engagements ---
@@ -56,6 +104,10 @@ class AuditEngagementResponse(AuditEngagementBase):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    # Populated by the company-side router for the single invited/accepted auditor.
+    # grant status is one of: invited | accepted | revoked | pending (not yet registered)
+    auditor_email: Optional[str] = None
+    auditor_grant_status: Optional[str] = None
     model_config = {"from_attributes": True}
 
 class AuditorEngagementGrantResponse(BaseModel):
@@ -78,7 +130,30 @@ class AuditEntryLineBase(BaseModel):
 class AuditEntryLineResponse(AuditEntryLineBase):
     id: uuid.UUID
     entry_id: uuid.UUID
+    # Flattened from the related trial-balance account so both the auditor and
+    # company UIs can show which ledger a line adjusts.
+    ledger_name: str
+    ledger_code: Optional[str] = None
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_ledger(cls, data):
+        # `data` is the ORM AuditEntryLine on the read path. Surface the ledger's
+        # name/code as flat fields; the relationship is eager-loaded by callers.
+        if isinstance(data, dict):
+            return data
+        ledger = getattr(data, "ledger", None)
+        values = {
+            "id": data.id,
+            "entry_id": data.entry_id,
+            "ledger_id": data.ledger_id,
+            "side": data.side,
+            "amount": data.amount,
+            "ledger_name": getattr(ledger, "ledger_name", None) or "(deleted ledger)",
+            "ledger_code": getattr(ledger, "ledger_code", None),
+        }
+        return values
 
 class AuditEntryCreate(BaseModel):
     code: Optional[str] = None
@@ -147,6 +222,52 @@ class QueryResponse(BaseModel):
 
 
 # --- Reports ---
+
+class ReportLine(BaseModel):
+    """One ledger's contribution to the statements, with audit adjustments applied."""
+    ledger_id: uuid.UUID
+    ledger_name: str
+    ledger_code: Optional[str] = None
+    # Top-level Schedule III group: Assets | Liabilities | Income | Expenditure | None
+    top_group: Optional[str] = None
+    group_path: Optional[List[str]] = None
+    closing: float
+    adjustment: float
+    final: float
+
+class ReportTotals(BaseModel):
+    assets: float
+    liabilities: float
+    income: float
+    expenditure: float
+
+class ReportBalanceCheck(BaseModel):
+    assets: float
+    liabilities_plus_equity: float
+    difference: float
+    balanced: bool
+
+class ReportEntrySummary(BaseModel):
+    id: uuid.UUID
+    code: Optional[str] = None
+    description: str
+    total: float
+    line_count: int
+
+class ReportEntriesBlock(BaseModel):
+    approved: List[ReportEntrySummary]
+    approved_count: int
+    proposed_count: int
+
+class ReportPreviewResponse(BaseModel):
+    period_label: str
+    lines: List[ReportLine]
+    totals: ReportTotals
+    net_profit: float
+    balance_check: ReportBalanceCheck
+    entries: ReportEntriesBlock
+    unmapped_count: int
+
 
 class ReportTemplateResponse(BaseModel):
     id: uuid.UUID

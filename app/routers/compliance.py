@@ -1,12 +1,13 @@
 import uuid
 from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.auth import get_current_company_user
 from app.models.company import CompanyUser
+from sqlalchemy import func
 from app.models.compliance import ComplianceDomain, DocumentType, MeetingRecord
 from app.schemas.compliance import DocumentTypeCreate, DocumentTypeResponse, MeetingRecordCreate, MeetingRecordResponse
 
@@ -43,7 +44,7 @@ def create_compliance_router(domain: ComplianceDomain, prefix: str, tags: List[s
             select(DocumentType).where(
                 and_(
                     DocumentType.domain == domain,
-                    DocumentType.company_id.in_([None, current_user.company_id])
+                    or_(DocumentType.company_id.is_(None), DocumentType.company_id == current_user.company_id)
                 )
             )
         )
@@ -80,7 +81,14 @@ def create_compliance_router(domain: ComplianceDomain, prefix: str, tags: List[s
         db_dt = result.scalar_one_or_none()
         if not db_dt:
             raise HTTPException(status_code=404, detail="Document type not found or not owned by company")
-            
+
+        # Guard: a type with records can't be hard-deleted (would orphan/FK-break them).
+        count_res = await db.execute(
+            select(func.count()).select_from(MeetingRecord).where(MeetingRecord.doc_type_id == dt_id)
+        )
+        if count_res.scalar_one() > 0:
+            raise HTTPException(status_code=409, detail="This document type has records — remove them first.")
+
         await db.delete(db_dt)
         await db.commit()
         return {"message": "Deleted"}
@@ -100,7 +108,8 @@ def create_compliance_router(domain: ComplianceDomain, prefix: str, tags: List[s
             company_id=current_user.company_id,
             doc_type_id=record.doc_type_id,
             document_id=record.document_id,
-            structured_metadata=record.structured_metadata
+            structured_metadata=record.structured_metadata,
+            record_date=record.record_date
         )
         db.add(db_rec)
         await db.commit()

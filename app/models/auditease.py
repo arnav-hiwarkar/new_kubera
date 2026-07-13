@@ -9,6 +9,7 @@ from app.models.base import Base, TimestampMixin, TenantScopedMixin
 
 
 class EngagementStatus(str, enum.Enum):
+    draft = "draft"
     invited = "invited"
     active = "active"
     closed = "closed"
@@ -50,15 +51,17 @@ class LedgerGroup(Base):
     parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ledger_groups.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     has_children: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # level 0: Top (Asset/Liab/Inc/Exp)
-    # level 1: Schedule III sub-group
-    # level 2: Sub-sub-group
+    # level 0: Top (Asset/Liab/Inc/Exp, seeded, read-only)
+    # level 1: sub-group (company-owned)
+    # level 2: sub-sub-group (company-owned)
+    level: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
 
 
 class TrialBalanceAccount(Base, TimestampMixin, TenantScopedMixin):
     __tablename__ = "trial_balance_accounts"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    engagement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("audit_engagements.id", ondelete="CASCADE"), nullable=False, index=True)
     ledger_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ledger_name: Mapped[str] = mapped_column(String(255), nullable=False)
     mapped_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ledger_groups.id"), nullable=True)
@@ -91,6 +94,18 @@ class AuditorEngagementGrant(Base):
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PendingAuditorInvite(Base):
+    """An invite to an email that has no auditor account yet. Converted to an
+    AuditorEngagementGrant automatically when an auditor registers with this email."""
+    __tablename__ = "pending_auditor_invites"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    engagement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("audit_engagements.id", ondelete="CASCADE"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    token: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
 # --- Audit Entries ---
 
 class AuditEntry(Base, TimestampMixin):
@@ -117,6 +132,9 @@ class AuditEntryLine(Base):
     amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
 
     entry = relationship("AuditEntry", back_populates="lines")
+    # The trial-balance ledger this line adjusts. Read paths eager-load it so the
+    # API can surface the ledger name/code (raise if accessed unloaded in async).
+    ledger = relationship("TrialBalanceAccount", lazy="raise")
 
 
 # --- Requests & Queries ---

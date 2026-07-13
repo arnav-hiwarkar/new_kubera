@@ -11,10 +11,12 @@ from app.database import get_db
 from app.auth import get_current_company_user, require_admin, get_visible_user_ids
 from app.models.company import CompanyUser
 from app.models.sales import SalesRecord, SalesStatus
-from app.schemas.sales import SalesRecordCreate, SalesRecordUpdate, SalesRecordResponse
+from app.schemas.sales import (
+    SalesRecordCreate, SalesRecordUpdate, SalesRecordResponse, SalesImportInspectResponse,
+)
 from app.models.custom_fields import CustomFieldModule
 from app.services.custom_field_validator import validate_custom_fields
-from app.services.import_service import parse_and_import, ColumnMapping, ImportResult
+from app.services.import_service import parse_and_import, ColumnMapping, ImportResult, inspect_spreadsheet
 from app.services.export_service import generate_xlsx, ExportColumn
 
 router = APIRouter(prefix="/api/v1/sales", tags=["sales"])
@@ -60,10 +62,13 @@ async def create_sales_record(
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    if body.custom_fields:
-        errors = await validate_custom_fields(body.custom_fields, current_user.company_id, CustomFieldModule.sales_tracking, db)
-        if errors:
-            raise HTTPException(status_code=400, detail={"custom_field_errors": errors})
+    # Always validate so required custom fields are enforced even when the
+    # payload omits custom_fields entirely.
+    errors = await validate_custom_fields(
+        body.custom_fields or {}, current_user.company_id, CustomFieldModule.sales_tracking, db
+    )
+    if errors:
+        raise HTTPException(status_code=400, detail={"custom_field_errors": errors})
 
     user_id = body.user_id or current_user.id
     if user_id != current_user.id:
@@ -150,6 +155,21 @@ async def update_sales_record(
     await db.commit()
     await db.refresh(sales)
     return sales
+
+@router.post("/import/inspect", response_model=SalesImportInspectResponse)
+async def inspect_sales_import(
+    file: UploadFile = File(...),
+    current_user: CompanyUser = Depends(get_current_company_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the uploaded spreadsheet's sheets/headers/preview for the mapping step."""
+    content = await file.read()
+    try:
+        sheets = inspect_spreadsheet(file.filename, content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"sheets": sheets}
+
 
 @router.post("/import", response_model=ImportResult)
 async def import_sales(

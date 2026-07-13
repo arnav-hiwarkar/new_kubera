@@ -1,6 +1,7 @@
 import uuid
 import enum
-from sqlalchemy import String, ForeignKey, Enum as SAEnum
+from datetime import date
+from sqlalchemy import String, ForeignKey, Date, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -31,5 +32,7 @@ class MeetingRecord(Base, TimestampMixin, TenantScopedMixin):
     doc_type_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("document_types.id"), nullable=False)
     document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
     structured_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The date the document pertains to (meeting/filing period); drives month views.
+    record_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     doc_type = relationship("DocumentType")

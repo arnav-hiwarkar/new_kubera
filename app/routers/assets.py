@@ -1,7 +1,7 @@
 import uuid
 import json
 from typing import Annotated, List, Optional
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Response
 from sqlalchemy import select, or_
@@ -11,13 +11,35 @@ from app.database import get_db
 from app.auth import get_current_company_user, require_admin, get_visible_user_ids
 from app.models.company import CompanyUser
 from app.models.assets import Asset, AssetCategory, AssetStatus
-from app.schemas.assets import AssetCreate, AssetUpdate, AssetResponse
+from app.schemas.assets import AssetCreate, AssetUpdate, AssetResponse, AssetImportInspectResponse
 from app.models.custom_fields import CustomFieldModule
 from app.services.custom_field_validator import validate_custom_fields
-from app.services.import_service import parse_and_import, ColumnMapping, ImportResult
+from app.services.import_service import parse_and_import, ColumnMapping, ImportResult, inspect_spreadsheet
 from app.services.export_service import generate_xlsx, ExportColumn
 
 router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
+
+
+def _parse_import_date(value) -> date:
+    """Coerce a spreadsheet cell into a date. openpyxl hands back datetime/date
+    objects; CSV hands back strings. Accepts ISO plus a few common day-first and
+    month-first formats. Raises ValueError on anything unparseable (the importer
+    turns that into a per-row error)."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    s = str(value).strip()
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        pass
+    for fmt in ("%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%Y/%m/%d", "%d %b %Y", "%d %B %Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"invalid date: {value}")
 
 @router.get("", response_model=List[AssetResponse])
 async def list_assets(
@@ -50,10 +72,13 @@ async def create_asset(
     current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    if body.custom_fields:
-        errors = await validate_custom_fields(body.custom_fields, current_user.company_id, CustomFieldModule.asset_management, db)
-        if errors:
-            raise HTTPException(status_code=400, detail={"custom_field_errors": errors})
+    # Always validate so required custom fields are enforced even when the
+    # payload omits custom_fields entirely.
+    errors = await validate_custom_fields(
+        body.custom_fields or {}, current_user.company_id, CustomFieldModule.asset_management, db
+    )
+    if errors:
+        raise HTTPException(status_code=400, detail={"custom_field_errors": errors})
 
     asset = Asset(
         company_id=current_user.company_id,
@@ -121,6 +146,22 @@ async def update_asset(
     await db.refresh(asset)
     return asset
 
+@router.post("/import/inspect", response_model=AssetImportInspectResponse)
+async def inspect_asset_import(
+    file: UploadFile = File(...),
+    current_user: CompanyUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the uploaded spreadsheet's sheets/headers/preview so the client can
+    build the column-mapping step before calling /import with the same file."""
+    content = await file.read()
+    try:
+        sheets = inspect_spreadsheet(file.filename, content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"sheets": sheets}
+
+
 @router.post("/import", response_model=ImportResult)
 async def import_assets(
     file: UploadFile = File(...),
@@ -156,6 +197,7 @@ async def import_assets(
         "serial_number": str,
         "category": AssetCategory,
         "status": AssetStatus,
+        "purchase_date": _parse_import_date,
         "purchase_cost": float,
     }
 

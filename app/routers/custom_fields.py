@@ -17,17 +17,16 @@ router = APIRouter(prefix="/api/v1/custom-fields", tags=["custom-fields"])
 async def list_custom_fields(
     module: CustomFieldModule,
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    db: Annotated[AsyncSession, Depends(get_db)],
+    include_inactive: bool = False,
 ):
-    result = await db.execute(
-        select(CustomFieldDefinition)
-        .where(
-            CustomFieldDefinition.company_id == current_user.company_id,
-            CustomFieldDefinition.module == module,
-            CustomFieldDefinition.is_active == True
-        )
-        .order_by(CustomFieldDefinition.display_order)
+    query = select(CustomFieldDefinition).where(
+        CustomFieldDefinition.company_id == current_user.company_id,
+        CustomFieldDefinition.module == module,
     )
+    if not include_inactive:
+        query = query.where(CustomFieldDefinition.is_active == True)
+    result = await db.execute(query.order_by(CustomFieldDefinition.display_order))
     return result.scalars().all()
 
 @router.post("/{module}", response_model=CustomFieldResponse, status_code=status.HTTP_201_CREATED)

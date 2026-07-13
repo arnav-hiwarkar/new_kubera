@@ -7,7 +7,8 @@ from app.models.notification import Notification
 from app.models.docvault import Bucket, Document, DocumentVersion, DocumentAccessOverride
 from app.models.auditease import (
     LedgerGroup, TrialBalanceAccount, AuditEngagement, AuditorEngagementGrant,
-    AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage, ReportTemplate
+    PendingAuditorInvite, AuditEntry, AuditEntryLine, RequirementRequest, Query,
+    QueryMessage, ReportTemplate
 )
 from app.models.compliance import ComplianceDomain, DocumentType, MeetingRecord
 from app.models.custom_fields import CustomFieldDefinition
