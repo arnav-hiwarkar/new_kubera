@@ -13,7 +13,8 @@ import { CustomFieldsPage } from '@/pages/company/customfields/CustomFieldsPage'
 import { EngagementsPage } from '@/pages/company/auditease/EngagementsPage'
 import { EngagementWorkspace } from '@/pages/company/auditease/EngagementWorkspace'
 import { CompliancePage } from '@/pages/company/compliance/CompliancePage'
-import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
+import { NotificationsPage } from '@/pages/company/notifications/NotificationsPage'
+import { ActivityLogPage } from '@/pages/company/activity/ActivityLogPage'
 
 /**
  * Company identity route tree. Everything under `/app` is wrapped by CompanyGuard,
@@ -57,23 +58,11 @@ export const companyRoutes: RouteObject = {
             },
             {
               path: 'notifications',
-              element: (
-                <ModulePlaceholder
-                  title="Notifications"
-                  description="Company notifications"
-                  endpoints={['/api/v1/notifications']}
-                />
-              ),
+              element: <NotificationsPage />,
             },
             {
               path: 'activity',
-              element: (
-                <ModulePlaceholder
-                  title="Activity Log"
-                  description="Audit trail of company actions"
-                  endpoints={['/api/v1/activity-log']}
-                />
-              ),
+              element: <ActivityLogPage />,
             },
             { path: '*', element: <Navigate to="/app" replace /> },
           ],
