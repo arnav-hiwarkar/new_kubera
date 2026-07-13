@@ -12,6 +12,7 @@ import { SalesPage } from '@/pages/company/sales/SalesPage'
 import { CustomFieldsPage } from '@/pages/company/customfields/CustomFieldsPage'
 import { EngagementsPage } from '@/pages/company/auditease/EngagementsPage'
 import { EngagementWorkspace } from '@/pages/company/auditease/EngagementWorkspace'
+import { CompliancePage } from '@/pages/company/compliance/CompliancePage'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
 
 /**
@@ -45,29 +46,8 @@ export const companyRoutes: RouteObject = {
             { path: 'sales', element: <SalesPage /> },
             { path: 'custom-fields', element: <CustomFieldsPage /> },
             { path: 'docvault', element: <DocVaultPage /> },
-            {
-              path: 'compliance/roc',
-              element: (
-                <ModulePlaceholder
-                  title="ROC Compliance"
-                  description="Registrar of Companies document types and meeting records"
-                  endpoints={['/api/v1/roc/document-types', '/api/v1/roc/meeting-records']}
-                />
-              ),
-            },
-            {
-              path: 'compliance/secretarial',
-              element: (
-                <ModulePlaceholder
-                  title="SecretarialEase"
-                  description="Secretarial compliance document types and meeting records"
-                  endpoints={[
-                    '/api/v1/secretarial/document-types',
-                    '/api/v1/secretarial/meeting-records',
-                  ]}
-                />
-              ),
-            },
+            { path: 'compliance/roc', element: <CompliancePage domain="roc" /> },
+            { path: 'compliance/secretarial', element: <CompliancePage domain="secretarial" /> },
             {
               path: 'auditease',
               children: [

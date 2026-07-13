@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
 
@@ -26,6 +26,7 @@ class MeetingRecordBase(BaseModel):
     doc_type_id: uuid.UUID
     document_id: Optional[uuid.UUID] = None
     structured_metadata: Optional[Dict[str, Any]] = None
+    record_date: Optional[date] = None
 
 class MeetingRecordCreate(MeetingRecordBase):
     pass

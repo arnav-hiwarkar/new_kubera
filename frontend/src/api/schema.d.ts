@@ -2319,6 +2319,8 @@ export interface components {
             structured_metadata?: {
                 [key: string]: unknown;
             } | null;
+            /** Record Date */
+            record_date?: string | null;
         };
         /** MeetingRecordResponse */
         MeetingRecordResponse: {
@@ -2333,6 +2335,8 @@ export interface components {
             structured_metadata?: {
                 [key: string]: unknown;
             } | null;
+            /** Record Date */
+            record_date?: string | null;
             /**
              * Id
              * Format: uuid
