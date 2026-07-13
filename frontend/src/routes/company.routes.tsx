@@ -1,6 +1,7 @@
 import type { RouteObject } from 'react-router-dom'
 import { Navigate, Outlet } from 'react-router-dom'
-import { CompanyAuthProvider, CompanyGuard, ModuleGuard } from '@/auth/company'
+import { CompanyAuthProvider, CompanyGuard } from '@/auth/company'
+import { ModuleGuard } from '@/auth/company/ModuleGuard'
 import { CompanyShell } from '@/layouts/CompanyShell'
 import { CompanyLogin } from '@/pages/company/CompanyLogin'
 import { Dashboard } from '@/pages/company/Dashboard'

@@ -75,18 +75,19 @@ const regionField: CustomFieldResponse = {
 
 function user(over: Partial<UserResponse> = {}): UserResponse {
   return {
-    id: 'u1',
-    email: 'u1@co.test',
-    full_name: 'Report One',
+    id: 'u-1',
+    email: 'user@example.com',
+    full_name: 'Regular User',
     role: 'employee',
-    manager_id: 'mgr',
+    manager_id: null,
     designation: null,
     department: null,
     is_active: true,
-    company_id: 'co',
-    created_at: '2026-07-01T00:00:00Z',
+    accessible_modules: [],
+    company_id: 'c-1',
+    created_at: new Date().toISOString(),
     ...over,
-  }
+  } as UserResponse
 }
 
 beforeEach(() => {

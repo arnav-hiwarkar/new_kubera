@@ -76,7 +76,7 @@ export function UsersDirectory() {
       <PageHeader
         title="Directory"
         description="Company users and reporting hierarchy"
-        action={
+        actions={
           <Button variant="primary" onClick={handleAdd}>
             Add User
           </Button>

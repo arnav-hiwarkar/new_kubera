@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Modal, Button, Field, Switch } from '@/components/ui'
-import { MODULE_IDS, type ModuleId } from '@/auth/company'
+import { Modal, Button, Field, Input, Select, Switch } from '@/components/ui'
+import { MODULE_IDS, type ModuleId } from '@/auth/company/ModuleGuard'
 import type { UserCreate, UserUpdate, UserResponse } from '@/api/types'
 
 interface UserModalProps {
@@ -92,56 +92,60 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
 
   return (
     <Modal
-      isOpen={isOpen}
+      open={isOpen}
       onClose={onClose}
       title={initialData ? 'Edit User' : 'New User'}
-      description={initialData ? 'Update user details and permissions.' : 'Create a new user account.'}
     >
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="grid grid-cols-2 gap-4">
-          <Field.Input
-            label="Full Name"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            required
-          />
-          <Field.Input
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            disabled={!!initialData}
-          />
-          {!initialData && (
-            <Field.Input
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+          <Field label="Full Name" required>
+            <Input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
               required
             />
+          </Field>
+          <Field label="Email" required>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={!!initialData}
+            />
+          </Field>
+          {!initialData && (
+            <Field label="Password" required>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </Field>
           )}
-          <Field.Select
-            label="Role"
-            value={role}
-            onChange={(e) => setRole(e.target.value as any)}
-            options={[
-              { label: 'Admin', value: 'admin' },
-              { label: 'Manager', value: 'manager' },
-              { label: 'Employee', value: 'employee' },
-            ]}
-          />
-          <Field.Input
-            label="Department"
-            value={department}
-            onChange={(e) => setDepartment(e.target.value)}
-          />
-          <Field.Input
-            label="Designation"
-            value={designation}
-            onChange={(e) => setDesignation(e.target.value)}
-          />
+          <Field label="Role">
+            <Select
+              value={role}
+              onChange={(e) => setRole(e.target.value as any)}
+            >
+              <option value="admin">Admin</option>
+              <option value="manager">Manager</option>
+              <option value="employee">Employee</option>
+            </Select>
+          </Field>
+          <Field label="Department">
+            <Input
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+            />
+          </Field>
+          <Field label="Designation">
+            <Input
+              value={designation}
+              onChange={(e) => setDesignation(e.target.value)}
+            />
+          </Field>
         </div>
 
         <div>

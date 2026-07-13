@@ -6,6 +6,7 @@ export interface NavItem {
   to: string
   /** Optional single-char / emoji glyph placeholder for the icon slot. */
   glyph?: string
+  moduleId?: string
 }
 
 export interface NavSection {

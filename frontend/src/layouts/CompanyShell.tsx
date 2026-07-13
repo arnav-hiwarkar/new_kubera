@@ -2,7 +2,8 @@ import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '@/components/ui/Sidebar'
 import { TopBar } from '@/components/ui/TopBar'
 import { companyNav } from '@/config/navigation'
-import { useCompanyAuth, hasModuleAccess, type ModuleId } from '@/auth/company'
+import { useCompanyAuth } from '@/auth/company'
+import { hasModuleAccess, type ModuleId } from '@/auth/company/ModuleGuard'
 
 export function CompanyShell() {
   const { profile, signOut } = useCompanyAuth()
