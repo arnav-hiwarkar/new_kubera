@@ -1,0 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens (ported from frontend_reference_old/css/base.css) ──────── */
+:root {
+  --bg-primary: #f7f8fa;
+  --bg-surface: #ffffff;
+  --bg-raised: #eef0f4;
+  --border: #dde1e9;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-subtle: #eff6ff;
+
+  /* Auditor identity uses a distinct green accent. */
+  --auditor-accent: #0f766e;
+  --auditor-accent-hover: #0d5f58;
+  --auditor-accent-subtle: #ecfdf5;
+
+  --status-uploaded: #3b82f6;
+  --status-pending: #f59e0b;
+  --status-action: #ef4444;
+  --status-verified: #10b981;
+  --status-submitted: #8b5cf6;
+  --status-overdue: #dc2626;
+  --status-archived: #6b7280;
+
+  --status-uploaded-bg: #eff6ff;
+  --status-pending-bg: #fffbeb;
+  --status-action-bg: #fef2f2;
+  --status-verified-bg: #ecfdf5;
+  --status-submitted-bg: #f5f3ff;
+  --status-overdue-bg: #fef2f2;
+  --status-archived-bg: #f3f4f6;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.18);
+  --shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme='dark'] {
+  --bg-primary: #0f1117;
+  --bg-surface: #1a1d27;
+  --bg-raised: #242736;
+  --border: #2e3347;
+  --text-primary: #f1f3f9;
+  --text-secondary: #9ba3b8;
+  --text-muted: #5c6480;
+
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-subtle: #1e2d4a;
+
+  --auditor-accent: #2dd4bf;
+  --auditor-accent-hover: #5eead4;
+  --auditor-accent-subtle: #10312c;
+
+  --status-uploaded-bg: rgba(59, 130, 246, 0.14);
+  --status-pending-bg: rgba(245, 158, 11, 0.14);
+  --status-action-bg: rgba(239, 68, 68, 0.14);
+  --status-verified-bg: rgba(16, 185, 129, 0.14);
+  --status-submitted-bg: rgba(139, 92, 246, 0.14);
+  --status-overdue-bg: rgba(220, 38, 38, 0.14);
+  --status-archived-bg: rgba(107, 114, 128, 0.14);
+
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  font-size: 14px;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Status badge bg pairs — referenced by StatusBadge via the tone name. */
+.badge-bg-uploaded { background: var(--status-uploaded-bg); }
+.badge-bg-pending { background: var(--status-pending-bg); }
+.badge-bg-action { background: var(--status-action-bg); }
+.badge-bg-verified { background: var(--status-verified-bg); }
+.badge-bg-submitted { background: var(--status-submitted-bg); }
+.badge-bg-overdue { background: var(--status-overdue-bg); }
+.badge-bg-archived { background: var(--status-archived-bg); }

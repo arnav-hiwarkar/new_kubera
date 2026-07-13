@@ -4,7 +4,7 @@ import aiofiles
 from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Response
-from sqlalchemy import select, and_, or_, update, desc
+from sqlalchemy import select, and_, or_, update, desc, String, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -259,10 +259,12 @@ async def search_documents(
                 or_(
                     Document.title.ilike(search_term),
                     Document.status.cast(String).ilike(search_term),
-                    Bucket.name.ilike(search_term)
-                )
+                    func.array_to_string(Document.tags, ",").ilike(search_term),
+                    Bucket.name.ilike(search_term),
+                ),
             )
         )
+        .order_by(desc(Document.created_at))
     )
     result = await db.execute(query)
     return result.scalars().all()
