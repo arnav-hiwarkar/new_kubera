@@ -16,8 +16,9 @@ import { useEngagement, useCompanyTrialBalance, useCloseEngagement } from '@/api
 import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable'
 import { ImportTrialBalanceModal } from './ImportTrialBalanceModal'
 import { InviteAuditorModal } from './InviteAuditorModal'
+import { MappingTab } from './MappingTab'
 
-type Tab = 'overview' | 'trial-balance'
+type Tab = 'overview' | 'trial-balance' | 'mapping'
 
 export function EngagementWorkspace() {
   const { engagementId = '' } = useParams()
@@ -54,9 +55,12 @@ export function EngagementWorkspace() {
     }
   }
 
+  const mappedCount = accounts.filter((a) => a.mapped_group_id).length
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'trial-balance', label: 'Trial Balance' },
+    { id: 'mapping', label: 'Mapping' },
   ]
 
   return (
@@ -128,6 +132,13 @@ export function EngagementWorkspace() {
             <div className="mt-1 text-2xl font-semibold text-text-primary">{accounts.length}</div>
           </Card>
           <Card>
+            <div className="text-sm text-text-muted">Mapped</div>
+            <div className="mt-1 text-2xl font-semibold text-text-primary">
+              {mappedCount}
+              <span className="text-base font-normal text-text-muted">/{accounts.length}</span>
+            </div>
+          </Card>
+          <Card>
             <div className="text-sm text-text-muted">Balanced</div>
             <div
               className={cn(
@@ -167,6 +178,9 @@ export function EngagementWorkspace() {
           <TrialBalanceTable accounts={accounts} loading={tbLoading} />
         </div>
       )}
+
+      {/* Mapping */}
+      {tab === 'mapping' && <MappingTab engagementId={eng.id} />}
 
       {importOpen && (
         <ImportTrialBalanceModal

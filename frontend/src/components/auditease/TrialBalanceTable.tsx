@@ -17,6 +17,17 @@ const columns: Column<TrialBalanceAccountResponse>[] = [
     sortValue: (a) => a.ledger_name.toLowerCase(),
     cell: (a) => <span className="font-medium text-text-primary">{a.ledger_name}</span>,
   },
+  {
+    key: 'group',
+    header: 'Group',
+    sortValue: (a) => a.mapped_group_path?.join(' › ') ?? '',
+    cell: (a) =>
+      a.mapped_group_path && a.mapped_group_path.length > 0 ? (
+        <span className="text-text-secondary">{a.mapped_group_path.join(' › ')}</span>
+      ) : (
+        <span className="text-text-muted italic">Unmapped</span>
+      ),
+  },
   { key: 'opening_balance', header: 'Opening', align: 'right', sortValue: (a) => a.opening_balance, cell: (a) => money(a.opening_balance) },
   { key: 'debit', header: 'Debit', align: 'right', sortValue: (a) => a.debit, cell: (a) => money(a.debit) },
   { key: 'credit', header: 'Credit', align: 'right', sortValue: (a) => a.credit, cell: (a) => money(a.credit) },

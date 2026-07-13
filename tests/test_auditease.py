@@ -236,6 +236,125 @@ async def test_reimport_blocked_after_entries(client: AsyncClient):
     assert resp.status_code == 409
 
 
+async def get_groups(client, headers):
+    resp = await client.get("/api/v1/auditease/ledger-groups", headers=headers)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def find_group(groups, name):
+    return next(g for g in groups if g["name"] == name)
+
+
+@pytest.mark.asyncio
+async def test_chart_of_accounts(client: AsyncClient):
+    await create_test_company(client, email="coa2@a.com", password="pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='coa2@a.com', password='pass')}"}
+
+    groups = await get_groups(client, headers)
+    tops = {g["name"] for g in groups if g["level"] == 0}
+    assert tops == {"Assets", "Liabilities", "Income", "Expenditure"}
+    assets = find_group(groups, "Assets")
+    assert assets["company_id"] is None  # seeded, read-only
+
+    # subgroup (level 1)
+    resp = await client.post("/api/v1/auditease/ledger-groups", json={"name": "Current Assets", "parent_id": assets["id"]}, headers=headers)
+    assert resp.status_code == 201, resp.text
+    ca = resp.json()
+    assert ca["level"] == 1
+
+    # subsubgroup (level 2)
+    resp = await client.post("/api/v1/auditease/ledger-groups", json={"name": "Cash & Bank", "parent_id": ca["id"]}, headers=headers)
+    assert resp.status_code == 201
+    cb = resp.json()
+    assert cb["level"] == 2
+
+    # depth cap
+    resp = await client.post("/api/v1/auditease/ledger-groups", json={"name": "Too Deep", "parent_id": cb["id"]}, headers=headers)
+    assert resp.status_code == 400
+
+    # cannot rename a seeded top group
+    resp = await client.patch(f"/api/v1/auditease/ledger-groups/{assets['id']}", json={"name": "Nope"}, headers=headers)
+    assert resp.status_code == 403
+
+    # can rename own group
+    resp = await client.patch(f"/api/v1/auditease/ledger-groups/{ca['id']}", json={"name": "Current Assets 2"}, headers=headers)
+    assert resp.status_code == 200
+
+    # parent flags updated
+    groups = await get_groups(client, headers)
+    assert find_group(groups, "Assets")["has_children"] is True
+    assert find_group(groups, "Current Assets 2")["has_children"] is True
+
+    # delete guard: has children
+    resp = await client.delete(f"/api/v1/auditease/ledger-groups/{ca['id']}", headers=headers)
+    assert resp.status_code == 409
+    # delete leaf, parent flag clears
+    resp = await client.delete(f"/api/v1/auditease/ledger-groups/{cb['id']}", headers=headers)
+    assert resp.status_code == 204
+    groups = await get_groups(client, headers)
+    assert find_group(groups, "Current Assets 2")["has_children"] is False
+
+
+@pytest.mark.asyncio
+async def test_ledger_mapping(client: AsyncClient):
+    await create_test_company(client, email="map@a.com", password="pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='map@a.com', password='pass')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "mapaud@a.com", "password": "pass", "name": "A"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "mapaud@a.com", "password": "pass"})
+    aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    eng_id = await make_engagement(client, co_headers)
+    imp = await import_tb(client, eng_id, co_headers)
+    ledgers = imp.json()["accounts"]
+    cash, loan = ledgers[0]["id"], ledgers[1]["id"]
+
+    groups = await get_groups(client, co_headers)
+    assets = find_group(groups, "Assets")
+    liab = find_group(groups, "Liabilities")
+
+    # subgroup under Assets, then map cash to the leaf
+    resp = await client.post("/api/v1/auditease/ledger-groups", json={"name": "Current Assets", "parent_id": assets["id"]}, headers=co_headers)
+    ca = resp.json()
+
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/ledgers/{cash}/map", json={"group_id": ca["id"]}, headers=co_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["mapped_group_path"] == ["Assets", "Current Assets"]
+
+    # mapping to a non-leaf (Assets now has children) is rejected
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/ledgers/{loan}/map", json={"group_id": assets["id"]}, headers=co_headers)
+    assert resp.status_code == 400
+
+    # map loan directly to Liabilities (a leaf)
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/ledgers/{loan}/map", json={"group_id": liab["id"]}, headers=co_headers)
+    assert resp.status_code == 200
+    assert resp.json()["mapped_group_path"] == ["Liabilities"]
+
+    # can't add a subgroup under Liabilities while a ledger is mapped directly to it
+    resp = await client.post("/api/v1/auditease/ledger-groups", json={"name": "Provisions", "parent_id": liab["id"]}, headers=co_headers)
+    assert resp.status_code == 409
+
+    # company TB reflects the mapping path
+    tb = await client.get(f"/api/v1/auditease/engagements/{eng_id}/trial-balance", headers=co_headers)
+    cash_row = next(a for a in tb.json() if a["id"] == cash)
+    assert cash_row["mapped_group_path"] == ["Assets", "Current Assets"]
+
+    # auditor sees the mapping too
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "mapaud@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+    tb = await client.get(f"/api/v1/auditor/engagements/{eng_id}/trial-balance", headers=aud_headers)
+    cash_row = next(a for a in tb.json() if a["id"] == cash)
+    assert cash_row["mapped_group_path"] == ["Assets", "Current Assets"]
+
+    # bulk map then unmap
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/ledgers/bulk-map", json={"ledger_ids": [cash, loan], "group_id": ca["id"]}, headers=co_headers)
+    assert resp.json()["updated"] == 2
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/ledgers/unmap", json={"ledger_ids": [cash, loan]}, headers=co_headers)
+    assert resp.json()["updated"] == 2
+    tb = await client.get(f"/api/v1/auditease/engagements/{eng_id}/trial-balance", headers=co_headers)
+    assert all(a["mapped_group_path"] is None for a in tb.json())
+
+
 @pytest.mark.asyncio
 async def test_audit_entries(client: AsyncClient):
     await create_test_company(client, email="co2@a.com", password="pass")

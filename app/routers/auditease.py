@@ -18,12 +18,14 @@ from app.models.auditease import (
     EngagementStatus, GrantStatus, AuditEntryStatus, RequestStatus, QueryStatus, SenderType
 )
 from app.schemas.auditease import (
-    TrialBalanceAccountResponse, LedgerGroupResponse, AuditEngagementCreate,
+    TrialBalanceAccountResponse, LedgerGroupResponse, LedgerGroupCreate, LedgerGroupRename,
+    MapLedgerRequest, BulkMapRequest, UnmapRequest, AuditEngagementCreate,
     AuditEngagementResponse, AuditEntryResponse, RequirementRequestResponse,
     QueryResponse, QueryMessageResponse, QueryMessageCreate,
     TBColumnMap, TBInspectResponse, TBImportResult,
 )
 from app.services import import_service
+from app.services import ledger_groups as lg
 
 router = APIRouter(prefix="/api/v1/auditease", tags=["auditease-company"])
 
@@ -168,31 +170,251 @@ async def get_trial_balance(
         .where(TrialBalanceAccount.engagement_id == engagement_id)
         .order_by(TrialBalanceAccount.ledger_name)
     )
-    return result.scalars().all()
+    accounts = list(result.scalars().all())
+    path_map = await lg.resolve_group_paths(db, current_user.company_id)
+    return lg.attach_group_paths(accounts, path_map)
 
 
-@router.post("/ledgers/{ledger_id}/map-group", response_model=TrialBalanceAccountResponse)
-async def map_ledger_group(
-    ledger_id: uuid.UUID,
-    group_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
-):
-    result = await db.execute(select(TrialBalanceAccount).where(and_(TrialBalanceAccount.id == ledger_id, TrialBalanceAccount.company_id == current_user.company_id)))
-    ledger = result.scalar_one_or_none()
-    if not ledger:
-        raise HTTPException(status_code=404, detail="Ledger not found")
-        
-    # Check if group exists (either seeded or company-owned)
-    grp_res = await db.execute(select(LedgerGroup).where(and_(LedgerGroup.id == group_id, LedgerGroup.company_id.in_([None, current_user.company_id]))))
-    group = grp_res.scalar_one_or_none()
+# --- Chart of accounts (ledger groups) ---
+
+async def _get_owned_group(db: AsyncSession, company_id: uuid.UUID, group_id: uuid.UUID) -> LedgerGroup:
+    """Fetch a group the company may edit — must be company-owned (not seeded)."""
+    res = await db.execute(select(LedgerGroup).where(LedgerGroup.id == group_id))
+    group = res.scalar_one_or_none()
+    if not group or group.company_id not in (None, company_id):
+        raise HTTPException(status_code=404, detail="Group not found")
+    if group.company_id is None:
+        raise HTTPException(status_code=403, detail="Seeded top-level groups cannot be modified")
+    return group
+
+
+async def _visible_group(db: AsyncSession, company_id: uuid.UUID, group_id: uuid.UUID) -> LedgerGroup:
+    res = await db.execute(
+        select(LedgerGroup).where(
+            and_(LedgerGroup.id == group_id, LedgerGroup.company_id.in_([None, company_id]))
+        )
+    )
+    group = res.scalar_one_or_none()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
-        
+    return group
+
+
+async def _has_children(db: AsyncSession, company_id: uuid.UUID, group_id: uuid.UUID) -> bool:
+    """Children visible to THIS company. `has_children` cannot be a stored flag on
+    the shared seeded top groups, so it is always computed per-company here."""
+    res = await db.execute(
+        select(LedgerGroup.id).where(
+            and_(
+                LedgerGroup.parent_id == group_id,
+                LedgerGroup.company_id.in_([None, company_id]),
+            )
+        ).limit(1)
+    )
+    return res.first() is not None
+
+
+@router.get("/ledger-groups", response_model=List[LedgerGroupResponse])
+async def list_ledger_groups(
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    await lg.ensure_default_ledger_groups(db)
+    await db.commit()
+    groups = await lg.load_visible_groups(db, current_user.company_id)
+    parent_ids = {g.parent_id for g in groups if g.parent_id}
+    return [
+        LedgerGroupResponse(
+            id=g.id,
+            company_id=g.company_id,
+            parent_id=g.parent_id,
+            name=g.name,
+            level=g.level,
+            has_children=g.id in parent_ids,
+        )
+        for g in groups
+    ]
+
+
+@router.post("/ledger-groups", response_model=LedgerGroupResponse, status_code=status.HTTP_201_CREATED)
+async def create_ledger_group(
+    payload: LedgerGroupCreate,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    parent = await _visible_group(db, current_user.company_id, payload.parent_id)
+    if parent.level >= 2:
+        raise HTTPException(status_code=400, detail="Maximum depth reached (group → subgroup → subsubgroup)")
+
+    # Leaf invariant: can't add a child to a group that ledgers are mapped to directly.
+    mapped = await db.execute(
+        select(func.count()).select_from(TrialBalanceAccount).where(
+            and_(
+                TrialBalanceAccount.company_id == current_user.company_id,
+                TrialBalanceAccount.mapped_group_id == parent.id,
+            )
+        )
+    )
+    if mapped.scalar_one() > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Ledgers are mapped directly to this group. Remap them before adding subgroups.",
+        )
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+
+    group = LedgerGroup(
+        company_id=current_user.company_id,
+        parent_id=parent.id,
+        name=name,
+        level=parent.level + 1,
+        has_children=False,
+    )
+    db.add(group)
+    await db.commit()
+    await db.refresh(group)
+    # A freshly created group is always a leaf.
+    return LedgerGroupResponse(
+        id=group.id, company_id=group.company_id, parent_id=group.parent_id,
+        name=group.name, level=group.level, has_children=False,
+    )
+
+
+@router.patch("/ledger-groups/{group_id}", response_model=LedgerGroupResponse)
+async def rename_ledger_group(
+    group_id: uuid.UUID,
+    payload: LedgerGroupRename,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    group = await _get_owned_group(db, current_user.company_id, group_id)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    group.name = name
+    await db.commit()
+    await db.refresh(group)
+    has_children = await _has_children(db, current_user.company_id, group.id)
+    return LedgerGroupResponse(
+        id=group.id, company_id=group.company_id, parent_id=group.parent_id,
+        name=group.name, level=group.level, has_children=has_children,
+    )
+
+
+@router.delete("/ledger-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_ledger_group(
+    group_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    group = await _get_owned_group(db, current_user.company_id, group_id)
+    if await _has_children(db, current_user.company_id, group.id):
+        raise HTTPException(status_code=409, detail="Delete subgroups first")
+
+    mapped = await db.execute(
+        select(func.count()).select_from(TrialBalanceAccount).where(
+            and_(
+                TrialBalanceAccount.company_id == current_user.company_id,
+                TrialBalanceAccount.mapped_group_id == group.id,
+            )
+        )
+    )
+    if mapped.scalar_one() > 0:
+        raise HTTPException(status_code=409, detail="Ledgers are mapped to this group. Remap them first.")
+
+    await db.delete(group)
+    await db.commit()
+    return None
+
+
+# --- Ledger mapping (per engagement) ---
+
+async def _require_leaf_group(db: AsyncSession, company_id: uuid.UUID, group_id: uuid.UUID) -> LedgerGroup:
+    group = await _visible_group(db, company_id, group_id)
+    if await _has_children(db, company_id, group.id):
+        raise HTTPException(
+            status_code=400,
+            detail="Select a leaf group — this group has subgroups, choose one of them.",
+        )
+    return group
+
+
+@router.post("/engagements/{engagement_id}/ledgers/{ledger_id}/map", response_model=TrialBalanceAccountResponse)
+async def map_ledger(
+    engagement_id: uuid.UUID,
+    ledger_id: uuid.UUID,
+    payload: MapLedgerRequest,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    group = await _require_leaf_group(db, current_user.company_id, payload.group_id)
+
+    res = await db.execute(
+        select(TrialBalanceAccount).where(
+            and_(TrialBalanceAccount.id == ledger_id, TrialBalanceAccount.engagement_id == engagement_id)
+        )
+    )
+    ledger = res.scalar_one_or_none()
+    if not ledger:
+        raise HTTPException(status_code=404, detail="Ledger not found")
+
     ledger.mapped_group_id = group.id
     await db.commit()
     await db.refresh(ledger)
-    return ledger
+    path_map = await lg.resolve_group_paths(db, current_user.company_id)
+    return lg.attach_group_paths([ledger], path_map)[0]
+
+
+@router.post("/engagements/{engagement_id}/ledgers/bulk-map")
+async def bulk_map_ledgers(
+    engagement_id: uuid.UUID,
+    payload: BulkMapRequest,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    group = await _require_leaf_group(db, current_user.company_id, payload.group_id)
+    if not payload.ledger_ids:
+        return {"updated": 0}
+    result = await db.execute(
+        update(TrialBalanceAccount)
+        .where(
+            and_(
+                TrialBalanceAccount.engagement_id == engagement_id,
+                TrialBalanceAccount.id.in_(payload.ledger_ids),
+            )
+        )
+        .values(mapped_group_id=group.id)
+    )
+    await db.commit()
+    return {"updated": result.rowcount}
+
+
+@router.post("/engagements/{engagement_id}/ledgers/unmap")
+async def unmap_ledgers(
+    engagement_id: uuid.UUID,
+    payload: UnmapRequest,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    if not payload.ledger_ids:
+        return {"updated": 0}
+    result = await db.execute(
+        update(TrialBalanceAccount)
+        .where(
+            and_(
+                TrialBalanceAccount.engagement_id == engagement_id,
+                TrialBalanceAccount.id.in_(payload.ledger_ids),
+            )
+        )
+        .values(mapped_group_id=None)
+    )
+    await db.commit()
+    return {"updated": result.rowcount}
 
 
 # --- Engagements ---

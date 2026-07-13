@@ -51,9 +51,10 @@ class LedgerGroup(Base):
     parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ledger_groups.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     has_children: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # level 0: Top (Asset/Liab/Inc/Exp)
-    # level 1: Schedule III sub-group
-    # level 2: Sub-sub-group
+    # level 0: Top (Asset/Liab/Inc/Exp, seeded, read-only)
+    # level 1: sub-group (company-owned)
+    # level 2: sub-sub-group (company-owned)
+    level: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
 
 
 class TrialBalanceAccount(Base, TimestampMixin, TenantScopedMixin):

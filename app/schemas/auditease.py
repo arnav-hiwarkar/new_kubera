@@ -8,18 +8,31 @@ from app.models.auditease import EngagementStatus, GrantStatus, AuditEntryStatus
 
 # --- Ledger & Trial Balance ---
 
-class LedgerGroupBase(BaseModel):
-    name: str
-    parent_id: Optional[uuid.UUID] = None
-    has_children: bool = False
-
-class LedgerGroupCreate(LedgerGroupBase):
-    pass
-
-class LedgerGroupResponse(LedgerGroupBase):
+class LedgerGroupResponse(BaseModel):
     id: uuid.UUID
     company_id: Optional[uuid.UUID]
+    parent_id: Optional[uuid.UUID]
+    name: str
+    level: int
+    has_children: bool
     model_config = {"from_attributes": True}
+
+class LedgerGroupCreate(BaseModel):
+    name: str
+    parent_id: uuid.UUID  # top groups are seeded/read-only; a new group always has a parent
+
+class LedgerGroupRename(BaseModel):
+    name: str
+
+class MapLedgerRequest(BaseModel):
+    group_id: uuid.UUID
+
+class BulkMapRequest(BaseModel):
+    ledger_ids: List[uuid.UUID]
+    group_id: uuid.UUID
+
+class UnmapRequest(BaseModel):
+    ledger_ids: List[uuid.UUID]
 
 class TrialBalanceAccountBase(BaseModel):
     ledger_code: Optional[str] = None
@@ -34,6 +47,8 @@ class TrialBalanceAccountResponse(TrialBalanceAccountBase):
     id: uuid.UUID
     company_id: uuid.UUID
     engagement_id: uuid.UUID
+    # Resolved group path root→leaf (e.g. ["Assets", "Current Assets", "Cash"]), for display.
+    mapped_group_path: Optional[List[str]] = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}

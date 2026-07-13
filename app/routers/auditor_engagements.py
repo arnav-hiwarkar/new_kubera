@@ -103,13 +103,16 @@ async def get_trial_balance(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id)
     result = await db.execute(
         select(TrialBalanceAccount)
         .where(TrialBalanceAccount.engagement_id == engagement_id)
         .order_by(TrialBalanceAccount.ledger_name)
     )
-    return result.scalars().all()
+    accounts = list(result.scalars().all())
+    from app.services import ledger_groups as lg
+    path_map = await lg.resolve_group_paths(db, eng.company_id)
+    return lg.attach_group_paths(accounts, path_map)
 
 
 @router.post("/engagements/{engagement_id}/entries", response_model=AuditEntryResponse, status_code=status.HTTP_201_CREATED)

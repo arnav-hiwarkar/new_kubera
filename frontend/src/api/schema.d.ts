@@ -753,7 +753,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auditease/ledgers/{ledger_id}/map-group": {
+    "/api/v1/auditease/ledger-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Ledger Groups */
+        get: operations["list_ledger_groups_api_v1_auditease_ledger_groups_get"];
+        put?: never;
+        /** Create Ledger Group */
+        post: operations["create_ledger_group_api_v1_auditease_ledger_groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/ledger-groups/{group_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -762,8 +780,60 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Map Ledger Group */
-        post: operations["map_ledger_group_api_v1_auditease_ledgers__ledger_id__map_group_post"];
+        post?: never;
+        /** Delete Ledger Group */
+        delete: operations["delete_ledger_group_api_v1_auditease_ledger_groups__group_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Ledger Group */
+        patch: operations["rename_ledger_group_api_v1_auditease_ledger_groups__group_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/ledgers/{ledger_id}/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Map Ledger */
+        post: operations["map_ledger_api_v1_auditease_engagements__engagement_id__ledgers__ledger_id__map_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/ledgers/bulk-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk Map Ledgers */
+        post: operations["bulk_map_ledgers_api_v1_auditease_engagements__engagement_id__ledgers_bulk_map_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/ledgers/unmap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unmap Ledgers */
+        post: operations["unmap_ledgers_api_v1_auditease_engagements__engagement_id__ledgers_unmap_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1553,6 +1623,16 @@ export interface components {
              */
             updated_at: string;
         };
+        /** BulkMapRequest */
+        BulkMapRequest: {
+            /** Ledger Ids */
+            ledger_ids: string[];
+            /**
+             * Group Id
+             * Format: uuid
+             */
+            group_id: string;
+        };
         /** CompanyCreateRequest */
         CompanyCreateRequest: {
             /** Name */
@@ -1964,6 +2044,39 @@ export interface components {
             /** Rejection Reason */
             rejection_reason?: string | null;
         };
+        /** LedgerGroupCreate */
+        LedgerGroupCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Parent Id
+             * Format: uuid
+             */
+            parent_id: string;
+        };
+        /** LedgerGroupRename */
+        LedgerGroupRename: {
+            /** Name */
+            name: string;
+        };
+        /** LedgerGroupResponse */
+        LedgerGroupResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Company Id */
+            company_id: string | null;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Name */
+            name: string;
+            /** Level */
+            level: number;
+            /** Has Children */
+            has_children: boolean;
+        };
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -1973,6 +2086,14 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** MapLedgerRequest */
+        MapLedgerRequest: {
+            /**
+             * Group Id
+             * Format: uuid
+             */
+            group_id: string;
         };
         /** MeetingRecordCreate */
         MeetingRecordCreate: {
@@ -2365,6 +2486,8 @@ export interface components {
              * Format: uuid
              */
             engagement_id: string;
+            /** Mapped Group Path */
+            mapped_group_path?: string[] | null;
             /**
              * Created At
              * Format: date-time
@@ -2375,6 +2498,11 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** UnmapRequest */
+        UnmapRequest: {
+            /** Ledger Ids */
+            ledger_ids: string[];
         };
         /** UserCreate */
         UserCreate: {
@@ -4107,15 +4235,11 @@ export interface operations {
             };
         };
     };
-    map_ledger_group_api_v1_auditease_ledgers__ledger_id__map_group_post: {
+    list_ledger_groups_api_v1_auditease_ledger_groups_get: {
         parameters: {
-            query: {
-                group_id: string;
-            };
+            query?: never;
             header?: never;
-            path: {
-                ledger_id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -4126,7 +4250,201 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["LedgerGroupResponse"][];
+                };
+            };
+        };
+    };
+    create_ledger_group_api_v1_auditease_ledger_groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerGroupCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerGroupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_ledger_group_api_v1_auditease_ledger_groups__group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_ledger_group_api_v1_auditease_ledger_groups__group_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerGroupRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerGroupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    map_ledger_api_v1_auditease_engagements__engagement_id__ledgers__ledger_id__map_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                ledger_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MapLedgerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": components["schemas"]["TrialBalanceAccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_map_ledgers_api_v1_auditease_engagements__engagement_id__ledgers_bulk_map_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkMapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmap_ledgers_api_v1_auditease_engagements__engagement_id__ledgers_unmap_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnmapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

@@ -7,6 +7,12 @@ import type {
   TrialBalanceAccountResponse,
   TBInspectResponse,
   TBImportResult,
+  LedgerGroupResponse,
+  LedgerGroupCreate,
+  LedgerGroupRename,
+  MapLedgerRequest,
+  BulkMapRequest,
+  UnmapRequest,
   RequirementRequestResponse,
   RequirementFulfill,
   QueryResponse,
@@ -47,6 +53,33 @@ export const auditeaseCompanyApi = {
   getTrialBalance: (engagementId: string) =>
     companyClient.get<TrialBalanceAccountResponse[]>(
       `/api/v1/auditease/engagements/${engagementId}/trial-balance`,
+    ),
+
+  // Chart of accounts (company-global groups)
+  listLedgerGroups: () =>
+    companyClient.get<LedgerGroupResponse[]>('/api/v1/auditease/ledger-groups'),
+  createLedgerGroup: (body: LedgerGroupCreate) =>
+    companyClient.post<LedgerGroupResponse>('/api/v1/auditease/ledger-groups', { body }),
+  renameLedgerGroup: (id: string, body: LedgerGroupRename) =>
+    companyClient.patch<LedgerGroupResponse>(`/api/v1/auditease/ledger-groups/${id}`, { body }),
+  deleteLedgerGroup: (id: string) =>
+    companyClient.delete<void>(`/api/v1/auditease/ledger-groups/${id}`),
+
+  // Mapping (per engagement)
+  mapLedger: (engagementId: string, ledgerId: string, body: MapLedgerRequest) =>
+    companyClient.post<TrialBalanceAccountResponse>(
+      `/api/v1/auditease/engagements/${engagementId}/ledgers/${ledgerId}/map`,
+      { body },
+    ),
+  bulkMapLedgers: (engagementId: string, body: BulkMapRequest) =>
+    companyClient.post<{ updated: number }>(
+      `/api/v1/auditease/engagements/${engagementId}/ledgers/bulk-map`,
+      { body },
+    ),
+  unmapLedgers: (engagementId: string, body: UnmapRequest) =>
+    companyClient.post<{ updated: number }>(
+      `/api/v1/auditease/engagements/${engagementId}/ledgers/unmap`,
+      { body },
     ),
 
   // Entries / requirements / queries (later slices)
