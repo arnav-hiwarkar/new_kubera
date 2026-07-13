@@ -29,6 +29,8 @@ export type CustomFieldUpdate = S['CustomFieldUpdate']
 export type AssetResponse = S['AssetResponse']
 export type AssetCreate = S['AssetCreate']
 export type AssetUpdate = S['AssetUpdate']
+export type AssetImportInspectResponse = S['AssetImportInspectResponse']
+export type AssetSheetInfo = S['AssetSheetInfo']
 
 // Sales
 export type SalesRecordResponse = S['SalesRecordResponse']

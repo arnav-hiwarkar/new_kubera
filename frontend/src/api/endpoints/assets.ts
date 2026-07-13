@@ -1,5 +1,11 @@
 import { companyClient } from '@/api/clients/company'
-import type { AssetResponse, AssetCreate, AssetUpdate, ImportResult } from '@/api/types'
+import type {
+  AssetResponse,
+  AssetCreate,
+  AssetUpdate,
+  ImportResult,
+  AssetImportInspectResponse,
+} from '@/api/types'
 
 export type AssetFilters = {
   category?: string
@@ -13,6 +19,8 @@ export const assetsApi = {
   create: (body: AssetCreate) => companyClient.post<AssetResponse>('/api/v1/assets', { body }),
   update: (id: string, body: AssetUpdate) =>
     companyClient.patch<AssetResponse>(`/api/v1/assets/${id}`, { body }),
+  inspectImport: (formData: FormData) =>
+    companyClient.post<AssetImportInspectResponse>('/api/v1/assets/import/inspect', { formData }),
   import: (formData: FormData) =>
     companyClient.post<ImportResult>('/api/v1/assets/import', { formData }),
   exportExcel: () =>

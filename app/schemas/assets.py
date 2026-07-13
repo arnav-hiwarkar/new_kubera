@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.assets import AssetCategory, AssetStatus
@@ -27,6 +27,16 @@ class AssetUpdate(BaseModel):
     custodian_id: Optional[uuid.UUID] = None
     document_id: Optional[uuid.UUID] = None
     custom_fields: Optional[Dict[str, Any]] = None
+
+class AssetSheetInfo(BaseModel):
+    name: str
+    headers: List[str]
+    preview_rows: List[List[Any]]
+
+
+class AssetImportInspectResponse(BaseModel):
+    sheets: List[AssetSheetInfo]
+
 
 class AssetResponse(BaseModel):
     id: uuid.UUID

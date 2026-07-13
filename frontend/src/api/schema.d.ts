@@ -356,6 +356,27 @@ export interface paths {
         patch: operations["update_asset_api_v1_assets__asset_id__patch"];
         trace?: never;
     };
+    "/api/v1/assets/import/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect Asset Import
+         * @description Return the uploaded spreadsheet's sheets/headers/preview so the client can
+         *     build the column-mapping step before calling /import with the same file.
+         */
+        post: operations["inspect_asset_import_api_v1_assets_import_inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assets/import": {
         parameters: {
             query?: never;
@@ -1422,6 +1443,11 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** AssetImportInspectResponse */
+        AssetImportInspectResponse: {
+            /** Sheets */
+            sheets: components["schemas"]["AssetSheetInfo"][];
+        };
         /** AssetResponse */
         AssetResponse: {
             /**
@@ -1464,6 +1490,15 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** AssetSheetInfo */
+        AssetSheetInfo: {
+            /** Name */
+            name: string;
+            /** Headers */
+            headers: string[];
+            /** Preview Rows */
+            preview_rows: unknown[][];
         };
         /**
          * AssetStatus
@@ -1701,6 +1736,14 @@ export interface components {
             column_map: string;
             /** Sheet */
             sheet?: string | null;
+        };
+        /** Body_inspect_asset_import_api_v1_assets_import_inspect_post */
+        Body_inspect_asset_import_api_v1_assets_import_inspect_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
         };
         /** Body_inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post */
         Body_inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post: {
@@ -3238,7 +3281,9 @@ export interface operations {
     };
     list_custom_fields_api_v1_custom_fields__module__get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_inactive?: boolean;
+            };
             header?: never;
             path: {
                 module: components["schemas"]["CustomFieldModule"];
@@ -3520,6 +3565,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_asset_import_api_v1_assets_import_inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_inspect_asset_import_api_v1_assets_import_inspect_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetImportInspectResponse"];
                 };
             };
             /** @description Validation Error */

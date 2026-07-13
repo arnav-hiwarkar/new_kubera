@@ -7,6 +7,8 @@ import { Dashboard } from '@/pages/company/Dashboard'
 import { UsersDirectory } from '@/pages/company/UsersDirectory'
 import { DocVaultPage } from '@/pages/company/docvault/DocVaultPage'
 import { KraPage } from '@/pages/company/kra/KraPage'
+import { AssetsPage } from '@/pages/company/assets/AssetsPage'
+import { CustomFieldsPage } from '@/pages/company/customfields/CustomFieldsPage'
 import { EngagementsPage } from '@/pages/company/auditease/EngagementsPage'
 import { EngagementWorkspace } from '@/pages/company/auditease/EngagementWorkspace'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
@@ -38,16 +40,7 @@ export const companyRoutes: RouteObject = {
             { index: true, element: <Dashboard /> },
             { path: 'users', element: <UsersDirectory /> },
             { path: 'kra', element: <KraPage /> },
-            {
-              path: 'assets',
-              element: (
-                <ModulePlaceholder
-                  title="Assets"
-                  description="Company asset register with import/export"
-                  endpoints={['/api/v1/assets']}
-                />
-              ),
-            },
+            { path: 'assets', element: <AssetsPage /> },
             {
               path: 'sales',
               element: (
@@ -58,16 +51,7 @@ export const companyRoutes: RouteObject = {
                 />
               ),
             },
-            {
-              path: 'custom-fields',
-              element: (
-                <ModulePlaceholder
-                  title="Custom Fields"
-                  description="Configure dynamic fields for assets and sales"
-                  endpoints={['/api/v1/custom-fields/{module}']}
-                />
-              ),
-            },
+            { path: 'custom-fields', element: <CustomFieldsPage /> },
             { path: 'docvault', element: <DocVaultPage /> },
             {
               path: 'compliance/roc',
