@@ -30,6 +30,10 @@ export const auditorEngagementsApi = {
     auditorClient.post<AuditEntryResponse>(`/api/v1/auditor/engagements/${id}/entries`, {
       body,
     }),
+  listEntries: (id: string) =>
+    auditorClient.get<AuditEntryResponse[]>(`/api/v1/auditor/engagements/${id}/entries`),
+  deleteEntry: (entryId: string) =>
+    auditorClient.delete<void>(`/api/v1/auditor/entries/${entryId}`),
   listRequirements: (id: string) =>
     auditorClient.get<RequirementRequestResponse[]>(
       `/api/v1/auditor/engagements/${id}/requirement-requests`,

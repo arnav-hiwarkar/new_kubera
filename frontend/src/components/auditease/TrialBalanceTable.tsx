@@ -22,9 +22,11 @@ const money = (v: number) => <span className="tabular-nums">{formatMoney(v)}</sp
 export function TrialBalanceTable({
   accounts,
   loading,
+  readonly,
 }: {
   accounts: TrialBalanceAccountResponse[]
   loading?: boolean
+  readonly?: boolean
 }) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
 
@@ -54,7 +56,7 @@ export function TrialBalanceTable({
     return (
       <EmptyState
         title="No trial balance imported"
-        description="Import a trial balance to see ledgers here."
+        description={readonly ? "The company has not imported a trial balance yet." : "Import a trial balance to see ledgers here."}
       />
     )
   }
@@ -132,7 +134,7 @@ export function TrialBalanceTable({
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <GroupMappingCell accountId={a.id} currentGroupId={a.mapped_group_id} />
+                          <GroupMappingCell accountId={a.id} currentGroupId={a.mapped_group_id} readonly={readonly} />
                         </td>
                         <td className="px-4 py-3 text-right">{money(a.opening_balance)}</td>
                         <td className="px-4 py-3 text-right">{money(a.debit)}</td>

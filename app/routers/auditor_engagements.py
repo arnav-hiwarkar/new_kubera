@@ -161,6 +161,52 @@ async def create_entry(
     return res.scalar_one()
 
 
+@router.get("/engagements/{engagement_id}/entries", response_model=List[AuditEntryResponse])
+async def list_auditor_entries(
+    engagement_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    result = await db.execute(
+        select(AuditEntry)
+        .options(selectinload(AuditEntry.lines))
+        .where(AuditEntry.engagement_id == engagement_id)
+        .order_by(AuditEntry.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.delete("/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_auditor_entry(
+    entry_id: uuid.UUID,
+    current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    result = await db.execute(
+        select(AuditEntry)
+        .join(AuditorEngagementGrant, AuditorEngagementGrant.engagement_id == AuditEntry.engagement_id)
+        .where(
+            and_(
+                AuditEntry.id == entry_id,
+                AuditorEngagementGrant.auditor_id == current_auditor.id,
+                AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted])
+            )
+        )
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found or access denied")
+        
+    if entry.status != AuditEntryStatus.proposed:
+        raise HTTPException(status_code=400, detail="Only proposed entries can be deleted")
+        
+    await db.delete(entry)
+    await db.commit()
+    return None
+
+
+
 @router.post("/engagements/{engagement_id}/requirement-requests", response_model=RequirementRequestResponse)
 async def create_requirement(
     engagement_id: uuid.UUID,

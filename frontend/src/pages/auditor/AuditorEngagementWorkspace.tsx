@@ -7,9 +7,10 @@ import { useAuditorEngagements, useAuditorTrialBalance } from '@/api/hooks/audit
 import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable'
 import { RequirementsTab } from './RequirementsTab'
 import { QueriesTab } from './QueriesTab'
-import { useAuditorListRequirements, useAuditorListQueries } from '@/api/hooks/auditorEngagements'
+import { AuditorEntriesTab } from './AuditorEntriesTab'
+import { useAuditorListRequirements, useAuditorListQueries, useAuditorListEntries } from '@/api/hooks/auditorEngagements'
 
-type Tab = 'overview' | 'trial-balance' | 'requirements' | 'queries'
+type Tab = 'overview' | 'trial-balance' | 'entries' | 'requirements' | 'queries'
 
 export function AuditorEngagementWorkspace() {
   const { engagementId = '' } = useParams()
@@ -19,6 +20,7 @@ export function AuditorEngagementWorkspace() {
   const { data: accounts = [], isLoading: tbLoading } = useAuditorTrialBalance(engagementId)
   const { data: reqs = [] } = useAuditorListRequirements(engagementId)
   const { data: queries = [] } = useAuditorListQueries(engagementId)
+  const { data: entries = [] } = useAuditorListEntries(engagementId)
   const eng = engagements.find((e) => e.id === engagementId)
 
   const [tab, setTab] = useState<Tab>('overview')
@@ -39,6 +41,7 @@ export function AuditorEngagementWorkspace() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'trial-balance', label: 'Trial Balance' },
+    { id: 'entries', label: 'Entries' },
     { id: 'requirements', label: 'Requirements' },
     { id: 'queries', label: 'Queries' },
   ]
@@ -116,11 +119,17 @@ export function AuditorEngagementWorkspace() {
               {queries.filter(q => q.status === 'open').length} <span className="text-base font-normal text-text-muted">open</span>
             </div>
           </Card>
+          <Card>
+            <div className="text-sm text-text-muted">Entries</div>
+            <div className="mt-1 text-2xl font-semibold text-text-primary">
+              {entries.length} <span className="text-base font-normal text-text-muted">total</span>
+            </div>
+          </Card>
         </div>
       )}
 
-      {tab === 'trial-balance' && <TrialBalanceTable accounts={accounts} loading={tbLoading} />}
-      
+      {tab === 'trial-balance' && <TrialBalanceTable accounts={accounts} loading={tbLoading} readonly={true} />}
+      {tab === 'entries' && <AuditorEntriesTab engagementId={eng.id} />}
       {tab === 'requirements' && <RequirementsTab engagementId={eng.id} />}
       {tab === 'queries' && <QueriesTab engagementId={eng.id} />}
     </div>

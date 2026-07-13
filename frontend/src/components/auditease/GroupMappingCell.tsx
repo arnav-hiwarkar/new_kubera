@@ -13,6 +13,7 @@ export function GroupMappingCell({
 }: {
   accountId: string
   currentGroupId: string | null
+  readonly?: boolean
 }) {
   const { engagementId = '' } = useParams()
   const { data: groups = [] } = useLedgerGroups()
@@ -73,12 +74,20 @@ export function GroupMappingCell({
     setParentGroupId('')
   }
 
+  if (readonly) {
+    return (
+      <span className="text-sm text-text-primary">
+        {currentGroupId ? getPath(currentGroupId) : <span className="text-text-muted italic">Unmapped</span>}
+      </span>
+    )
+  }
+
   return (
     <div className="flex items-center gap-2">
       <select
         value={currentGroupId || ''}
         onChange={handleSelect}
-        className="w-full max-w-[250px] truncate rounded-md border border-border bg-surface px-2 py-1 text-sm text-text-primary focus:border-accent focus:outline-none"
+        className="w-full max-w-[250px] truncate rounded-md border border-border bg-bg-surface px-2 py-1 text-sm text-text-primary focus:border-accent focus:outline-none"
       >
         <option value="" disabled>
           -- Select Group --
@@ -104,7 +113,7 @@ export function GroupMappingCell({
             <select
               value={parentGroupId}
               onChange={(e) => setParentGroupId(e.target.value)}
-              className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm focus:border-accent focus:outline-none"
+              className="w-full rounded-md border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
             >
               <option value="" disabled>
                 -- Select Parent --

@@ -29,6 +29,34 @@ export function useAuditorTrialBalance(engagementId: string) {
   })
 }
 
+// --- Entries ---
+
+export function useAuditorListEntries(engagementId: string) {
+  return useQuery({
+    queryKey: ['auditor', 'entries', engagementId],
+    queryFn: () => auditorEngagementsApi.listEntries(engagementId),
+    enabled: !!engagementId,
+  })
+}
+
+export function useAuditorCreateEntry() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, body }: { engagementId: string; body: import('@/api/types').AuditEntryCreate }) =>
+      auditorEngagementsApi.createEntry(engagementId, body),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditor', 'entries', engagementId] }),
+  })
+}
+
+export function useAuditorDeleteEntry() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (entryId: string) => auditorEngagementsApi.deleteEntry(entryId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['auditor', 'entries'] }), // invalidate all or specific based on key prefix
+  })
+}
+
 // --- Requirements ---
 
 export function useAuditorListRequirements(engagementId: string) {
