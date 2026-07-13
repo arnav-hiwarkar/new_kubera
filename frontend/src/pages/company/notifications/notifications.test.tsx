@@ -51,6 +51,6 @@ describe('NotificationsPage', () => {
     const btn = screen.getByRole('button', { name: /mark as read/i })
     await user.click(btn)
 
-    expect(notificationsApi.markRead).toHaveBeenCalledWith('n-1')
+    expect(notificationsApi.markRead).toHaveBeenCalledWith('n-1', expect.anything())
   })
 })

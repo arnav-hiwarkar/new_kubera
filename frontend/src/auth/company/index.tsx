@@ -16,3 +16,5 @@ const company = createIdentityAuth<CompanyUserOut>({
 export const CompanyAuthProvider = company.Provider
 export const useCompanyAuth = company.useAuth
 export const CompanyGuard = company.Guard
+
+export * from './ModuleGuard'

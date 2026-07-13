@@ -1,6 +1,6 @@
 import type { RouteObject } from 'react-router-dom'
 import { Navigate, Outlet } from 'react-router-dom'
-import { CompanyAuthProvider, CompanyGuard } from '@/auth/company'
+import { CompanyAuthProvider, CompanyGuard, ModuleGuard } from '@/auth/company'
 import { CompanyShell } from '@/layouts/CompanyShell'
 import { CompanyLogin } from '@/pages/company/CompanyLogin'
 import { Dashboard } from '@/pages/company/Dashboard'
@@ -40,17 +40,18 @@ export const companyRoutes: RouteObject = {
         {
           element: <CompanyShell />,
           children: [
-            { index: true, element: <Dashboard /> },
+            { index: true, element: <ModuleGuard moduleId="dashboard"><Dashboard /></ModuleGuard> },
             { path: 'users', element: <UsersDirectory /> },
-            { path: 'kra', element: <KraPage /> },
-            { path: 'assets', element: <AssetsPage /> },
-            { path: 'sales', element: <SalesPage /> },
+            { path: 'kra', element: <ModuleGuard moduleId="kra"><KraPage /></ModuleGuard> },
+            { path: 'assets', element: <ModuleGuard moduleId="assets"><AssetsPage /></ModuleGuard> },
+            { path: 'sales', element: <ModuleGuard moduleId="sales"><SalesPage /></ModuleGuard> },
             { path: 'custom-fields', element: <CustomFieldsPage /> },
-            { path: 'docvault', element: <DocVaultPage /> },
-            { path: 'compliance/roc', element: <CompliancePage domain="roc" /> },
-            { path: 'compliance/secretarial', element: <CompliancePage domain="secretarial" /> },
+            { path: 'docvault', element: <ModuleGuard moduleId="docvault"><DocVaultPage /></ModuleGuard> },
+            { path: 'compliance/roc', element: <ModuleGuard moduleId="compliance"><CompliancePage domain="roc" /></ModuleGuard> },
+            { path: 'compliance/secretarial', element: <ModuleGuard moduleId="compliance"><CompliancePage domain="secretarial" /></ModuleGuard> },
             {
               path: 'auditease',
+              element: <ModuleGuard moduleId="auditease"><Outlet /></ModuleGuard>,
               children: [
                 { index: true, element: <EngagementsPage /> },
                 { path: ':engagementId', element: <EngagementWorkspace /> },
@@ -58,11 +59,11 @@ export const companyRoutes: RouteObject = {
             },
             {
               path: 'notifications',
-              element: <NotificationsPage />,
+              element: <ModuleGuard moduleId="notifications"><NotificationsPage /></ModuleGuard>,
             },
             {
               path: 'activity',
-              element: <ActivityLogPage />,
+              element: <ModuleGuard moduleId="activity"><ActivityLogPage /></ModuleGuard>,
             },
             { path: '*', element: <Navigate to="/app" replace /> },
           ],

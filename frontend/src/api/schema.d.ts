@@ -2823,6 +2823,8 @@ export interface components {
             designation?: string | null;
             /** Department */
             department?: string | null;
+            /** Accessible Modules */
+            accessible_modules?: string[];
         };
         /** UserResponse */
         UserResponse: {
@@ -2847,6 +2849,8 @@ export interface components {
             department: string | null;
             /** Is Active */
             is_active: boolean;
+            /** Accessible Modules */
+            accessible_modules: string[];
             /**
              * Company Id
              * Format: uuid
@@ -2876,6 +2880,8 @@ export interface components {
             department?: string | null;
             /** Is Active */
             is_active?: boolean | null;
+            /** Accessible Modules */
+            accessible_modules?: string[] | null;
         };
         /** ValidationError */
         ValidationError: {

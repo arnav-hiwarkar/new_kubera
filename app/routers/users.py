@@ -43,6 +43,7 @@ async def create_user(
         manager_id=body.manager_id,
         designation=body.designation,
         department=body.department,
+        accessible_modules=body.accessible_modules,
         is_active=True
     )
     db.add(user)
