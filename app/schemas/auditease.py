@@ -33,9 +33,42 @@ class TrialBalanceAccountBase(BaseModel):
 class TrialBalanceAccountResponse(TrialBalanceAccountBase):
     id: uuid.UUID
     company_id: uuid.UUID
+    engagement_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+
+# --- Trial Balance import (server-side, two-call) ---
+
+class TBSheetInfo(BaseModel):
+    name: str
+    headers: List[str]
+    preview_rows: List[List[Any]]  # first N data rows, raw cell values as strings
+
+
+class TBInspectResponse(BaseModel):
+    sheets: List[TBSheetInfo]
+
+
+class TBColumnMap(BaseModel):
+    """Maps each DB field to a source column header. `ledger_code` optional."""
+    ledger_code: Optional[str] = None
+    ledger_name: str
+    opening_balance: str
+    debit: str
+    credit: str
+    closing_balance: str
+
+
+class TBImportResult(BaseModel):
+    imported: int
+    skipped: int
+    errors: List[dict]
+    total_debit: float
+    total_credit: float
+    balanced: bool
+    accounts: List[TrialBalanceAccountResponse]
 
 
 # --- Engagements ---
@@ -53,6 +86,10 @@ class AuditEngagementResponse(AuditEngagementBase):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    # Populated by the company-side router for the single invited/accepted auditor.
+    # grant status is one of: invited | accepted | revoked | pending (not yet registered)
+    auditor_email: Optional[str] = None
+    auditor_grant_status: Optional[str] = None
     model_config = {"from_attributes": True}
 
 class AuditorEngagementGrantResponse(BaseModel):

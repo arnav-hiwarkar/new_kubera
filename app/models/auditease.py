@@ -9,6 +9,7 @@ from app.models.base import Base, TimestampMixin, TenantScopedMixin
 
 
 class EngagementStatus(str, enum.Enum):
+    draft = "draft"
     invited = "invited"
     active = "active"
     closed = "closed"
@@ -59,6 +60,7 @@ class TrialBalanceAccount(Base, TimestampMixin, TenantScopedMixin):
     __tablename__ = "trial_balance_accounts"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    engagement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("audit_engagements.id", ondelete="CASCADE"), nullable=False, index=True)
     ledger_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ledger_name: Mapped[str] = mapped_column(String(255), nullable=False)
     mapped_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ledger_groups.id"), nullable=True)
@@ -89,6 +91,18 @@ class AuditorEngagementGrant(Base):
     status: Mapped[GrantStatus] = mapped_column(SAEnum(GrantStatus, name="grant_status"), default=GrantStatus.invited, nullable=False)
     invited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PendingAuditorInvite(Base):
+    """An invite to an email that has no auditor account yet. Converted to an
+    AuditorEngagementGrant automatically when an auditor registers with this email."""
+    __tablename__ = "pending_auditor_invites"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    engagement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("audit_engagements.id", ondelete="CASCADE"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    token: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
 
 # --- Audit Entries ---

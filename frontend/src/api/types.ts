@@ -61,6 +61,19 @@ export type AuditEntryCreate = S['AuditEntryCreate']
 export type EntryApproval = S['EntryApproval']
 export type AuditorInvite = S['AuditorInvite']
 export type TrialBalanceAccountResponse = S['TrialBalanceAccountResponse']
+export type TBInspectResponse = S['TBInspectResponse']
+export type TBSheetInfo = S['TBSheetInfo']
+export type TBImportResult = S['TBImportResult']
+/** Column map sent (as JSON string) with the TB import multipart request.
+ * Values are source-column header names; `ledger_code` is optional. */
+export interface TBColumnMap {
+  ledger_code?: string | null
+  ledger_name: string
+  opening_balance: string
+  debit: string
+  credit: string
+  closing_balance: string
+}
 export type RequirementRequestResponse = S['RequirementRequestResponse']
 export type RequirementRequestCreate = S['RequirementRequestCreate']
 export type RequirementFulfill = S['RequirementFulfill']

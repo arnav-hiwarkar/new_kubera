@@ -696,7 +696,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auditease/trial-balance/import": {
+    "/api/v1/auditease/engagements/{engagement_id}/trial-balance/inspect": {
         parameters: {
             query?: never;
             header?: never;
@@ -705,15 +705,38 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Import Trial Balance */
-        post: operations["import_trial_balance_api_v1_auditease_trial_balance_import_post"];
+        /**
+         * Inspect Trial Balance
+         * @description Step 1: return every sheet's headers + preview rows so the client can map columns.
+         */
+        post: operations["inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auditease/trial-balance": {
+    "/api/v1/auditease/engagements/{engagement_id}/trial-balance/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Trial Balance
+         * @description Step 2: parse `sheet` with `column_map` (JSON) and replace this engagement's TB.
+         */
+        post: operations["import_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/trial-balance": {
         parameters: {
             query?: never;
             header?: never;
@@ -721,7 +744,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Trial Balance */
-        get: operations["get_trial_balance_api_v1_auditease_trial_balance_get"];
+        get: operations["get_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -765,6 +788,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auditease/engagements/{engagement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Engagement */
+        get: operations["get_engagement_api_v1_auditease_engagements__engagement_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Engagement
+         * @description Hard-delete an engagement and everything under it (cascade). Allowed only
+         *     while draft/invited (before real audit work), or closed (cleanup).
+         */
+        delete: operations["delete_engagement_api_v1_auditease_engagements__engagement_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auditease/engagements/{engagement_id}/close": {
         parameters: {
             query?: never;
@@ -791,7 +836,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Invite Auditor */
+        /**
+         * Invite Auditor
+         * @description Invite one auditor by email. If they already have an account, a grant is
+         *     created; otherwise a pending invite is stored and auto-converts on registration.
+         *     Re-inviting replaces any prior invite (one auditor per engagement).
+         */
         post: operations["invite_auditor_api_v1_auditease_engagements__engagement_id__invite_auditor_post"];
         delete?: never;
         options?: never;
@@ -1286,6 +1336,10 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Auditor Email */
+            auditor_email?: string | null;
+            /** Auditor Grant Status */
+            auditor_grant_status?: string | null;
         };
         /** AuditEntryCreate */
         AuditEntryCreate: {
@@ -1416,6 +1470,26 @@ export interface components {
             file: string;
             /** Mappings */
             mappings: string;
+        };
+        /** Body_import_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_import_post */
+        Body_import_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_import_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Column Map */
+            column_map: string;
+            /** Sheet */
+            sheet?: string | null;
+        };
+        /** Body_inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post */
+        Body_inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
         };
         /** Body_upload_document_api_v1_docvault_documents_post */
         Body_upload_document_api_v1_docvault_documents_post: {
@@ -1768,7 +1842,7 @@ export interface components {
          * EngagementStatus
          * @enum {string}
          */
-        EngagementStatus: "invited" | "active" | "closed";
+        EngagementStatus: "draft" | "invited" | "active" | "closed";
         /** EntryApproval */
         EntryApproval: {
             status: components["schemas"]["AuditEntryStatus"];
@@ -2199,32 +2273,38 @@ export interface components {
          * @enum {string}
          */
         SenderType: "company_user" | "auditor";
-        /** TBImportRow */
-        TBImportRow: {
-            /** Ledger Code */
-            ledger_code?: string | null;
-            /** Ledger Name */
-            ledger_name: string;
-            /**
-             * Opening Balance
-             * @default 0
-             */
-            opening_balance: number;
-            /**
-             * Debit
-             * @default 0
-             */
-            debit: number;
-            /**
-             * Credit
-             * @default 0
-             */
-            credit: number;
-            /**
-             * Closing Balance
-             * @default 0
-             */
-            closing_balance: number;
+        /** TBImportResult */
+        TBImportResult: {
+            /** Imported */
+            imported: number;
+            /** Skipped */
+            skipped: number;
+            /** Errors */
+            errors: {
+                [key: string]: unknown;
+            }[];
+            /** Total Debit */
+            total_debit: number;
+            /** Total Credit */
+            total_credit: number;
+            /** Balanced */
+            balanced: boolean;
+            /** Accounts */
+            accounts: components["schemas"]["TrialBalanceAccountResponse"][];
+        };
+        /** TBInspectResponse */
+        TBInspectResponse: {
+            /** Sheets */
+            sheets: components["schemas"]["TBSheetInfo"][];
+        };
+        /** TBSheetInfo */
+        TBSheetInfo: {
+            /** Name */
+            name: string;
+            /** Headers */
+            headers: string[];
+            /** Preview Rows */
+            preview_rows: unknown[][];
         };
         /** TokenResponse */
         TokenResponse: {
@@ -2280,6 +2360,11 @@ export interface components {
              * Format: uuid
              */
             company_id: string;
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
             /**
              * Created At
              * Format: date-time
@@ -3921,18 +4006,86 @@ export interface operations {
             };
         };
     };
-    import_trial_balance_api_v1_auditease_trial_balance_import_post: {
+    inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                engagement_id: string;
+            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TBImportRow"][];
+                "multipart/form-data": components["schemas"]["Body_inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TBInspectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TBImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -3950,26 +4103,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_trial_balance_api_v1_auditease_trial_balance_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TrialBalanceAccountResponse"][];
                 };
             };
         };
@@ -4060,6 +4193,66 @@ export interface operations {
             };
         };
     };
+    get_engagement_api_v1_auditease_engagements__engagement_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEngagementResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_engagement_api_v1_auditease_engagements__engagement_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     close_engagement_api_v1_auditease_engagements__engagement_id__close_patch: {
         parameters: {
             query?: never;
@@ -4112,7 +4305,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AuditEngagementResponse"];
                 };
             };
             /** @description Validation Error */

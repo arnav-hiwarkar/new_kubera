@@ -6,6 +6,8 @@ import { CompanyLogin } from '@/pages/company/CompanyLogin'
 import { Dashboard } from '@/pages/company/Dashboard'
 import { UsersDirectory } from '@/pages/company/UsersDirectory'
 import { DocVaultPage } from '@/pages/company/docvault/DocVaultPage'
+import { EngagementsPage } from '@/pages/company/auditease/EngagementsPage'
+import { EngagementWorkspace } from '@/pages/company/auditease/EngagementWorkspace'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
 
 /**
@@ -100,13 +102,10 @@ export const companyRoutes: RouteObject = {
             },
             {
               path: 'auditease',
-              element: (
-                <ModulePlaceholder
-                  title="AuditEase"
-                  description="Manage audit engagements, trial balances and auditor collaboration"
-                  endpoints={['/api/v1/auditease/engagements', '/api/v1/auditease/trial-balance']}
-                />
-              ),
+              children: [
+                { index: true, element: <EngagementsPage /> },
+                { path: ':engagementId', element: <EngagementWorkspace /> },
+              ],
             },
             {
               path: 'notifications',

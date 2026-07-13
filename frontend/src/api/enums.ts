@@ -23,7 +23,7 @@ export const DOCUMENT_STATUS = [
   'overdue',
   'archived',
 ] as const
-export const ENGAGEMENT_STATUS = ['invited', 'active', 'closed'] as const
+export const ENGAGEMENT_STATUS = ['draft', 'invited', 'active', 'closed'] as const
 export const ENTRY_LINE_SIDE = ['debit', 'credit'] as const
 export const KRA_STATUS = [
   'draft',

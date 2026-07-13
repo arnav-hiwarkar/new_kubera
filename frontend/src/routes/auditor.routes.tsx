@@ -5,6 +5,7 @@ import { AuditorShell } from '@/layouts/AuditorShell'
 import { AuditorLogin } from '@/pages/auditor/AuditorLogin'
 import { AuditorRegister } from '@/pages/auditor/AuditorRegister'
 import { AuditorEngagements } from '@/pages/auditor/AuditorEngagements'
+import { AuditorEngagementWorkspace } from '@/pages/auditor/AuditorEngagementWorkspace'
 
 function AuditorAuthLayout() {
   return (
@@ -33,6 +34,7 @@ export const auditorRoutes: RouteObject = {
           element: <AuditorShell />,
           children: [
             { index: true, element: <AuditorEngagements /> },
+            { path: ':engagementId', element: <AuditorEngagementWorkspace /> },
             { path: '*', element: <Navigate to="/auditor/app" replace /> },
           ],
         },

@@ -55,9 +55,11 @@ async def list_engagements(
         .where(
             and_(
                 AuditorEngagementGrant.auditor_id == current_auditor.id,
-                AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted])
+                AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted]),
+                AuditEngagement.status != EngagementStatus.closed,
             )
         )
+        .order_by(AuditEngagement.created_at.desc())
     )
     return result.scalars().all()
 
@@ -81,9 +83,16 @@ async def accept_engagement(
     grant = result.scalar_one_or_none()
     if not grant:
         raise HTTPException(status_code=404, detail="Invite not found or already accepted")
-        
+
     grant.status = GrantStatus.accepted
     grant.accepted_at = datetime.now(timezone.utc)
+
+    # Acceptance activates the engagement.
+    eng_res = await db.execute(select(AuditEngagement).where(AuditEngagement.id == engagement_id))
+    eng = eng_res.scalar_one_or_none()
+    if eng and eng.status == EngagementStatus.invited:
+        eng.status = EngagementStatus.active
+
     await db.commit()
     return {"message": "Engagement accepted"}
 
@@ -94,8 +103,12 @@ async def get_trial_balance(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    eng = await check_auditor_access(db, current_auditor.id, engagement_id)
-    result = await db.execute(select(TrialBalanceAccount).where(TrialBalanceAccount.company_id == eng.company_id))
+    await check_auditor_access(db, current_auditor.id, engagement_id)
+    result = await db.execute(
+        select(TrialBalanceAccount)
+        .where(TrialBalanceAccount.engagement_id == engagement_id)
+        .order_by(TrialBalanceAccount.ledger_name)
+    )
     return result.scalars().all()
 
 

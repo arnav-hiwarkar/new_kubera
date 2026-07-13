@@ -16,3 +16,14 @@ export function formatDate(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
+
+/** Accounting-style amount, e.g. 1,234.50 or (1,234.50) for negatives. */
+export function formatMoney(value: number | string | null | undefined): string {
+  const n = typeof value === 'string' ? Number(value) : (value ?? 0)
+  if (Number.isNaN(n)) return '—'
+  const abs = Math.abs(n).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return n < 0 ? `(${abs})` : abs
+}

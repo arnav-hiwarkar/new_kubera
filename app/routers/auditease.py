@@ -1,9 +1,10 @@
+import json
 import uuid
 from typing import Annotated, List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy import select, and_, update
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import select, and_, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,69 +14,160 @@ from app.models.company import CompanyUser
 from app.models.auditor import Auditor
 from app.models.auditease import (
     TrialBalanceAccount, LedgerGroup, AuditEngagement, AuditorEngagementGrant,
-    AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage,
+    PendingAuditorInvite, AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage,
     EngagementStatus, GrantStatus, AuditEntryStatus, RequestStatus, QueryStatus, SenderType
 )
 from app.schemas.auditease import (
     TrialBalanceAccountResponse, LedgerGroupResponse, AuditEngagementCreate,
     AuditEngagementResponse, AuditEntryResponse, RequirementRequestResponse,
-    QueryResponse, QueryMessageResponse, QueryMessageCreate
+    QueryResponse, QueryMessageResponse, QueryMessageCreate,
+    TBColumnMap, TBInspectResponse, TBImportResult,
 )
+from app.services import import_service
 
 router = APIRouter(prefix="/api/v1/auditease", tags=["auditease-company"])
 
 
-# --- Trial Balance ---
+async def _get_owned_engagement(db: AsyncSession, company_id: uuid.UUID, engagement_id: uuid.UUID) -> AuditEngagement:
+    result = await db.execute(
+        select(AuditEngagement).where(
+            and_(AuditEngagement.id == engagement_id, AuditEngagement.company_id == company_id)
+        )
+    )
+    eng = result.scalar_one_or_none()
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    return eng
 
-class TBImportRow(BaseModel):
-    ledger_code: Optional[str] = None
-    ledger_name: str
-    opening_balance: float = 0.0
-    debit: float = 0.0
-    credit: float = 0.0
-    closing_balance: float = 0.0
+
+async def _hydrate_auditor_info(db: AsyncSession, eng: AuditEngagement) -> AuditEngagement:
+    """Attach auditor_email + auditor_grant_status (single-auditor model) for the response."""
+    grant_res = await db.execute(
+        select(AuditorEngagementGrant, Auditor.email)
+        .join(Auditor, Auditor.id == AuditorEngagementGrant.auditor_id)
+        .where(
+            and_(
+                AuditorEngagementGrant.engagement_id == eng.id,
+                AuditorEngagementGrant.status != GrantStatus.revoked,
+            )
+        )
+        .order_by(AuditorEngagementGrant.invited_at.desc())
+    )
+    row = grant_res.first()
+    if row:
+        grant, email = row
+        eng.auditor_email = email
+        eng.auditor_grant_status = grant.status.value
+        return eng
+    pend_res = await db.execute(
+        select(PendingAuditorInvite)
+        .where(PendingAuditorInvite.engagement_id == eng.id)
+        .order_by(PendingAuditorInvite.created_at.desc())
+    )
+    pend = pend_res.scalars().first()
+    if pend:
+        eng.auditor_email = pend.email
+        eng.auditor_grant_status = "pending"
+    return eng
 
 
-@router.post("/trial-balance/import", response_model=List[TrialBalanceAccountResponse])
-async def import_trial_balance(
+# --- Trial Balance (per engagement, server-side file import) ---
+
+@router.post("/engagements/{engagement_id}/trial-balance/inspect", response_model=TBInspectResponse)
+async def inspect_trial_balance(
+    engagement_id: uuid.UUID,
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    rows: List[TBImportRow]
+    file: UploadFile = File(...),
 ):
-    # This acts as the mapped target from the frontend's column mapper.
-    # In V1 we just insert/update them.
-    created_accounts = []
-    for row in rows:
+    """Step 1: return every sheet's headers + preview rows so the client can map columns."""
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    content = await file.read()
+    try:
+        sheets = import_service.inspect_spreadsheet(file.filename or "", content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"sheets": sheets}
+
+
+@router.post("/engagements/{engagement_id}/trial-balance/import", response_model=TBImportResult)
+async def import_trial_balance(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: UploadFile = File(...),
+    column_map: str = Form(...),
+    sheet: Optional[str] = Form(None),
+):
+    """Step 2: parse `sheet` with `column_map` (JSON) and replace this engagement's TB."""
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+
+    # Guard: re-import is blocked once audit entries reference this TB.
+    entry_count = await db.execute(
+        select(func.count()).select_from(AuditEntry).where(AuditEntry.engagement_id == engagement_id)
+    )
+    if entry_count.scalar_one() > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot re-import: audit entries already exist for this engagement.",
+        )
+
+    try:
+        cmap = TBColumnMap.model_validate_json(column_map)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=f"Invalid column_map: {e.errors()}")
+
+    content = await file.read()
+    try:
+        valid, errors = import_service.parse_trial_balance(
+            file.filename or "", content, sheet, cmap.model_dump()
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Replace-on-reimport: wipe existing rows for this engagement, insert fresh.
+    await db.execute(
+        delete(TrialBalanceAccount).where(TrialBalanceAccount.engagement_id == engagement_id)
+    )
+
+    accounts: List[TrialBalanceAccount] = []
+    for rec in valid:
         acc = TrialBalanceAccount(
             company_id=current_user.company_id,
-            ledger_code=row.ledger_code,
-            ledger_name=row.ledger_name,
-            opening_balance=row.opening_balance,
-            debit=row.debit,
-            credit=row.credit,
-            closing_balance=row.closing_balance
+            engagement_id=engagement_id,
+            **rec,
         )
         db.add(acc)
-        created_accounts.append(acc)
-        
-    # Check balance match warning
-    total_debit = sum(r.debit for r in rows)
-    total_credit = sum(r.credit for r in rows)
-    if total_debit != total_credit:
-        print(f"Warning: Trial balance mismatch! Debit: {total_debit}, Credit: {total_credit}")
-        
+        accounts.append(acc)
     await db.commit()
-    for acc in created_accounts:
+    for acc in accounts:
         await db.refresh(acc)
-    return created_accounts
+
+    total_debit = float(sum(a.debit for a in accounts))
+    total_credit = float(sum(a.credit for a in accounts))
+    return TBImportResult(
+        imported=len(accounts),
+        skipped=len(errors),
+        errors=errors,
+        total_debit=total_debit,
+        total_credit=total_credit,
+        balanced=(round(total_debit, 2) == round(total_credit, 2)),
+        accounts=[TrialBalanceAccountResponse.model_validate(a) for a in accounts],
+    )
 
 
-@router.get("/trial-balance", response_model=List[TrialBalanceAccountResponse])
+@router.get("/engagements/{engagement_id}/trial-balance", response_model=List[TrialBalanceAccountResponse])
 async def get_trial_balance(
+    engagement_id: uuid.UUID,
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(select(TrialBalanceAccount).where(TrialBalanceAccount.company_id == current_user.company_id))
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    result = await db.execute(
+        select(TrialBalanceAccount)
+        .where(TrialBalanceAccount.engagement_id == engagement_id)
+        .order_by(TrialBalanceAccount.ledger_name)
+    )
     return result.scalars().all()
 
 
@@ -114,7 +206,7 @@ async def create_engagement(
     eng = AuditEngagement(
         company_id=current_user.company_id,
         period_label=engagement.period_label,
-        status=EngagementStatus.active,
+        status=EngagementStatus.draft,
         created_by=current_user.id
     )
     db.add(eng)
@@ -128,8 +220,25 @@ async def list_engagements(
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    result = await db.execute(select(AuditEngagement).where(AuditEngagement.company_id == current_user.company_id))
-    return result.scalars().all()
+    result = await db.execute(
+        select(AuditEngagement)
+        .where(AuditEngagement.company_id == current_user.company_id)
+        .order_by(AuditEngagement.created_at.desc())
+    )
+    engagements = list(result.scalars().all())
+    for eng in engagements:
+        await _hydrate_auditor_info(db, eng)
+    return engagements
+
+
+@router.get("/engagements/{engagement_id}", response_model=AuditEngagementResponse)
+async def get_engagement(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    return await _hydrate_auditor_info(db, eng)
 
 
 @router.patch("/engagements/{engagement_id}/close", response_model=AuditEngagementResponse)
@@ -138,56 +247,92 @@ async def close_engagement(
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    result = await db.execute(select(AuditEngagement).where(and_(AuditEngagement.id == engagement_id, AuditEngagement.company_id == current_user.company_id)))
-    eng = result.scalar_one_or_none()
-    if not eng:
-        raise HTTPException(status_code=404, detail="Engagement not found")
-        
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+
     eng.status = EngagementStatus.closed
-    
-    # Revoke all grants
+
+    # Revoke all grants and drop any unaccepted pending invites.
     await db.execute(
         update(AuditorEngagementGrant)
         .where(AuditorEngagementGrant.engagement_id == engagement_id)
         .values(status=GrantStatus.revoked)
     )
-    
+    await db.execute(
+        delete(PendingAuditorInvite).where(PendingAuditorInvite.engagement_id == engagement_id)
+    )
+
     await db.commit()
     await db.refresh(eng)
-    return eng
+    return await _hydrate_auditor_info(db, eng)
+
+
+@router.delete("/engagements/{engagement_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_engagement(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Hard-delete an engagement and everything under it (cascade). Allowed only
+    while draft/invited (before real audit work), or closed (cleanup)."""
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    if eng.status == EngagementStatus.active:
+        raise HTTPException(
+            status_code=409,
+            detail="An active engagement cannot be deleted — close it first.",
+        )
+    await db.delete(eng)
+    await db.commit()
+    return None
 
 
 class AuditorInvite(BaseModel):
     email: str
 
 
-@router.post("/engagements/{engagement_id}/invite-auditor")
+@router.post("/engagements/{engagement_id}/invite-auditor", response_model=AuditEngagementResponse)
 async def invite_auditor(
     engagement_id: uuid.UUID,
     invite: AuditorInvite,
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    result = await db.execute(select(AuditEngagement).where(and_(AuditEngagement.id == engagement_id, AuditEngagement.company_id == current_user.company_id)))
-    eng = result.scalar_one_or_none()
-    if not eng or eng.status == EngagementStatus.closed:
-        raise HTTPException(status_code=404, detail="Active engagement not found")
+    """Invite one auditor by email. If they already have an account, a grant is
+    created; otherwise a pending invite is stored and auto-converts on registration.
+    Re-inviting replaces any prior invite (one auditor per engagement)."""
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    if eng.status == EngagementStatus.closed:
+        raise HTTPException(status_code=409, detail="Cannot invite on a closed engagement")
 
-    aud_res = await db.execute(select(Auditor).where(Auditor.email == invite.email))
-    auditor = aud_res.scalar_one_or_none()
-    if not auditor:
-        # In a real system, we might create a placeholder Auditor account and email an invite link.
-        # For V1 tests, we require the auditor account to exist (self-registration).
-        raise HTTPException(status_code=404, detail="Auditor account with this email not found. They must self-register first.")
-        
-    grant = AuditorEngagementGrant(
-        auditor_id=auditor.id,
-        engagement_id=engagement_id,
-        status=GrantStatus.invited
+    email = invite.email.strip().lower()
+
+    # One auditor per engagement: clear any prior grant/pending before re-inviting.
+    await db.execute(
+        update(AuditorEngagementGrant)
+        .where(AuditorEngagementGrant.engagement_id == engagement_id)
+        .values(status=GrantStatus.revoked)
     )
-    db.add(grant)
+    await db.execute(
+        delete(PendingAuditorInvite).where(PendingAuditorInvite.engagement_id == engagement_id)
+    )
+
+    aud_res = await db.execute(select(Auditor).where(func.lower(Auditor.email) == email))
+    auditor = aud_res.scalar_one_or_none()
+    if auditor:
+        db.add(AuditorEngagementGrant(
+            auditor_id=auditor.id,
+            engagement_id=engagement_id,
+            status=GrantStatus.invited,
+        ))
+    else:
+        db.add(PendingAuditorInvite(engagement_id=engagement_id, email=email))
+
+    # Moving out of draft: the engagement is now awaiting acceptance.
+    if eng.status == EngagementStatus.draft:
+        eng.status = EngagementStatus.invited
+
     await db.commit()
-    return {"message": "Auditor invited"}
+    await db.refresh(eng)
+    return await _hydrate_auditor_info(db, eng)
 
 
 # --- Entries (Approval) ---
