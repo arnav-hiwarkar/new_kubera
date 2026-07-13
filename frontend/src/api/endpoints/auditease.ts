@@ -4,6 +4,7 @@ import type {
   AuditEngagementCreate,
   AuditorInvite,
   EntryApproval,
+  AuditEntryResponse,
   TrialBalanceAccountResponse,
   TBInspectResponse,
   TBImportResult,
@@ -83,6 +84,8 @@ export const auditeaseCompanyApi = {
     ),
 
   // Entries / requirements / queries (later slices)
+  listEntries: (engagementId: string) =>
+    companyClient.get<AuditEntryResponse[]>(`/api/v1/auditease/engagements/${engagementId}/entries`),
   approveRejectEntry: (entryId: string, body: EntryApproval) =>
     companyClient.patch<unknown>(`/api/v1/auditease/entries/${entryId}/approve`, { body }),
   listRequirements: (engagementId: string) =>

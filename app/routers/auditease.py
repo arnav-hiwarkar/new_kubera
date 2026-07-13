@@ -4,7 +4,7 @@ from typing import Annotated, List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select, and_, update, delete, func
+from sqlalchemy import select, and_, or_, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -195,7 +195,7 @@ async def _get_owned_group(db: AsyncSession, company_id: uuid.UUID, group_id: uu
 async def _visible_group(db: AsyncSession, company_id: uuid.UUID, group_id: uuid.UUID) -> LedgerGroup:
     res = await db.execute(
         select(LedgerGroup).where(
-            and_(LedgerGroup.id == group_id, LedgerGroup.company_id.in_([None, company_id]))
+            and_(LedgerGroup.id == group_id, or_(LedgerGroup.company_id.is_(None), LedgerGroup.company_id == company_id))
         )
     )
     group = res.scalar_one_or_none()
@@ -211,7 +211,7 @@ async def _has_children(db: AsyncSession, company_id: uuid.UUID, group_id: uuid.
         select(LedgerGroup.id).where(
             and_(
                 LedgerGroup.parent_id == group_id,
-                LedgerGroup.company_id.in_([None, company_id]),
+                or_(LedgerGroup.company_id.is_(None), LedgerGroup.company_id == company_id),
             )
         ).limit(1)
     )
@@ -594,6 +594,22 @@ async def approve_reject_entry(
     return entry
 
 
+@router.get("/engagements/{engagement_id}/entries", response_model=List[AuditEntryResponse])
+async def list_entries(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    result = await db.execute(
+        select(AuditEntry)
+        .options(selectinload(AuditEntry.lines))
+        .where(AuditEntry.engagement_id == engagement_id)
+        .order_by(AuditEntry.created_at.desc())
+    )
+    return result.scalars().all()
+
+
 # --- Requirements ---
 
 @router.get("/engagements/{engagement_id}/requirement-requests", response_model=List[RequirementRequestResponse])
@@ -723,3 +739,126 @@ async def add_query_message(
     await db.commit()
     await db.refresh(message)
     return message
+
+
+@router.post("/engagements/{engagement_id}/reports/generate")
+async def generate_report(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    
+    # Get all accounts
+    res_acc = await db.execute(select(TrialBalanceAccount).where(TrialBalanceAccount.engagement_id == engagement_id))
+    accounts = res_acc.scalars().all()
+    
+    # Get all approved entries
+    res_ent = await db.execute(
+        select(AuditEntry)
+        .options(selectinload(AuditEntry.lines))
+        .where(and_(AuditEntry.engagement_id == engagement_id, AuditEntry.status == AuditEntryStatus.approved))
+    )
+    entries = res_ent.scalars().all()
+    
+    path_map = await lg.resolve_group_paths(db, current_user.company_id)
+    lg.attach_group_paths(accounts, path_map)
+    
+    # Calculate adjustments per ledger
+    adjustments: dict[uuid.UUID, float] = {}
+    for entry in entries:
+        for line in entry.lines:
+            if line.ledger_id not in adjustments:
+                adjustments[line.ledger_id] = 0.0
+            if line.side == 'debit':
+                adjustments[line.ledger_id] += float(line.amount)
+            else:
+                adjustments[line.ledger_id] -= float(line.amount)
+                
+    # Generate HTML
+    html = f"<html><body><h1>Annual Report for {eng.period_label}</h1>"
+    html += "<table border='1'><tr><th>Ledger</th><th>Group</th><th>Closing</th><th>Adj</th><th>Final</th></tr>"
+    
+    for acc in accounts:
+        group_path = " > ".join(acc.mapped_group_path) if acc.mapped_group_path else "Unmapped"
+        is_asset_exp = False
+        if acc.mapped_group_path and acc.mapped_group_path[0] in ["Assets", "Expenditure"]:
+            is_asset_exp = True
+            
+        adj = adjustments.get(acc.id, 0.0)
+        
+        if is_asset_exp:
+            final = float(acc.closing_balance) + adj
+        else:
+            final = float(acc.closing_balance) - adj
+            
+        html += f"<tr><td>{acc.ledger_name}</td><td>{group_path}</td><td>{acc.closing_balance}</td><td>{adj}</td><td>{final}</td></tr>"
+        
+    html += "</table></body></html>"
+    
+    # Create docVault entry
+    from app.models.docvault import Bucket, Document, DocumentVersion, DocumentStatus
+    from app.routers.docvault import handle_file_upload
+    from fastapi import UploadFile
+    from io import BytesIO
+    
+    # Find or create Final Reports bucket
+    bucket_res = await db.execute(select(Bucket).where(and_(Bucket.company_id == eng.company_id, Bucket.name == "Final Reports")))
+    bucket = bucket_res.scalar_one_or_none()
+    if not bucket:
+        bucket = Bucket(company_id=eng.company_id, name="Final Reports", created_by=current_user.id)
+        db.add(bucket)
+        await db.flush()
+        
+    # Create Document
+    doc = Document(
+        company_id=eng.company_id,
+        bucket_id=bucket.id,
+        title=f"Annual Report - {eng.period_label}.html",
+        status=DocumentStatus.uploaded,
+        created_by=current_user.id,
+        is_editable=False
+    )
+    db.add(doc)
+    await db.flush()
+    
+    # Call internal method (instead of FastAPI's UploadFile directly)
+    from app.encryption import generate_dek, encrypt_dek, encrypt_file_data
+    from app.routers.docvault import get_company_kek
+    import aiofiles
+    import os
+    
+    file_data = html.encode("utf-8")
+    raw_dek, dek_nonce_for_encryption = generate_dek()
+    ciphertext, file_nonce = encrypt_file_data(file_data, raw_dek)
+    company_kek = await get_company_kek(db, eng.company_id)
+    encrypted_dek, dek_nonce_for_kek = encrypt_dek(raw_dek, company_kek)
+    
+    vault_dir = f"/data/vault/{eng.company_id}"
+    os.makedirs(vault_dir, exist_ok=True)
+    file_uuid = str(uuid.uuid4())
+    storage_path = f"{vault_dir}/{file_uuid}.enc"
+    
+    async with aiofiles.open(storage_path, "wb") as f:
+        await f.write(file_nonce + ciphertext)
+        
+    import hashlib
+    checksum = hashlib.sha256(file_data).hexdigest()
+
+    version = DocumentVersion(
+        document_id=doc.id,
+        storage_path=storage_path,
+        original_filename=f"Annual Report - {eng.period_label}.html",
+        mime_type="text/html",
+        size_bytes=len(file_data),
+        checksum=checksum,
+        encrypted_dek=encrypted_dek,
+        uploaded_by=current_user.id,
+        version_number=1,
+    )
+    db.add(version)
+    await db.flush()
+    doc.current_version_id = version.id
+    await db.commit()
+    
+    return {"id": str(doc.id), "url": f"/api/v1/docvault/documents/{doc.id}/download"}

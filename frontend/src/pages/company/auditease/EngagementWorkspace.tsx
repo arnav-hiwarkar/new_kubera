@@ -19,9 +19,11 @@ import { InviteAuditorModal } from './InviteAuditorModal'
 import { MappingTab } from './MappingTab'
 import { RequirementsTab } from './RequirementsTab'
 import { QueriesTab } from './QueriesTab'
-import { useListRequirements, useListQueries } from '@/api/hooks/auditease'
+import { AuditEntriesTab } from './AuditEntriesTab'
+import { ReportsTab } from './ReportsTab'
+import { useListRequirements, useListQueries, useListEntries } from '@/api/hooks/auditease'
 
-type Tab = 'overview' | 'trial-balance' | 'mapping' | 'requirements' | 'queries'
+type Tab = 'overview' | 'trial-balance' | 'mapping' | 'entries' | 'requirements' | 'queries' | 'reports'
 
 export function EngagementWorkspace() {
   const { engagementId = '' } = useParams()
@@ -34,6 +36,7 @@ export function EngagementWorkspace() {
 
   const { data: reqs = [] } = useListRequirements(engagementId)
   const { data: queries = [] } = useListQueries(engagementId)
+  const { data: entries = [] } = useListEntries(engagementId)
 
   const [tab, setTab] = useState<Tab>('overview')
   const [importOpen, setImportOpen] = useState(false)
@@ -66,9 +69,11 @@ export function EngagementWorkspace() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'trial-balance', label: 'Trial Balance' },
-    { id: 'mapping', label: 'Mapping' },
+    { id: 'mapping', label: 'Chart of Accounts' },
+    { id: 'entries', label: 'Entries' },
     { id: 'requirements', label: 'Requirements' },
     { id: 'queries', label: 'Queries' },
+    { id: 'reports', label: 'Reports' },
   ]
 
   return (
@@ -177,6 +182,12 @@ export function EngagementWorkspace() {
               {queries.filter(q => q.status === 'open').length} <span className="text-base font-normal text-text-muted">open</span>
             </div>
           </Card>
+          <Card>
+            <div className="text-sm text-text-muted">Entries</div>
+            <div className="mt-1 text-2xl font-semibold text-text-primary">
+              {entries.filter(e => e.status === 'proposed').length} <span className="text-base font-normal text-text-muted">pending</span>
+            </div>
+          </Card>
         </div>
       )}
 
@@ -204,6 +215,8 @@ export function EngagementWorkspace() {
 
       {tab === 'requirements' && <RequirementsTab engagementId={eng.id} />}
       {tab === 'queries' && <QueriesTab engagementId={eng.id} />}
+      {tab === 'entries' && <AuditEntriesTab engagementId={eng.id} />}
+      {tab === 'reports' && <ReportsTab engagementId={eng.id} />}
 
       {importOpen && (
         <ImportTrialBalanceModal

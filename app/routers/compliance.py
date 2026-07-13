@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -43,7 +43,7 @@ def create_compliance_router(domain: ComplianceDomain, prefix: str, tags: List[s
             select(DocumentType).where(
                 and_(
                     DocumentType.domain == domain,
-                    DocumentType.company_id.in_([None, current_user.company_id])
+                    or_(DocumentType.company_id.is_(None), DocumentType.company_id == current_user.company_id)
                 )
             )
         )

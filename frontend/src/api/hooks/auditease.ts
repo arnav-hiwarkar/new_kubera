@@ -7,6 +7,7 @@ import type {
   LedgerGroupRename,
   BulkMapRequest,
   UnmapRequest,
+  EntryApproval,
 } from '@/api/types'
 
 export const auditeaseKeys = {
@@ -14,6 +15,7 @@ export const auditeaseKeys = {
   engagement: (id: string) => ['auditease', 'engagement', id] as const,
   trialBalance: (id: string) => ['auditease', 'trial-balance', id] as const,
   ledgerGroups: ['auditease', 'ledger-groups'] as const,
+  entries: (id: string) => ['auditease', 'entries', id] as const,
 }
 
 // --- Engagements ---
@@ -211,5 +213,29 @@ export function useAddQueryMessage() {
       auditeaseCompanyApi.addQueryMessage(engagementId, queryId, formData),
     onSuccess: (_r, { engagementId }) =>
       qc.invalidateQueries({ queryKey: ['auditease', 'queries', engagementId] }),
+  })
+}
+// --- Entries ---
+
+export function useListEntries(engagementId: string) {
+  return useQuery({
+    queryKey: auditeaseKeys.entries(engagementId),
+    queryFn: () => auditeaseCompanyApi.listEntries(engagementId),
+    enabled: !!engagementId,
+  })
+}
+
+export function useApproveRejectEntry() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ entryId, body }: { entryId: string; body: EntryApproval }) =>
+      auditeaseCompanyApi.approveRejectEntry(entryId, body),
+    onSuccess: () => {
+      // Invalidate all entries to refresh the list
+      qc.invalidateQueries({ queryKey: ['auditease', 'entries'] })
+      // We should also invalidate the trial balance if we want it to reflect approved entries,
+      // but for V1 we can invalidate both just in case.
+      qc.invalidateQueries({ queryKey: ['auditease', 'trial-balance'] })
+    },
   })
 }
