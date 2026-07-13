@@ -325,13 +325,20 @@ async def test_ledger_mapping(client: AsyncClient):
     resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/ledgers/{loan}/map", json={"group_id": assets["id"]}, headers=co_headers)
     assert resp.status_code == 400
 
-    # map loan directly to Liabilities (a leaf)
+    # Liabilities is seeded with Schedule III sub-groups, so it is not a leaf and
+    # cannot be mapped to directly.
     resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/ledgers/{loan}/map", json={"group_id": liab["id"]}, headers=co_headers)
-    assert resp.status_code == 200
-    assert resp.json()["mapped_group_path"] == ["Liabilities"]
+    assert resp.status_code == 400
 
-    # can't add a subgroup under Liabilities while a ledger is mapped directly to it
-    resp = await client.post("/api/v1/auditease/ledger-groups", json={"name": "Provisions", "parent_id": liab["id"]}, headers=co_headers)
+    # map loan to a company-created Liabilities leaf instead
+    resp = await client.post("/api/v1/auditease/ledger-groups", json={"name": "Current Liabilities", "parent_id": liab["id"]}, headers=co_headers)
+    cl = resp.json()
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/ledgers/{loan}/map", json={"group_id": cl["id"]}, headers=co_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["mapped_group_path"] == ["Liabilities", "Current Liabilities"]
+
+    # can't add a subgroup under a leaf while a ledger is mapped directly to it
+    resp = await client.post("/api/v1/auditease/ledger-groups", json={"name": "Provisions", "parent_id": cl["id"]}, headers=co_headers)
     assert resp.status_code == 409
 
     # company TB reflects the mapping path
@@ -504,3 +511,152 @@ async def test_auditor_document_access_and_queries(client: AsyncClient):
     # Auditor can no longer download documents
     resp = await client.get(f"/api/v1/auditor/documents/{c_doc_id}/download", headers=aud_headers)
     assert resp.status_code == 404
+
+
+# --- Entry ledger names + report preview ---------------------------------------
+
+async def _accept_auditor(client, co_headers, eng_id, email):
+    await client.post("/api/v1/auth/auditor/register", json={"email": email, "password": "pass", "name": "A"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "pass"})
+    aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": email}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+    return aud_headers
+
+
+@pytest.mark.asyncio
+async def test_entry_lines_include_ledger_name(client: AsyncClient):
+    """Both the auditor and company entry views must carry the ledger name/code so
+    the UI never shows 'Unknown Ledger'."""
+    await create_test_company(client, email="eln@a.com", password="pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='eln@a.com', password='pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    imp = await import_tb(client, eng_id, co_headers)
+    ledgers = {a["ledger_name"]: a for a in imp.json()["accounts"]}
+    cash, loan = ledgers["Cash"], ledgers["Loan"]
+    aud_headers = await _accept_auditor(client, co_headers, eng_id, "elnaud@a.com")
+
+    entry = {
+        "code": "AJE-1",
+        "description": "Reclass",
+        "lines": [
+            {"ledger_id": cash["id"], "side": "debit", "amount": 100},
+            {"ledger_id": loan["id"], "side": "credit", "amount": 100},
+        ],
+    }
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/entries", json=entry, headers=aud_headers)
+    assert resp.status_code == 201, resp.text
+    # The create response already carries ledger identity.
+    created_lines = {l["ledger_id"]: l for l in resp.json()["lines"]}
+    assert created_lines[cash["id"]]["ledger_name"] == "Cash"
+    assert created_lines[cash["id"]]["ledger_code"] == "A1"
+    entry_id = resp.json()["id"]
+
+    # Auditor list view
+    resp = await client.get(f"/api/v1/auditor/engagements/{eng_id}/entries", headers=aud_headers)
+    aud_lines = {l["ledger_id"]: l for l in resp.json()[0]["lines"]}
+    assert aud_lines[cash["id"]]["ledger_name"] == "Cash"
+    assert aud_lines[loan["id"]]["ledger_name"] == "Loan"
+
+    # Company list view
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/entries", headers=co_headers)
+    co_lines = {l["ledger_id"]: l for l in resp.json()[0]["lines"]}
+    assert co_lines[cash["id"]]["ledger_name"] == "Cash"
+    assert co_lines[loan["id"]]["ledger_name"] == "Loan"
+
+    # Approve response also carries ledger identity
+    resp = await client.patch(f"/api/v1/auditease/entries/{entry_id}/approve", json={"status": "approved"}, headers=co_headers)
+    assert resp.status_code == 200
+    ap_lines = {l["ledger_id"]: l for l in resp.json()["lines"]}
+    assert ap_lines[loan["id"]]["ledger_name"] == "Loan"
+
+
+REPORT_CSV = (
+    b"Code,Name,Opening,Debit,Credit,Closing\n"
+    b"A1,Cash,0,0,0,1000\n"
+    b"L1,Loan,0,0,0,600\n"
+    b"I1,Sales,0,0,0,500\n"
+    b"E1,Rent,0,0,0,100\n"
+    b"U1,Suspense,0,0,0,999\n"
+)
+
+
+@pytest.mark.asyncio
+async def test_report_preview(client: AsyncClient):
+    await create_test_company(client, email="rep@a.com", password="pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='rep@a.com', password='pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    imp = await import_tb(client, eng_id, co_headers, csv=REPORT_CSV)
+    ledgers = {a["ledger_name"]: a for a in imp.json()["accounts"]}
+
+    groups = await get_groups(client, co_headers)
+
+    async def map_to(ledger_name, group_name):
+        gid = find_group(groups, group_name)["id"]
+        lid = ledgers[ledger_name]["id"]
+        r = await client.post(
+            f"/api/v1/auditease/engagements/{eng_id}/ledgers/{lid}/map",
+            json={"group_id": gid}, headers=co_headers,
+        )
+        assert r.status_code == 200, r.text
+
+    # Map four ledgers to seeded Schedule III leaves; leave Suspense unmapped.
+    await map_to("Cash", "Cash and Cash Equivalents")
+    await map_to("Loan", "Trade Payables")
+    await map_to("Sales", "Revenue from Operations")
+    await map_to("Rent", "Other Expenses")
+
+    # --- Preview before any entries -------------------------------------------
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/reports/preview", headers=co_headers)
+    assert resp.status_code == 200, resp.text
+    p = resp.json()
+    assert p["totals"] == {"assets": 1000.0, "liabilities": 600.0, "income": 500.0, "expenditure": 100.0}
+    assert p["net_profit"] == 400.0
+    assert p["balance_check"]["liabilities_plus_equity"] == 1000.0
+    assert p["balance_check"]["balanced"] is True
+    assert p["unmapped_count"] == 1
+    assert p["entries"]["approved_count"] == 0
+    assert p["entries"]["proposed_count"] == 0
+
+    # --- Add + approve an adjusting entry -------------------------------------
+    aud_headers = await _accept_auditor(client, co_headers, eng_id, "repaud@a.com")
+    entry = {
+        "description": "Extra sale",
+        "lines": [
+            {"ledger_id": ledgers["Cash"]["id"], "side": "debit", "amount": 200},
+            {"ledger_id": ledgers["Sales"]["id"], "side": "credit", "amount": 200},
+        ],
+    }
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/entries", json=entry, headers=aud_headers)
+    entry_id = resp.json()["id"]
+    await client.patch(f"/api/v1/auditease/entries/{entry_id}/approve", json={"status": "approved"}, headers=co_headers)
+
+    # Second, un-approved entry -> counted as proposed only
+    entry2 = {
+        "description": "Pending",
+        "lines": [
+            {"ledger_id": ledgers["Rent"]["id"], "side": "debit", "amount": 50},
+            {"ledger_id": ledgers["Loan"]["id"], "side": "credit", "amount": 50},
+        ],
+    }
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/entries", json=entry2, headers=aud_headers)
+
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/reports/preview", headers=co_headers)
+    p = resp.json()
+    # Approved debit to Cash raises assets; credit to Sales raises income.
+    assert p["totals"]["assets"] == 1200.0
+    assert p["totals"]["income"] == 700.0
+    assert p["net_profit"] == 600.0
+    assert p["balance_check"]["balanced"] is True  # double-entry keeps it balanced
+    assert p["entries"]["approved_count"] == 1
+    assert p["entries"]["proposed_count"] == 1
+
+    cash_line = next(l for l in p["lines"] if l["ledger_name"] == "Cash")
+    assert cash_line["adjustment"] == 200.0
+    assert cash_line["final"] == 1200.0
+    assert cash_line["top_group"] == "Assets"
+
+    # --- Generate persists an HTML report to docVault --------------------------
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/reports/generate", headers=co_headers)
+    assert resp.status_code == 200, resp.text
+    assert "id" in resp.json() and "url" in resp.json()

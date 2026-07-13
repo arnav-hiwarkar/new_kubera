@@ -85,8 +85,8 @@ function NewEntryDrawer({
       setDebitLines([])
       setCreditLines([])
       onClose()
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to create entry')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create entry')
     }
   }
 
@@ -153,7 +153,7 @@ function NewEntryDrawer({
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-sm font-semibold text-text-primary">Debit Lines</h4>
-              <Button type="button" variant="outline" size="sm" onClick={() => handleAddLine('debit')}>
+              <Button type="button" variant="secondary" size="sm" onClick={() => handleAddLine('debit')}>
                 <PlusIcon className="mr-1 h-3 w-3" /> Add Debit
               </Button>
             </div>
@@ -167,7 +167,7 @@ function NewEntryDrawer({
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-sm font-semibold text-text-primary">Credit Lines</h4>
-              <Button type="button" variant="outline" size="sm" onClick={() => handleAddLine('credit')}>
+              <Button type="button" variant="secondary" size="sm" onClick={() => handleAddLine('credit')}>
                 <PlusIcon className="mr-1 h-3 w-3" /> Add Credit
               </Button>
             </div>
@@ -183,7 +183,7 @@ function NewEntryDrawer({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" isLoading={createEntry.isPending} disabled={totalDebit !== totalCredit || totalDebit === 0}>
+          <Button type="submit" loading={createEntry.isPending} disabled={totalDebit !== totalCredit || totalDebit === 0}>
             Submit Entry
           </Button>
         </div>
@@ -203,8 +203,8 @@ export function AuditorEntriesTab({ engagementId }: { engagementId: string }) {
     try {
       await deleteEntry.mutateAsync(entryId)
       toast.success('Entry deleted')
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to delete entry')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete entry')
     }
   }
 
@@ -250,11 +250,11 @@ export function AuditorEntriesTab({ engagementId }: { engagementId: string }) {
                   </div>
                   {entry.status === 'proposed' && (
                     <Button
-                      variant="outline"
+                      variant="secondary"
                       size="sm"
                       className="text-status-action hover:bg-status-action-bg hover:text-status-action"
                       onClick={() => handleDelete(entry.id)}
-                      isLoading={deleteEntry.isPending}
+                      loading={deleteEntry.isPending}
                     >
                       <TrashIcon className="h-4 w-4" />
                     </Button>
@@ -269,7 +269,9 @@ export function AuditorEntriesTab({ engagementId }: { engagementId: string }) {
                         .filter((l) => l.side === 'debit')
                         .map((l) => (
                           <li key={l.id} className="flex justify-between text-sm">
-                            <span className="text-text-primary">{l.ledger?.ledger_name || 'Unknown Ledger'}</span>
+                            <span className="text-text-primary">
+                              {l.ledger_code ? `${l.ledger_code} — ${l.ledger_name}` : l.ledger_name}
+                            </span>
                             <span className="font-mono text-text-secondary">{formatMoney(l.amount)}</span>
                           </li>
                         ))}
@@ -286,7 +288,9 @@ export function AuditorEntriesTab({ engagementId }: { engagementId: string }) {
                         .filter((l) => l.side === 'credit')
                         .map((l) => (
                           <li key={l.id} className="flex justify-between text-sm">
-                            <span className="text-text-primary">{l.ledger?.ledger_name || 'Unknown Ledger'}</span>
+                            <span className="text-text-primary">
+                              {l.ledger_code ? `${l.ledger_code} — ${l.ledger_name}` : l.ledger_name}
+                            </span>
                             <span className="font-mono text-text-secondary">{formatMoney(l.amount)}</span>
                           </li>
                         ))}

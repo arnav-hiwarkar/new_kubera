@@ -39,6 +39,10 @@ export function MappingTab({ engagementId }: { engagementId: string }) {
       return next
     })
 
+  const mappedCount = accounts.filter((a) => a.mapped_group_id).length
+  const totalCount = accounts.length
+  const pct = totalCount ? Math.round((mappedCount / totalCount) * 100) : 0
+
   const allVisibleSelected = filtered.length > 0 && filtered.every((a) => selected.has(a.id))
   const toggleAll = () =>
     setSelected((s) => {
@@ -113,6 +117,20 @@ export function MappingTab({ engagementId }: { engagementId: string }) {
             className="h-8 max-w-xs"
           />
         </div>
+
+        {totalCount > 0 && (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-xs text-text-muted">
+              <span>
+                {mappedCount}/{totalCount} ledgers mapped
+              </span>
+              <span>{pct}%</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-bg-raised">
+              <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        )}
 
         {selected.size > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-card border border-accent/40 bg-accent-subtle px-3 py-2">

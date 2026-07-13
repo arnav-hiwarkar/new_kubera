@@ -10,6 +10,7 @@ import {
 export function GroupMappingCell({
   accountId,
   currentGroupId,
+  readonly,
 }: {
   accountId: string
   currentGroupId: string | null
@@ -106,7 +107,6 @@ export function GroupMappingCell({
         open={isCreating}
         onClose={() => setIsCreating(false)}
         title="Create Subgroup"
-        description="Add a custom subgroup for mapping ledgers."
       >
         <div className="flex flex-col gap-4">
           <Field label="Parent Group" required>

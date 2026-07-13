@@ -18,7 +18,7 @@ import type {
   RequirementFulfill,
   QueryResponse,
   QueryMessageResponse,
-  QueryMessageCreate,
+  ReportPreviewResponse,
 } from '@/api/types'
 
 /** AuditEase — company side (`/api/v1/auditease`). Company_user identity only. */
@@ -103,5 +103,15 @@ export const auditeaseCompanyApi = {
     companyClient.post<QueryMessageResponse>(
       `/api/v1/auditease/engagements/${engagementId}/queries/${queryId}/messages`,
       { formData },
+    ),
+
+  // Reports
+  previewReport: (engagementId: string) =>
+    companyClient.get<ReportPreviewResponse>(
+      `/api/v1/auditease/engagements/${engagementId}/reports/preview`,
+    ),
+  generateReport: (engagementId: string) =>
+    companyClient.post<{ id: string; url: string }>(
+      `/api/v1/auditease/engagements/${engagementId}/reports/generate`,
     ),
 }

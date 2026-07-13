@@ -3,7 +3,6 @@ import type { TrialBalanceAccountResponse } from '@/api/types'
 import { formatMoney } from '@/lib/format'
 import { GroupMappingCell } from './GroupMappingCell'
 import { Spinner, EmptyState } from '@/components/ui'
-import { cn } from '@/lib/cn'
 
 const ChevronDownIcon = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
@@ -134,7 +133,7 @@ export function TrialBalanceTable({
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <GroupMappingCell accountId={a.id} currentGroupId={a.mapped_group_id} readonly={readonly} />
+                          <GroupMappingCell accountId={a.id} currentGroupId={a.mapped_group_id ?? null} readonly={readonly} />
                         </td>
                         <td className="px-4 py-3 text-right">{money(a.opening_balance)}</td>
                         <td className="px-4 py-3 text-right">{money(a.debit)}</td>

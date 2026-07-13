@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Card, Button, Spinner, StatusBadge, EmptyState, useToast } from '@/components/ui'
 import { useListEntries, useApproveRejectEntry } from '@/api/hooks/auditease'
 import { formatMoney } from '@/lib/format'
@@ -22,8 +21,8 @@ export function AuditEntriesTab({ engagementId }: { engagementId: string }) {
     try {
       await approveReject.mutateAsync({ entryId, body: { status: action } })
       toast.success(`Entry ${action}`)
-    } catch (e: any) {
-      toast.error(e.message || `Failed to ${action} entry`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `Failed to ${action} entry`)
     }
   }
 
@@ -88,7 +87,9 @@ export function AuditEntriesTab({ engagementId }: { engagementId: string }) {
                   <tbody className="divide-y divide-border">
                     {entry.lines.map((line) => (
                       <tr key={line.id} className="hover:bg-background-subtle/50">
-                        <td className="px-4 py-2">{line.ledger_name}</td>
+                        <td className="px-4 py-2">
+                          {line.ledger_code ? `${line.ledger_code} — ${line.ledger_name}` : line.ledger_name}
+                        </td>
                         <td className="px-4 py-2 text-right">
                           {line.side === 'debit' ? formatMoney(line.amount) : '—'}
                         </td>

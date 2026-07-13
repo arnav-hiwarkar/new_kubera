@@ -156,8 +156,12 @@ async def create_entry(
     await db.commit()
     await db.refresh(db_entry)
     
-    # reload with lines
-    res = await db.execute(select(AuditEntry).options(selectinload(AuditEntry.lines)).where(AuditEntry.id == db_entry.id))
+    # reload with lines + ledger for the response
+    res = await db.execute(
+        select(AuditEntry)
+        .options(selectinload(AuditEntry.lines).selectinload(AuditEntryLine.ledger))
+        .where(AuditEntry.id == db_entry.id)
+    )
     return res.scalar_one()
 
 
@@ -170,7 +174,7 @@ async def list_auditor_entries(
     await check_auditor_access(db, current_auditor.id, engagement_id)
     result = await db.execute(
         select(AuditEntry)
-        .options(selectinload(AuditEntry.lines))
+        .options(selectinload(AuditEntry.lines).selectinload(AuditEntryLine.ledger))
         .where(AuditEntry.engagement_id == engagement_id)
         .order_by(AuditEntry.created_at.desc())
     )

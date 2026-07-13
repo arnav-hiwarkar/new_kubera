@@ -131,6 +131,9 @@ class AuditEntryLine(Base):
     amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
 
     entry = relationship("AuditEntry", back_populates="lines")
+    # The trial-balance ledger this line adjusts. Read paths eager-load it so the
+    # API can surface the ledger name/code (raise if accessed unloaded in async).
+    ledger = relationship("TrialBalanceAccount", lazy="raise")
 
 
 # --- Requests & Queries ---

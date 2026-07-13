@@ -15,7 +15,7 @@ from app.models.auditor import Auditor
 from app.models.auditease import (
     TrialBalanceAccount, LedgerGroup, AuditEngagement, AuditorEngagementGrant,
     PendingAuditorInvite, AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage,
-    EngagementStatus, GrantStatus, AuditEntryStatus, RequestStatus, QueryStatus, SenderType
+    EngagementStatus, GrantStatus, AuditEntryStatus, EntryLineSide, RequestStatus, QueryStatus, SenderType
 )
 from app.schemas.auditease import (
     TrialBalanceAccountResponse, LedgerGroupResponse, LedgerGroupCreate, LedgerGroupRename,
@@ -23,7 +23,10 @@ from app.schemas.auditease import (
     AuditEngagementResponse, AuditEntryResponse, RequirementRequestResponse,
     QueryResponse, QueryMessageResponse, QueryMessageCreate,
     TBColumnMap, TBInspectResponse, TBImportResult,
+    ReportLine, ReportTotals, ReportBalanceCheck, ReportEntrySummary,
+    ReportEntriesBlock, ReportPreviewResponse,
 )
+from app.config import get_settings
 from app.services import import_service
 from app.services import ledger_groups as lg
 
@@ -577,21 +580,26 @@ async def approve_reject_entry(
     # Verify the entry belongs to an engagement owned by this company
     result = await db.execute(
         select(AuditEntry)
-        .options(selectinload(AuditEntry.lines))
+        .options(selectinload(AuditEntry.lines).selectinload(AuditEntryLine.ledger))
         .join(AuditEngagement, AuditEngagement.id == AuditEntry.engagement_id)
         .where(and_(AuditEntry.id == entry_id, AuditEngagement.company_id == current_user.company_id))
     )
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
-        
+
     if approval.status not in [AuditEntryStatus.approved, AuditEntryStatus.rejected]:
         raise HTTPException(status_code=400, detail="Invalid status")
-        
+
     entry.status = approval.status
     await db.commit()
-    await db.refresh(entry)
-    return entry
+    # Re-select with lines + ledger eager-loaded for the response.
+    result = await db.execute(
+        select(AuditEntry)
+        .options(selectinload(AuditEntry.lines).selectinload(AuditEntryLine.ledger))
+        .where(AuditEntry.id == entry_id)
+    )
+    return result.scalar_one()
 
 
 @router.get("/engagements/{engagement_id}/entries", response_model=List[AuditEntryResponse])
@@ -603,7 +611,7 @@ async def list_entries(
     await _get_owned_engagement(db, current_user.company_id, engagement_id)
     result = await db.execute(
         select(AuditEntry)
-        .options(selectinload(AuditEntry.lines))
+        .options(selectinload(AuditEntry.lines).selectinload(AuditEntryLine.ledger))
         .where(AuditEntry.engagement_id == engagement_id)
         .order_by(AuditEntry.created_at.desc())
     )
@@ -741,6 +749,193 @@ async def add_query_message(
     return message
 
 
+def _round2(v: float) -> float:
+    return round(float(v), 2)
+
+
+async def _compute_report(db: AsyncSession, company_id: uuid.UUID, eng: AuditEngagement) -> ReportPreviewResponse:
+    """Build the Balance Sheet + P&L + entries summary for an engagement, applying
+    approved audit-entry adjustments. Shared by the preview and generate endpoints so
+    the accounting lives in exactly one place."""
+    res_acc = await db.execute(
+        select(TrialBalanceAccount)
+        .where(TrialBalanceAccount.engagement_id == eng.id)
+        .order_by(TrialBalanceAccount.ledger_name)
+    )
+    accounts = list(res_acc.scalars().all())
+    path_map = await lg.resolve_group_paths(db, company_id)
+    lg.attach_group_paths(accounts, path_map)
+
+    # Approved entries drive the adjustments; proposed ones are only counted.
+    res_ent = await db.execute(
+        select(AuditEntry)
+        .options(selectinload(AuditEntry.lines))
+        .where(and_(AuditEntry.engagement_id == eng.id, AuditEntry.status == AuditEntryStatus.approved))
+        .order_by(AuditEntry.created_at.asc())
+    )
+    approved_entries = list(res_ent.scalars().all())
+    proposed_res = await db.execute(
+        select(func.count()).select_from(AuditEntry).where(
+            and_(AuditEntry.engagement_id == eng.id, AuditEntry.status == AuditEntryStatus.proposed)
+        )
+    )
+    proposed_count = int(proposed_res.scalar() or 0)
+
+    # Net-debit adjustment per ledger.
+    adjustments: dict[uuid.UUID, float] = {}
+    for entry in approved_entries:
+        for line in entry.lines:
+            delta = float(line.amount) if line.side == EntryLineSide.debit else -float(line.amount)
+            adjustments[line.ledger_id] = adjustments.get(line.ledger_id, 0.0) + delta
+
+    lines: list[ReportLine] = []
+    totals = {"Assets": 0.0, "Liabilities": 0.0, "Income": 0.0, "Expenditure": 0.0}
+    unmapped_count = 0
+    for acc in accounts:
+        top = acc.mapped_group_path[0] if acc.mapped_group_path else None
+        adj = adjustments.get(acc.id, 0.0)
+        closing = float(acc.closing_balance)
+        # Debit-natured groups grow with a net debit; credit-natured shrink.
+        if top in ("Assets", "Expenditure"):
+            final = closing + adj
+        elif top in ("Liabilities", "Income"):
+            final = closing - adj
+        else:
+            final = closing  # unmapped — excluded from statement totals
+        if top is None:
+            unmapped_count += 1
+        else:
+            totals[top] += final
+        lines.append(ReportLine(
+            ledger_id=acc.id,
+            ledger_name=acc.ledger_name,
+            ledger_code=acc.ledger_code,
+            top_group=top,
+            group_path=acc.mapped_group_path,
+            closing=_round2(closing),
+            adjustment=_round2(adj),
+            final=_round2(final),
+        ))
+
+    net_profit = totals["Income"] - totals["Expenditure"]
+    liab_plus_equity = totals["Liabilities"] + net_profit
+    difference = totals["Assets"] - liab_plus_equity
+
+    entry_summaries = [
+        ReportEntrySummary(
+            id=e.id,
+            code=e.code,
+            description=e.description,
+            total=_round2(sum(float(l.amount) for l in e.lines if l.side == EntryLineSide.debit)),
+            line_count=len(e.lines),
+        )
+        for e in approved_entries
+    ]
+
+    return ReportPreviewResponse(
+        period_label=eng.period_label,
+        lines=lines,
+        totals=ReportTotals(
+            assets=_round2(totals["Assets"]),
+            liabilities=_round2(totals["Liabilities"]),
+            income=_round2(totals["Income"]),
+            expenditure=_round2(totals["Expenditure"]),
+        ),
+        net_profit=_round2(net_profit),
+        balance_check=ReportBalanceCheck(
+            assets=_round2(totals["Assets"]),
+            liabilities_plus_equity=_round2(liab_plus_equity),
+            difference=_round2(difference),
+            balanced=abs(difference) < 0.01,
+        ),
+        entries=ReportEntriesBlock(
+            approved=entry_summaries,
+            approved_count=len(approved_entries),
+            proposed_count=proposed_count,
+        ),
+        unmapped_count=unmapped_count,
+    )
+
+
+def _report_to_html(report: ReportPreviewResponse) -> str:
+    """Render the computed report as a standalone HTML document for docVault."""
+    def money(v: float) -> str:
+        return f"{v:,.2f}"
+
+    def section(title: str, groups: list[str]) -> str:
+        rows = ""
+        for line in report.lines:
+            if line.top_group not in groups:
+                continue
+            path = " › ".join(line.group_path) if line.group_path else (line.top_group or "Unmapped")
+            rows += (
+                f"<tr><td>{line.ledger_name}</td><td>{path}</td>"
+                f"<td class='num'>{money(line.closing)}</td>"
+                f"<td class='num'>{money(line.adjustment)}</td>"
+                f"<td class='num'>{money(line.final)}</td></tr>"
+            )
+        return (
+            f"<h2>{title}</h2>"
+            "<table><thead><tr><th>Ledger</th><th>Group</th>"
+            "<th class='num'>Closing</th><th class='num'>Adjustment</th>"
+            "<th class='num'>Final</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+
+    t = report.totals
+    bc = report.balance_check
+    entries_rows = "".join(
+        f"<tr><td>{e.code or '—'}</td><td>{e.description}</td>"
+        f"<td class='num'>{money(e.total)}</td><td class='num'>{e.line_count}</td></tr>"
+        for e in report.entries.approved
+    ) or "<tr><td colspan='4'>No approved adjusting entries.</td></tr>"
+
+    unmapped_note = (
+        f"<p class='warn'>{report.unmapped_count} ledger(s) are unmapped and excluded "
+        "from these statements.</p>" if report.unmapped_count else ""
+    )
+    balance_note = (
+        "Balanced" if bc.balanced
+        else f"Not balanced — difference {money(bc.difference)}"
+    )
+
+    return (
+        "<html><head><meta charset='utf-8'><style>"
+        "body{font-family:Arial,Helvetica,sans-serif;margin:32px;color:#111}"
+        "h1{font-size:20px}h2{font-size:16px;margin-top:24px}"
+        "table{border-collapse:collapse;width:100%;margin-top:8px;font-size:13px}"
+        "th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}"
+        ".num{text-align:right;font-variant-numeric:tabular-nums}"
+        ".warn{color:#b45309}.total{font-weight:bold}"
+        "</style></head><body>"
+        f"<h1>Financial Statements — {report.period_label}</h1>"
+        f"{unmapped_note}"
+        f"{section('Balance Sheet', ['Assets', 'Liabilities'])}"
+        f"<p class='total'>Total Assets: {money(t.assets)} &nbsp;|&nbsp; "
+        f"Total Liabilities: {money(t.liabilities)} &nbsp;|&nbsp; "
+        f"Liabilities + Equity: {money(bc.liabilities_plus_equity)} &nbsp;|&nbsp; {balance_note}</p>"
+        f"{section('Profit &amp; Loss', ['Income', 'Expenditure'])}"
+        f"<p class='total'>Total Income: {money(t.income)} &nbsp;|&nbsp; "
+        f"Total Expenditure: {money(t.expenditure)} &nbsp;|&nbsp; "
+        f"Net {'Profit' if report.net_profit >= 0 else 'Loss'}: {money(abs(report.net_profit))}</p>"
+        "<h2>Approved Adjusting Entries</h2>"
+        "<table><thead><tr><th>Code</th><th>Description</th>"
+        "<th class='num'>Amount</th><th class='num'>Lines</th></tr></thead>"
+        f"<tbody>{entries_rows}</tbody></table>"
+        "</body></html>"
+    )
+
+
+@router.get("/engagements/{engagement_id}/reports/preview", response_model=ReportPreviewResponse)
+async def preview_report(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    return await _compute_report(db, current_user.company_id, eng)
+
+
 @router.post("/engagements/{engagement_id}/reports/generate")
 async def generate_report(
     engagement_id: uuid.UUID,
@@ -748,53 +943,9 @@ async def generate_report(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
-    
-    # Get all accounts
-    res_acc = await db.execute(select(TrialBalanceAccount).where(TrialBalanceAccount.engagement_id == engagement_id))
-    accounts = res_acc.scalars().all()
-    
-    # Get all approved entries
-    res_ent = await db.execute(
-        select(AuditEntry)
-        .options(selectinload(AuditEntry.lines))
-        .where(and_(AuditEntry.engagement_id == engagement_id, AuditEntry.status == AuditEntryStatus.approved))
-    )
-    entries = res_ent.scalars().all()
-    
-    path_map = await lg.resolve_group_paths(db, current_user.company_id)
-    lg.attach_group_paths(accounts, path_map)
-    
-    # Calculate adjustments per ledger
-    adjustments: dict[uuid.UUID, float] = {}
-    for entry in entries:
-        for line in entry.lines:
-            if line.ledger_id not in adjustments:
-                adjustments[line.ledger_id] = 0.0
-            if line.side == 'debit':
-                adjustments[line.ledger_id] += float(line.amount)
-            else:
-                adjustments[line.ledger_id] -= float(line.amount)
-                
-    # Generate HTML
-    html = f"<html><body><h1>Annual Report for {eng.period_label}</h1>"
-    html += "<table border='1'><tr><th>Ledger</th><th>Group</th><th>Closing</th><th>Adj</th><th>Final</th></tr>"
-    
-    for acc in accounts:
-        group_path = " > ".join(acc.mapped_group_path) if acc.mapped_group_path else "Unmapped"
-        is_asset_exp = False
-        if acc.mapped_group_path and acc.mapped_group_path[0] in ["Assets", "Expenditure"]:
-            is_asset_exp = True
-            
-        adj = adjustments.get(acc.id, 0.0)
-        
-        if is_asset_exp:
-            final = float(acc.closing_balance) + adj
-        else:
-            final = float(acc.closing_balance) - adj
-            
-        html += f"<tr><td>{acc.ledger_name}</td><td>{group_path}</td><td>{acc.closing_balance}</td><td>{adj}</td><td>{final}</td></tr>"
-        
-    html += "</table></body></html>"
+
+    report = await _compute_report(db, current_user.company_id, eng)
+    html = _report_to_html(report)
     
     # Create docVault entry
     from app.models.docvault import Bucket, Document, DocumentVersion, DocumentStatus
@@ -834,7 +985,7 @@ async def generate_report(
     company_kek = await get_company_kek(db, eng.company_id)
     encrypted_dek, dek_nonce_for_kek = encrypt_dek(raw_dek, company_kek)
     
-    vault_dir = f"/data/vault/{eng.company_id}"
+    vault_dir = f"{get_settings().VAULT_STORAGE_PATH}/{eng.company_id}"
     os.makedirs(vault_dir, exist_ok=True)
     file_uuid = str(uuid.uuid4())
     storage_path = f"{vault_dir}/{file_uuid}.enc"
@@ -853,6 +1004,7 @@ async def generate_report(
         size_bytes=len(file_data),
         checksum=checksum,
         encrypted_dek=encrypted_dek,
+        dek_nonce=dek_nonce_for_kek,
         uploaded_by=current_user.id,
         version_number=1,
     )

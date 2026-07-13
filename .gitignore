@@ -26,3 +26,6 @@ htmlcov/
 
 # Alembic
 *.pyc
+
+# Python virtualenv
+.venv/

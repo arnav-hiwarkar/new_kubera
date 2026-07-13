@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.auditease import EngagementStatus, GrantStatus, AuditEntryStatus, EntryLineSide, RequestStatus, QueryStatus, SenderType
 
@@ -127,7 +127,30 @@ class AuditEntryLineBase(BaseModel):
 class AuditEntryLineResponse(AuditEntryLineBase):
     id: uuid.UUID
     entry_id: uuid.UUID
+    # Flattened from the related trial-balance account so both the auditor and
+    # company UIs can show which ledger a line adjusts.
+    ledger_name: str
+    ledger_code: Optional[str] = None
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_ledger(cls, data):
+        # `data` is the ORM AuditEntryLine on the read path. Surface the ledger's
+        # name/code as flat fields; the relationship is eager-loaded by callers.
+        if isinstance(data, dict):
+            return data
+        ledger = getattr(data, "ledger", None)
+        values = {
+            "id": data.id,
+            "entry_id": data.entry_id,
+            "ledger_id": data.ledger_id,
+            "side": data.side,
+            "amount": data.amount,
+            "ledger_name": getattr(ledger, "ledger_name", None) or "(deleted ledger)",
+            "ledger_code": getattr(ledger, "ledger_code", None),
+        }
+        return values
 
 class AuditEntryCreate(BaseModel):
     code: Optional[str] = None
@@ -193,6 +216,52 @@ class QueryResponse(BaseModel):
 
 
 # --- Reports ---
+
+class ReportLine(BaseModel):
+    """One ledger's contribution to the statements, with audit adjustments applied."""
+    ledger_id: uuid.UUID
+    ledger_name: str
+    ledger_code: Optional[str] = None
+    # Top-level Schedule III group: Assets | Liabilities | Income | Expenditure | None
+    top_group: Optional[str] = None
+    group_path: Optional[List[str]] = None
+    closing: float
+    adjustment: float
+    final: float
+
+class ReportTotals(BaseModel):
+    assets: float
+    liabilities: float
+    income: float
+    expenditure: float
+
+class ReportBalanceCheck(BaseModel):
+    assets: float
+    liabilities_plus_equity: float
+    difference: float
+    balanced: bool
+
+class ReportEntrySummary(BaseModel):
+    id: uuid.UUID
+    code: Optional[str] = None
+    description: str
+    total: float
+    line_count: int
+
+class ReportEntriesBlock(BaseModel):
+    approved: List[ReportEntrySummary]
+    approved_count: int
+    proposed_count: int
+
+class ReportPreviewResponse(BaseModel):
+    period_label: str
+    lines: List[ReportLine]
+    totals: ReportTotals
+    net_profit: float
+    balance_check: ReportBalanceCheck
+    entries: ReportEntriesBlock
+    unmapped_count: int
+
 
 class ReportTemplateResponse(BaseModel):
     id: uuid.UUID

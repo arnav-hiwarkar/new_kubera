@@ -936,6 +936,23 @@ export interface paths {
         patch: operations["approve_reject_entry_api_v1_auditease_entries__entry_id__approve_patch"];
         trace?: never;
     };
+    "/api/v1/auditease/engagements/{engagement_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Entries */
+        get: operations["list_entries_api_v1_auditease_engagements__engagement_id__entries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auditease/engagements/{engagement_id}/requirement-requests": {
         parameters: {
             query?: never;
@@ -1004,6 +1021,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auditease/engagements/{engagement_id}/reports/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview Report */
+        get: operations["preview_report_api_v1_auditease_engagements__engagement_id__reports_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/reports/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Report */
+        post: operations["generate_report_api_v1_auditease_engagements__engagement_id__reports_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auditor/engagements": {
         parameters: {
             query?: never;
@@ -1062,11 +1113,29 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Auditor Entries */
+        get: operations["list_auditor_entries_api_v1_auditor_engagements__engagement_id__entries_get"];
         put?: never;
         /** Create Entry */
         post: operations["create_entry_api_v1_auditor_engagements__engagement_id__entries_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditor/entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Auditor Entry */
+        delete: operations["delete_auditor_entry_api_v1_auditor_entries__entry_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1504,6 +1573,10 @@ export interface components {
              * Format: uuid
              */
             entry_id: string;
+            /** Ledger Name */
+            ledger_name: string;
+            /** Ledger Code */
+            ledger_code?: string | null;
         };
         /** AuditEntryResponse */
         AuditEntryResponse: {
@@ -2307,6 +2380,92 @@ export interface components {
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** ReportBalanceCheck */
+        ReportBalanceCheck: {
+            /** Assets */
+            assets: number;
+            /** Liabilities Plus Equity */
+            liabilities_plus_equity: number;
+            /** Difference */
+            difference: number;
+            /** Balanced */
+            balanced: boolean;
+        };
+        /** ReportEntriesBlock */
+        ReportEntriesBlock: {
+            /** Approved */
+            approved: components["schemas"]["ReportEntrySummary"][];
+            /** Approved Count */
+            approved_count: number;
+            /** Proposed Count */
+            proposed_count: number;
+        };
+        /** ReportEntrySummary */
+        ReportEntrySummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code?: string | null;
+            /** Description */
+            description: string;
+            /** Total */
+            total: number;
+            /** Line Count */
+            line_count: number;
+        };
+        /**
+         * ReportLine
+         * @description One ledger's contribution to the statements, with audit adjustments applied.
+         */
+        ReportLine: {
+            /**
+             * Ledger Id
+             * Format: uuid
+             */
+            ledger_id: string;
+            /** Ledger Name */
+            ledger_name: string;
+            /** Ledger Code */
+            ledger_code?: string | null;
+            /** Top Group */
+            top_group?: string | null;
+            /** Group Path */
+            group_path?: string[] | null;
+            /** Closing */
+            closing: number;
+            /** Adjustment */
+            adjustment: number;
+            /** Final */
+            final: number;
+        };
+        /** ReportPreviewResponse */
+        ReportPreviewResponse: {
+            /** Period Label */
+            period_label: string;
+            /** Lines */
+            lines: components["schemas"]["ReportLine"][];
+            totals: components["schemas"]["ReportTotals"];
+            /** Net Profit */
+            net_profit: number;
+            balance_check: components["schemas"]["ReportBalanceCheck"];
+            entries: components["schemas"]["ReportEntriesBlock"];
+            /** Unmapped Count */
+            unmapped_count: number;
+        };
+        /** ReportTotals */
+        ReportTotals: {
+            /** Assets */
+            assets: number;
+            /** Liabilities */
+            liabilities: number;
+            /** Income */
+            income: number;
+            /** Expenditure */
+            expenditure: number;
         };
         /**
          * RequestStatus
@@ -4725,6 +4884,37 @@ export interface operations {
             };
         };
     };
+    list_entries_api_v1_auditease_engagements__engagement_id__entries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEntryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_requirements_api_v1_auditease_engagements__engagement_id__requirement_requests_get: {
         parameters: {
             query?: never;
@@ -4859,6 +5049,68 @@ export interface operations {
             };
         };
     };
+    preview_report_api_v1_auditease_engagements__engagement_id__reports_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_report_api_v1_auditease_engagements__engagement_id__reports_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_engagements_api_v1_auditor_engagements_get: {
         parameters: {
             query?: never;
@@ -4941,6 +5193,37 @@ export interface operations {
             };
         };
     };
+    list_auditor_entries_api_v1_auditor_engagements__engagement_id__entries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEntryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_entry_api_v1_auditor_engagements__engagement_id__entries_post: {
         parameters: {
             query?: never;
@@ -4964,6 +5247,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AuditEntryResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_auditor_entry_api_v1_auditor_entries__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

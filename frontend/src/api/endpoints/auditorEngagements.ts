@@ -6,9 +6,7 @@ import type {
   AuditEntryResponse,
   RequirementRequestCreate,
   RequirementRequestResponse,
-  QueryCreate,
   QueryResponse,
-  QueryMessageCreate,
   QueryMessageResponse,
   DocumentResponse,
 } from '@/api/types'
