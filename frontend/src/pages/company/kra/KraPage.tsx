@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { PageHeader, Button, DataTable, StatusBadge, type Column } from '@/components/ui'
+import { Target, Clock, Activity, CheckCircle2 } from 'lucide-react'
+import { PageHeader, Button, DataTable, StatusBadge, StatCard, Tabs, type Column } from '@/components/ui'
 import { useCompanyAuth } from '@/auth/company'
 import { useKras } from '@/api/hooks/kra'
 import { usersApi } from '@/api/endpoints/users'
-import { cn } from '@/lib/cn'
 import type { KRAResponse } from '@/api/types'
 import { KraDrawer } from './KraDrawer'
 
@@ -101,31 +101,32 @@ export function KraPage() {
   const rows = tab === 'mine' ? mine : team
   const columns = tab === 'mine' ? baseCols : teamCols
 
+  const countBy = (status: string) => rows.filter((k) => k.status === status).length
+
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <PageHeader
+        eyebrow="WORKFORCE"
+        icon={<Target />}
         title="KRA & Appraisals"
-        description="Key result areas and the plan → progress → appraisal cycle"
+        description="Key result areas and the plan, progress and appraisal cycle"
         actions={
           tab === 'mine' ? <Button onClick={openCreate}>New KRA</Button> : undefined
         }
       />
 
-      <div className="mb-4 flex gap-1 border-b border-border">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-              tab === t.id
-                ? 'border-accent text-text-primary'
-                : 'border-transparent text-text-muted hover:text-text-primary',
-            )}
-          >
-            {t.label} <span className="text-text-muted">({t.count})</span>
-          </button>
-        ))}
+      <Tabs
+        tabs={tabs}
+        value={tab}
+        onChange={(id) => setTab(id as Tab)}
+        accent="company"
+      />
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard label="Total KRAs" value={rows.length} icon={<Target />} tone="accent" loading={isLoading} />
+        <StatCard label="Pending approval" value={countBy('pending_approval')} icon={<Clock />} tone="warning" loading={isLoading} />
+        <StatCard label="In progress" value={countBy('in_progress')} icon={<Activity />} tone="info" loading={isLoading} />
+        <StatCard label="Completed" value={countBy('completed')} icon={<CheckCircle2 />} tone="accent" loading={isLoading} />
       </div>
 
       <DataTable

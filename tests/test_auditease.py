@@ -122,17 +122,6 @@ async def test_engagement_starts_draft(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_engagement_lifecycle(client: AsyncClient):
     await create_test_company(client, email="co@a.com", password="pass")
-<<<<<<< HEAD
-    co_token = await get_company_token(client, email="co@a.com", password="pass")
-    co_headers = {"Authorization": f"Bearer {co_token}"}
-    
-    # 1. Company creates engagement
-    resp = await client.post("/api/v1/auditease/engagements", json={"period_label": "FY2023"}, headers=co_headers)
-    assert resp.status_code == 201
-    eng_id = resp.json()["id"]
-    
-    # 2. Company invites auditor (new auditor -> creates placeholder -> status = invited)
-=======
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co@a.com', password='pass')}"}
 
     await client.post("/api/v1/auth/auditor/register", json={"email": "aud@a.com", "password": "pass", "name": "Auditor"})
@@ -142,7 +131,6 @@ async def test_engagement_lifecycle(client: AsyncClient):
     eng_id = await make_engagement(client, co_headers)
 
     # Invite moves draft -> invited
->>>>>>> new_frontend
     resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "aud@a.com"}, headers=co_headers)
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == EngagementStatus.invited.value
@@ -156,18 +144,6 @@ async def test_engagement_lifecycle(client: AsyncClient):
     # Accept moves invited -> active
     resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
     assert resp.status_code == 200
-<<<<<<< HEAD
-    
-    # Auditor Setup (registering over the placeholder)
-    resp = await client.post("/api/v1/auth/auditor/register", json={"email": "aud@a.com", "password": "pass", "name": "Auditor"})
-    assert resp.status_code == 201
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud@a.com", "password": "pass"})
-    aud_token = resp.json()["access_token"]
-    aud_headers = {"Authorization": f"Bearer {aud_token}"}
-
-    
-    # 3. Auditor sees invite and accepts
-=======
     resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}", headers=co_headers)
     assert resp.json()["status"] == EngagementStatus.active.value
 
@@ -225,7 +201,6 @@ async def test_pending_invite_autoconverts_on_registration(client: AsyncClient):
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "future@aud.com", "password": "pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
->>>>>>> new_frontend
     resp = await client.get("/api/v1/auditor/engagements", headers=aud_headers)
     assert resp.status_code == 200
     assert len(resp.json()) == 1
@@ -428,14 +403,8 @@ async def test_requirements_and_queries(client: AsyncClient):
     eng_id = await make_engagement(client, co_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "aud3@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
-<<<<<<< HEAD
-    
-    # Auditor creates requirement
-    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", json={"title": "Bank Statements", "description": "Provide bank statements"}, headers=aud_headers)
-=======
 
-    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", json={"description": "Provide bank statements"}, headers=aud_headers)
->>>>>>> new_frontend
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", json={"title": "Bank Statements", "description": "Provide bank statements"}, headers=aud_headers)
     assert resp.status_code == 200
     req_id = resp.json()["id"]
 

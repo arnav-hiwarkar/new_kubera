@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Archive, Upload } from 'lucide-react'
 import {
   PageHeader,
   Button,
@@ -125,11 +126,18 @@ export function DocVaultPage() {
   ]
 
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <PageHeader
+        eyebrow="DOCUMENTS"
+        icon={<Archive />}
         title="DocVault"
         description="Encrypted company document library with buckets and version history"
-        actions={<Button onClick={() => setUploadOpen(true)}>+ Upload</Button>}
+        actions={
+          <Button onClick={() => setUploadOpen(true)}>
+            <Upload />
+            Upload
+          </Button>
+        }
       />
 
       <div className="flex gap-4">

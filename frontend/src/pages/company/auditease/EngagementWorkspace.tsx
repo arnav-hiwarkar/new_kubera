@@ -1,15 +1,30 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
+  ArrowLeft,
+  ClipboardCheck,
+  BookOpen,
+  Network,
+  FileText,
+  ListChecks,
+  MessagesSquare,
+  FileBarChart,
+  Users,
+  Layers,
+  Scale,
+  ScrollText,
+} from 'lucide-react'
+import {
   Button,
   Card,
+  StatCard,
   StatusBadge,
   Spinner,
   EmptyState,
   ConfirmDialog,
+  Tabs,
   useToast,
 } from '@/components/ui'
-import { cn } from '@/lib/cn'
 import { ApiError } from '@/api/http'
 import { formatMoney } from '@/lib/format'
 import { useEngagement, useCompanyTrialBalance, useCloseEngagement } from '@/api/hooks/auditease'
@@ -65,34 +80,45 @@ export function EngagementWorkspace() {
   }
 
   const mappedCount = accounts.filter((a) => a.mapped_group_id).length
+  const mappedRatio = accounts.length > 0 ? Math.round((mappedCount / accounts.length) * 100) : 0
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'trial-balance', label: 'Trial Balance' },
-    { id: 'mapping', label: 'Chart of Accounts' },
-    { id: 'entries', label: 'Entries' },
-    { id: 'requirements', label: 'Requirements' },
-    { id: 'queries', label: 'Queries' },
-    { id: 'reports', label: 'Reports' },
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: <ClipboardCheck /> },
+    { id: 'trial-balance', label: 'Trial Balance', icon: <BookOpen /> },
+    { id: 'mapping', label: 'Chart of Accounts', icon: <Network /> },
+    { id: 'entries', label: 'Entries', icon: <FileText />, count: entries.filter((e) => e.status === 'proposed').length },
+    { id: 'requirements', label: 'Requirements', icon: <ListChecks />, count: reqs.filter((r) => r.status === 'open').length },
+    { id: 'queries', label: 'Queries', icon: <MessagesSquare />, count: queries.filter((q) => q.status === 'open').length },
+    { id: 'reports', label: 'Reports', icon: <FileBarChart /> },
   ]
 
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="mb-5">
-        <button
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 mb-2 text-text-muted"
           onClick={() => navigate('/app/auditease')}
-          className="mb-2 text-sm text-text-muted hover:text-text-primary"
         >
-          ← All engagements
-        </button>
+          <ArrowLeft className="h-4 w-4" /> All engagements
+        </Button>
         <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-text-primary">{eng.period_label}</h1>
-            <StatusBadge status={eng.status} />
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-subtle text-accent [&_svg]:h-5 [&_svg]:w-5">
+              <ClipboardCheck />
+            </span>
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-accent">ENGAGEMENT</p>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-display text-text-primary">{eng.period_label}</h1>
+                <StatusBadge status={eng.status} />
+              </div>
+            </div>
           </div>
           {!closed && (
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2">
               <Button variant="secondary" onClick={() => setInviteOpen(true)}>
                 {eng.auditor_email ? 'Change auditor' : 'Invite auditor'}
               </Button>
@@ -107,87 +133,85 @@ export function EngagementWorkspace() {
       </div>
 
       {/* Tabs */}
-      <div className="mb-4 flex gap-1 border-b border-border">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-              tab === t.id
-                ? 'border-accent text-text-primary'
-                : 'border-transparent text-text-muted hover:text-text-primary',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={tabs}
+        value={tab}
+        onChange={(id) => setTab(id as Tab)}
+        accent="company"
+        layoutGroup="company-workspace"
+      />
 
       {/* Overview */}
       {tab === 'overview' && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card>
-            <div className="text-sm text-text-muted">Status</div>
-            <div className="mt-1"><StatusBadge status={eng.status} /></div>
-          </Card>
-          <Card>
-            <div className="text-sm text-text-muted">Auditor</div>
-            <div className="mt-1 truncate text-base font-medium text-text-primary">
-              {eng.auditor_email ?? 'Not invited'}
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm font-medium text-text-secondary">Status</p>
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-subtle text-accent [&_svg]:h-[18px] [&_svg]:w-[18px]">
+                <ClipboardCheck />
+              </span>
             </div>
-            {eng.auditor_grant_status && (
-              <div className="mt-1 text-xs text-text-secondary">{eng.auditor_grant_status}</div>
-            )}
+            <div className="mt-3"><StatusBadge status={eng.status} /></div>
+            <p className="mt-1 truncate text-sm text-text-muted">{eng.auditor_email ?? 'No auditor invited'}</p>
           </Card>
-          <Card>
-            <div className="text-sm text-text-muted">Ledgers</div>
-            <div className="mt-1 text-2xl font-semibold text-text-primary">{accounts.length}</div>
-          </Card>
-          <Card>
-            <div className="text-sm text-text-muted">Mapped</div>
-            <div className="mt-1 text-2xl font-semibold text-text-primary">
-              {mappedCount}
-              <span className="text-base font-normal text-text-muted">/{accounts.length}</span>
-            </div>
-          </Card>
-          <Card>
-            <div className="text-sm text-text-muted">Balanced</div>
-            <div
-              className={cn(
-                'mt-1 text-base font-medium',
-                accounts.length === 0
-                  ? 'text-text-muted'
-                  : balanced
-                    ? 'text-status-verified'
-                    : 'text-status-pending',
-              )}
-            >
-              {accounts.length === 0
-                ? '—'
-                : balanced
-                  ? 'Yes'
-                  : `No · Dr ${formatMoney(totalDebit)} / Cr ${formatMoney(totalCredit)}`}
-            </div>
-          </Card>
-          <Card>
-            <div className="text-sm text-text-muted">Requirements</div>
-            <div className="mt-1 text-2xl font-semibold text-text-primary">
-              {reqs.filter(r => r.status === 'open').length} <span className="text-base font-normal text-text-muted">open</span>
-            </div>
-          </Card>
-          <Card>
-            <div className="text-sm text-text-muted">Queries</div>
-            <div className="mt-1 text-2xl font-semibold text-text-primary">
-              {queries.filter(q => q.status === 'open').length} <span className="text-base font-normal text-text-muted">open</span>
-            </div>
-          </Card>
-          <Card>
-            <div className="text-sm text-text-muted">Entries</div>
-            <div className="mt-1 text-2xl font-semibold text-text-primary">
-              {entries.filter(e => e.status === 'proposed').length} <span className="text-base font-normal text-text-muted">pending</span>
-            </div>
-          </Card>
+          <StatCard label="Ledgers" value={accounts.length} icon={<Layers />} tone="info" loading={tbLoading} />
+          <StatCard
+            label="Mapped"
+            value={mappedRatio}
+            suffix="%"
+            icon={<Network />}
+            tone="accent"
+            loading={tbLoading}
+            sub={`${mappedCount} of ${accounts.length} ledgers`}
+          />
+          <StatCard
+            label="Balanced"
+            display={
+              <span
+                className={
+                  accounts.length === 0
+                    ? 'text-text-muted'
+                    : balanced
+                      ? 'text-status-verified'
+                      : 'text-status-pending'
+                }
+              >
+                {accounts.length === 0 ? '—' : balanced ? 'Yes' : 'No'}
+              </span>
+            }
+            icon={<Scale />}
+            tone={accounts.length === 0 ? 'neutral' : balanced ? 'accent' : 'warning'}
+            sub={
+              accounts.length > 0 && !balanced
+                ? `Dr ${formatMoney(totalDebit)} / Cr ${formatMoney(totalCredit)}`
+                : undefined
+            }
+          />
+          <StatCard
+            label="Open requirements"
+            value={reqs.filter((r) => r.status === 'open').length}
+            icon={<ListChecks />}
+            tone="info"
+          />
+          <StatCard
+            label="Open queries"
+            value={queries.filter((q) => q.status === 'open').length}
+            icon={<MessagesSquare />}
+            tone="info"
+          />
+          <StatCard
+            label="Pending entries"
+            value={entries.filter((e) => e.status === 'proposed').length}
+            icon={<ScrollText />}
+            tone="warning"
+          />
+          <StatCard
+            label="Auditor"
+            display={<span className="truncate text-lg">{eng.auditor_email ? eng.auditor_email.split('@')[0] : 'None'}</span>}
+            icon={<Users />}
+            tone="neutral"
+            sub={eng.auditor_grant_status ?? (eng.auditor_email ? undefined : 'Not invited')}
+          />
         </div>
       )}
 

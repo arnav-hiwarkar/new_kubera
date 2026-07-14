@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Check } from 'lucide-react'
 import { Button, DataTable, useToast, type Column } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import { useDocumentTypes, useDeleteDocumentType, type Domain } from '@/api/hooks/compliance'
@@ -48,7 +49,12 @@ export function DocumentTypesTab({ domain }: { domain: Domain }) {
       key: 'template',
       header: 'Template',
       align: 'center',
-      cell: (t) => (t.template_file_id ? '✓' : '—'),
+      cell: (t) =>
+        t.template_file_id ? (
+          <Check className="mx-auto h-4 w-4 text-status-verified" aria-label="Has template" />
+        ) : (
+          <span className="text-text-muted">—</span>
+        ),
     },
     {
       key: 'fields',

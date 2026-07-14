@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Spinner } from './Spinner'
-import { Input } from './Field'
 import { EmptyState } from './EmptyState'
 
 export interface Column<T> {
@@ -88,15 +88,18 @@ export function DataTable<T>({
       {(searchAccessors || toolbar) && (
         <div className="flex items-center justify-between gap-2">
           {searchAccessors ? (
-            <Input
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setPage(0)
-              }}
-              placeholder={searchPlaceholder}
-              className="h-8 max-w-xs"
-            />
+            <div className="relative max-w-xs flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+              <input
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setPage(0)
+                }}
+                placeholder={searchPlaceholder}
+                className="h-9 w-full rounded-input border border-border-strong bg-bg-surface pl-9 pr-3 text-base text-text-primary placeholder:text-text-muted transition-shadow focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15"
+              />
+            </div>
           ) : (
             <div />
           )}
@@ -104,27 +107,39 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-card border border-border bg-bg-surface">
+      <div className="overflow-x-auto rounded-card border border-border bg-bg-surface shadow-card">
         <table className="w-full border-collapse text-base">
           <thead>
-            <tr className="border-b border-border bg-bg-raised/50">
+            <tr className="border-b border-border bg-bg-inset">
               {columns.map((col) => (
                 <th
                   key={col.key}
                   onClick={() => toggleSort(col)}
                   className={cn(
-                    'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-text-secondary',
+                    'px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-[0.04em] text-text-secondary',
                     col.align === 'right' && 'text-right',
                     col.align === 'center' && 'text-center',
-                    col.sortValue && 'cursor-pointer select-none hover:text-text-primary',
+                    col.sortValue && 'cursor-pointer select-none transition-colors hover:text-text-primary',
                     col.className,
                   )}
                 >
-                  <span className="inline-flex items-center gap-1">
-                    {col.header}
-                    {sort?.key === col.key && (
-                      <span aria-hidden>{sort.dir === 'asc' ? '▲' : '▼'}</span>
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1',
+                      col.align === 'right' && 'flex-row-reverse',
                     )}
+                  >
+                    {col.header}
+                    {col.sortValue &&
+                      (sort?.key === col.key ? (
+                        sort.dir === 'asc' ? (
+                          <ChevronUp className="h-3.5 w-3.5 text-accent" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5 text-accent" />
+                        )
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 opacity-25" />
+                      ))}
                   </span>
                 </th>
               ))}
@@ -133,7 +148,7 @@ export function DataTable<T>({
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={columns.length} className="py-12 text-center">
+                <td colSpan={columns.length} className="py-14 text-center">
                   <Spinner className="mx-auto h-6 w-6" />
                 </td>
               </tr>
@@ -143,7 +158,7 @@ export function DataTable<T>({
                   <EmptyState
                     title={emptyTitle}
                     description={emptyDescription}
-                    className="border-0"
+                    className="border-0 shadow-none"
                   />
                 </td>
               </tr>
@@ -153,15 +168,15 @@ export function DataTable<T>({
                   key={rowKey(row)}
                   onClick={() => onRowClick?.(row)}
                   className={cn(
-                    'border-b border-border last:border-0',
-                    onRowClick && 'cursor-pointer hover:bg-bg-raised/60',
+                    'border-b border-border transition-colors last:border-0',
+                    onRowClick && 'cursor-pointer hover:bg-accent-subtle/40',
                   )}
                 >
                   {columns.map((col) => (
                     <td
                       key={col.key}
                       className={cn(
-                        'px-3 py-2 text-text-primary',
+                        'px-4 py-3 text-text-primary',
                         col.align === 'right' && 'text-right',
                         col.align === 'center' && 'text-center',
                         col.className,
@@ -180,23 +195,26 @@ export function DataTable<T>({
       {sorted.length > pageSize && (
         <div className="flex items-center justify-between text-sm text-text-secondary">
           <span>
-            {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, sorted.length)} of{' '}
-            {sorted.length}
+            Showing <span className="font-medium text-text-primary">{safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, sorted.length)}</span> of{' '}
+            <span className="font-medium text-text-primary">{sorted.length}</span>
           </span>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={safePage === 0}
-              className="rounded-btn border border-border px-2 py-1 disabled:opacity-40"
+              className="flex h-8 items-center gap-1 rounded-btn border border-border-strong px-2.5 transition-colors hover:bg-bg-raised disabled:opacity-40 disabled:hover:bg-transparent"
             >
-              Prev
+              <ChevronLeft className="h-4 w-4" /> Prev
             </button>
+            <span className="px-2 font-mono text-xs text-text-muted">
+              {safePage + 1} / {pageCount}
+            </span>
             <button
               onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
               disabled={safePage >= pageCount - 1}
-              className="rounded-btn border border-border px-2 py-1 disabled:opacity-40"
+              className="flex h-8 items-center gap-1 rounded-btn border border-border-strong px-2.5 transition-colors hover:bg-bg-raised disabled:opacity-40 disabled:hover:bg-transparent"
             >
-              Next
+              Next <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>

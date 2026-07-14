@@ -10,21 +10,32 @@ export default {
           primary: 'var(--bg-primary)',
           surface: 'var(--bg-surface)',
           raised: 'var(--bg-raised)',
+          inset: 'var(--bg-inset)',
         },
         border: {
           DEFAULT: 'var(--border)',
+          strong: 'var(--border-strong)',
         },
         text: {
           primary: 'var(--text-primary)',
           secondary: 'var(--text-secondary)',
           muted: 'var(--text-muted)',
         },
+        // Company identity — emerald "prosperity" primary.
         accent: {
           DEFAULT: 'var(--accent)',
           hover: 'var(--accent-hover)',
+          active: 'var(--accent-active)',
           subtle: 'var(--accent-subtle)',
+          contrast: 'var(--accent-contrast)',
         },
-        // Auditor-side accent tint (green) so the two identities read differently.
+        // Warm gold micro-accent (used sparingly for highlights/premium touches).
+        gold: {
+          DEFAULT: 'var(--gold)',
+          soft: 'var(--gold-soft)',
+          subtle: 'var(--gold-subtle)',
+        },
+        // Auditor-side accent (cool slate/blue) so the two identities read differently.
         auditor: {
           DEFAULT: 'var(--auditor-accent)',
           hover: 'var(--auditor-accent-hover)',
@@ -45,31 +56,46 @@ export default {
         mono: ['IBM Plex Mono', 'Courier New', 'monospace'],
       },
       fontSize: {
-        // Dense B2B scale anchored at 14px base.
+        // Dense B2B scale anchored at 14px base, plus display sizes for headings.
         xs: ['11px', '16px'],
         sm: ['12px', '18px'],
         base: ['14px', '20px'],
         md: ['15px', '22px'],
         lg: ['18px', '26px'],
         xl: ['22px', '30px'],
+        '2xl': ['28px', '34px'],
+        '3xl': ['36px', '42px'],
+        '4xl': ['48px', '52px'],
       },
       borderRadius: {
-        card: '6px',
-        btn: '4px',
-        input: '4px',
+        card: '14px',
+        btn: '10px',
+        input: '10px',
+        pill: '999px',
+        lg: '12px',
+        xl: '18px',
+        '2xl': '22px',
       },
       boxShadow: {
+        xs: 'var(--shadow-xs)',
         card: 'var(--shadow-card)',
+        raised: 'var(--shadow-raised)',
         modal: 'var(--shadow-modal)',
         dropdown: 'var(--shadow-dropdown)',
+        glow: 'var(--shadow-glow)',
       },
       spacing: {
-        topbar: '56px',
-        sidebar: '220px',
-        subnav: '40px',
+        topbar: '60px',
+        sidebar: '244px',
+        'sidebar-collapsed': '68px',
+        subnav: '44px',
       },
       transitionTimingFunction: {
         nav: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        spring: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      },
+      backgroundImage: {
+        'accent-gradient': 'linear-gradient(135deg, var(--accent) 0%, var(--accent-active) 100%)',
       },
     },
   },

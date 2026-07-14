@@ -1,5 +1,6 @@
+import { History } from 'lucide-react'
 import { PageHeader, DataTable, StatusBadge } from '@/components/ui'
-import { formatDate } from '@/lib/format'
+import { formatDate, formatRelative } from '@/lib/format'
 import { useActivityLog } from '@/api/hooks/activity'
 import type { ActivityLogOut } from '@/api/types'
 
@@ -11,8 +12,10 @@ export function ActivityLogPage() {
   const { data: logs, isLoading } = useActivityLog()
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <PageHeader
+        eyebrow="SYSTEM"
+        icon={<History />}
         title="Activity Log"
         description="A complete audit trail of actions taken in your company workspace."
       />
@@ -26,7 +29,20 @@ export function ActivityLogPage() {
           {
             key: 'timestamp',
             header: 'Timestamp',
-            cell: (log) => formatDate(log.created_at),
+            cell: (log) => (
+              <div className="flex items-start gap-3">
+                <span
+                  className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent ring-4 ring-accent-subtle"
+                  aria-hidden
+                />
+                <div className="leading-tight">
+                  <div className="text-sm font-medium text-text-primary">
+                    {formatRelative(log.created_at)}
+                  </div>
+                  <div className="text-xs text-text-muted">{formatDate(log.created_at)}</div>
+                </div>
+              </div>
+            ),
           },
           {
             key: 'user',
@@ -40,7 +56,9 @@ export function ActivityLogPage() {
           {
             key: 'action',
             header: 'Action',
-            cell: (log) => humanize(log.action),
+            cell: (log) => (
+              <span className="font-medium text-text-primary">{humanize(log.action)}</span>
+            ),
           },
           {
             key: 'entity',

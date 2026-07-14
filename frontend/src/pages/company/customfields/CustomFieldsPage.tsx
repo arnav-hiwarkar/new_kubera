@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
+import { SlidersHorizontal, Check } from 'lucide-react'
 import {
   PageHeader,
   Button,
   DataTable,
   StatusBadge,
   Modal,
+  ConfirmDialog,
   Field,
   Input,
   Select,
   Textarea,
+  Tabs,
   useToast,
   type Column,
 } from '@/components/ui'
@@ -46,6 +49,7 @@ export function CustomFieldsPage() {
   const [module, setModule] = useState<Module>('asset_management')
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<CustomFieldResponse | null>(null)
+  const [confirmField, setConfirmField] = useState<CustomFieldResponse | null>(null)
 
   const { data: fields = [], isLoading } = useCustomFields(module, true)
   const deactivate = useDeactivateCustomField()
@@ -55,17 +59,24 @@ export function CustomFieldsPage() {
   if (profile?.role !== 'admin') {
     return (
       <div>
-        <PageHeader title="Custom Fields" description="Configure extra fields per module" />
+        <PageHeader
+          eyebrow="OPERATIONS"
+          icon={<SlidersHorizontal />}
+          title="Custom Fields"
+          description="Configure extra fields per module"
+        />
         <p className="text-sm text-text-secondary">This section is available to admins only.</p>
       </div>
     )
   }
 
-  const handleDeactivate = async (f: CustomFieldResponse) => {
-    if (!window.confirm(`Deactivate "${f.field_name}"?`)) return
+  const handleDeactivate = async () => {
+    const f = confirmField
+    if (!f) return
     try {
       await deactivate.mutateAsync({ module, fieldId: f.id })
       toast.success('Field deactivated')
+      setConfirmField(null)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to deactivate field')
     }
@@ -101,7 +112,8 @@ export function CustomFieldsPage() {
       key: 'is_required',
       header: 'Required',
       align: 'center',
-      cell: (f) => (f.is_required ? '✓' : '—'),
+      cell: (f) =>
+        f.is_required ? <Check className="mx-auto h-4 w-4 text-accent" /> : '—',
     },
     {
       key: 'dropdown_options',
@@ -123,7 +135,7 @@ export function CustomFieldsPage() {
             Edit
           </Button>
           {f.is_active ? (
-            <Button variant="danger" onClick={() => handleDeactivate(f)}>
+            <Button variant="danger" onClick={() => setConfirmField(f)}>
               Deactivate
             </Button>
           ) : (
@@ -137,29 +149,21 @@ export function CustomFieldsPage() {
   ]
 
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <PageHeader
+        eyebrow="OPERATIONS"
+        icon={<SlidersHorizontal />}
         title="Custom Fields"
         description="Configure extra fields captured per module"
         actions={<Button onClick={() => setCreateOpen(true)}>New Field</Button>}
       />
 
-      <div className="mb-4 flex gap-1 border-b border-border">
-        {MODULE_TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setModule(t.id)}
-            className={cn(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-              module === t.id
-                ? 'border-accent text-text-primary'
-                : 'border-transparent text-text-muted hover:text-text-primary',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={MODULE_TABS}
+        value={module}
+        onChange={(id) => setModule(id as Module)}
+        accent="company"
+      />
 
       <DataTable
         columns={columns}
@@ -181,6 +185,20 @@ export function CustomFieldsPage() {
         field={editing}
         module={module}
         onClose={() => setEditing(null)}
+      />
+      <ConfirmDialog
+        open={!!confirmField}
+        title="Deactivate field"
+        message={
+          confirmField
+            ? `Deactivate "${confirmField.field_name}"? It will stop being captured for new records.`
+            : ''
+        }
+        confirmLabel="Deactivate"
+        destructive
+        loading={deactivate.isPending}
+        onConfirm={handleDeactivate}
+        onCancel={() => setConfirmField(null)}
       />
     </div>
   )

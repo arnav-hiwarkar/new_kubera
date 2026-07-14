@@ -1,74 +1,3 @@
-<<<<<<< HEAD
-
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import type { TrialBalanceAccountResponse } from '@/types/auditease';
-
-interface TrialBalanceTableProps {
-  tbAccounts: TrialBalanceAccountResponse[];
-  isLoading: boolean;
-  isReadOnly?: boolean;
-}
-
-export function TrialBalanceTable({ tbAccounts, isLoading }: TrialBalanceTableProps) {
-  return (
-    <div className="rounded-md border border-border bg-card flex-1 overflow-hidden flex flex-col h-full w-full">
-      <div className="flex-1 overflow-auto">
-        <Table>
-          <TableHeader className="bg-muted/50 sticky top-0 z-10 shadow-sm">
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[100px]">Code</TableHead>
-              <TableHead className="min-w-[200px]">Ledger Name</TableHead>
-              <TableHead className="min-w-[150px]">Top Group</TableHead>
-              <TableHead className="min-w-[150px]">Parent Group</TableHead>
-              <TableHead className="min-w-[150px]">Mapped Group</TableHead>
-              <TableHead className="text-right w-[120px]">Opening</TableHead>
-              <TableHead className="text-right w-[120px]">Debit</TableHead>
-              <TableHead className="text-right w-[120px]">Credit</TableHead>
-              <TableHead className="text-right w-[120px]">Closing</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground h-32">
-                  Loading trial balance...
-                </TableCell>
-              </TableRow>
-            ) : tbAccounts.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground h-32">
-                  No accounts found.
-                </TableCell>
-              </TableRow>
-            ) : (
-              tbAccounts.map((acc) => (
-                <TableRow key={acc.id} className="hover:bg-muted/30 transition-colors">
-                  <TableCell className="font-mono text-xs text-muted-foreground truncate">{acc.ledger_code || '—'}</TableCell>
-                  <TableCell className="font-medium truncate">{acc.ledger_name}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm truncate">{acc.top_group_name || '—'}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm truncate">{acc.parent_group_name || '—'}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm truncate">{acc.mapped_group_name || '—'}</TableCell>
-                  <TableCell className="text-right">{acc.opening_balance.toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-destructive">{acc.debit.toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-green-500">{acc.credit.toLocaleString()}</TableCell>
-                  <TableCell className="text-right font-medium">{acc.closing_balance.toLocaleString()}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
-  );
-}
-=======
 import React, { useState, useMemo } from 'react'
 import type { TrialBalanceAccountResponse } from '@/api/types'
 import { formatMoney } from '@/lib/format'
@@ -147,10 +76,10 @@ export function TrialBalanceTable({
   })
 
   return (
-    <div className="w-full overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+    <div className="w-full overflow-hidden rounded-lg border border-border bg-bg-surface shadow-card">
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm text-text-secondary">
-          <thead className="bg-background-subtle text-xs font-medium uppercase tracking-wider text-text-muted">
+          <thead className="bg-bg-inset text-xs font-medium uppercase tracking-wider text-text-muted">
             <tr>
               <th className="px-4 py-3">Code / Ledger</th>
               <th className="px-4 py-3">Group Mapping</th>
@@ -175,7 +104,7 @@ export function TrialBalanceTable({
               return (
                 <React.Fragment key={groupName}>
                   <tr
-                    className="cursor-pointer bg-background-subtle/50 hover:bg-background-subtle"
+                    className="cursor-pointer bg-bg-inset/50 hover:bg-bg-inset"
                     onClick={() => toggleGroup(groupName)}
                   >
                     <td className="px-4 py-3 font-semibold text-text-primary" colSpan={2}>
@@ -196,7 +125,7 @@ export function TrialBalanceTable({
                   
                   {isExpanded &&
                     groupAccounts.map((a) => (
-                      <tr key={a.id} className="hover:bg-background-subtle/30">
+                      <tr key={a.id} className="hover:bg-bg-inset/30">
                         <td className="px-4 py-3 pl-10">
                           <div className="flex flex-col">
                             <span className="font-medium text-text-primary">{a.ledger_name}</span>
@@ -222,4 +151,3 @@ export function TrialBalanceTable({
   )
 }
 
->>>>>>> new_frontend

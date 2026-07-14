@@ -14,7 +14,7 @@ export interface FieldProps {
 
 export function Field({ label, htmlFor, required, error, hint, children, className }: FieldProps) {
   return (
-    <div className={cn('flex flex-col gap-1', className)}>
+    <div className={cn('flex flex-col gap-1.5', className)}>
       {label && (
         <label htmlFor={htmlFor} className="text-sm font-medium text-text-secondary">
           {label}
@@ -23,7 +23,7 @@ export function Field({ label, htmlFor, required, error, hint, children, classNa
       )}
       {children}
       {error ? (
-        <p className="text-xs text-status-action">{error}</p>
+        <p className="text-xs font-medium text-status-action">{error}</p>
       ) : hint ? (
         <p className="text-xs text-text-muted">{hint}</p>
       ) : null}
@@ -32,7 +32,7 @@ export function Field({ label, htmlFor, required, error, hint, children, classNa
 }
 
 const controlBase =
-  'w-full rounded-input border border-border bg-bg-surface px-3 py-2 text-base text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60 aria-[invalid=true]:border-status-action'
+  'w-full rounded-input border border-border-strong bg-bg-surface px-3 py-2 text-base text-text-primary placeholder:text-text-muted transition-shadow duration-150 focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 disabled:opacity-60 aria-[invalid=true]:border-status-action aria-[invalid=true]:focus:ring-status-action/15'
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { error?: boolean }>(
   function Input({ className, error, ...props }, ref) {
@@ -40,7 +40,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       <input
         ref={ref}
         aria-invalid={error || undefined}
-        className={cn(controlBase, 'h-9', className)}
+        className={cn(controlBase, 'h-10', className)}
         {...props}
       />
     )
@@ -53,7 +53,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
       <textarea
         ref={ref}
         aria-invalid={error || undefined}
-        className={cn(controlBase, 'min-h-[80px]', className)}
+        className={cn(controlBase, 'min-h-[84px] py-2.5', className)}
         {...props}
       />
     )
@@ -66,7 +66,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       <select
         ref={ref}
         aria-invalid={error || undefined}
-        className={cn(controlBase, 'h-9', className)}
+        className={cn(controlBase, 'h-10 cursor-pointer', className)}
         {...props}
       >
         {children}

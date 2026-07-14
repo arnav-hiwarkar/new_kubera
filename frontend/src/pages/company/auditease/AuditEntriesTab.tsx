@@ -77,7 +77,7 @@ export function AuditEntriesTab({ engagementId }: { engagementId: string }) {
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm text-text-secondary">
-                  <thead className="border-b border-border bg-background-subtle text-xs uppercase text-text-muted">
+                  <thead className="border-b border-border bg-bg-inset text-xs uppercase text-text-muted">
                     <tr>
                       <th className="px-4 py-2 font-medium">Ledger</th>
                       <th className="px-4 py-2 text-right font-medium">Debit</th>
@@ -86,7 +86,7 @@ export function AuditEntriesTab({ engagementId }: { engagementId: string }) {
                   </thead>
                   <tbody className="divide-y divide-border">
                     {entry.lines.map((line) => (
-                      <tr key={line.id} className="hover:bg-background-subtle/50">
+                      <tr key={line.id} className="hover:bg-bg-inset/50">
                         <td className="px-4 py-2">
                           {line.ledger_code ? `${line.ledger_code} — ${line.ledger_name}` : line.ledger_name}
                         </td>

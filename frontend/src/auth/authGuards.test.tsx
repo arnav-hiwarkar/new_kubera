@@ -45,21 +45,22 @@ beforeEach(() => {
 describe('CompanyGuard', () => {
   it('redirects to the company login when there is no session', async () => {
     renderApp('/app')
-    expect(await screen.findByRole('heading', { name: 'Company Sign In' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
   })
 
   it('does NOT authenticate the company tree with an auditor token', async () => {
     // Auditor token lives in the auditor namespace; the company guard never reads it.
     auditorTokenStorage.set(TOKENS)
     renderApp('/app')
-    expect(await screen.findByRole('heading', { name: 'Company Sign In' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Dashboard' })).not.toBeInTheDocument()
   })
 
   it('renders the company shell with a valid company token', async () => {
     companyTokenStorage.set(TOKENS)
     renderApp('/app')
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    // Dashboard greets the signed-in user by first name (from the mocked profile).
+    expect(await screen.findByRole('heading', { name: /Ada/ })).toBeInTheDocument()
   })
 
   // docVault exposes NO auditor-facing routes — it lives entirely under the
@@ -67,7 +68,7 @@ describe('CompanyGuard', () => {
   it('rejects an auditor token at the docVault route', async () => {
     auditorTokenStorage.set(TOKENS)
     renderApp('/app/docvault')
-    expect(await screen.findByRole('heading', { name: 'Company Sign In' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'DocVault' })).not.toBeInTheDocument()
   })
 })

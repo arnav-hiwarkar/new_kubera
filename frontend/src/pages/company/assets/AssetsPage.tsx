@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { PageHeader, Button, DataTable, StatusBadge, Select, useToast, type Column } from '@/components/ui'
+import { Laptop, Boxes, IndianRupee, Filter } from 'lucide-react'
+import { PageHeader, Button, DataTable, StatusBadge, StatCard, Select, useToast, type Column } from '@/components/ui'
 import { useCompanyAuth } from '@/auth/company'
 import { useAssets } from '@/api/hooks/assets'
 import { useCustomFields } from '@/api/hooks/customFields'
@@ -49,6 +50,15 @@ export function AssetsPage() {
     if (profile) m[profile.id] = profile.full_name
     return m
   }, [users, profile])
+
+  const totalCost = useMemo(
+    () => assets.reduce((sum, a) => sum + (a.purchase_cost ?? 0), 0),
+    [assets],
+  )
+  const filterActive = !!category || !!status
+  const filterLabel = [category && humanize(category), status && humanize(status)]
+    .filter(Boolean)
+    .join(' · ')
 
   const custodianLabel = (id: string | null | undefined) => {
     if (!id) return 'Unassigned'
@@ -101,8 +111,10 @@ export function AssetsPage() {
   ]
 
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <PageHeader
+        eyebrow="OPERATIONS"
+        icon={<Laptop />}
         title="Assets"
         description="Company asset register"
         actions={
@@ -116,7 +128,28 @@ export function AssetsPage() {
         }
       />
 
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label="Total assets" value={assets.length} icon={<Boxes />} tone="accent" loading={isLoading} />
+        <StatCard
+          label="Total purchase cost"
+          value={totalCost}
+          prefix="₹"
+          decimals={2}
+          icon={<IndianRupee />}
+          tone="gold"
+          loading={isLoading}
+        />
+        <StatCard
+          label="In view"
+          value={assets.length}
+          icon={<Filter />}
+          tone="info"
+          loading={isLoading}
+          sub={filterActive ? `Filtered · ${filterLabel}` : 'No filters applied'}
+        />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
         <Select value={category} onChange={(e) => setCategory(e.target.value)} className="h-8 max-w-[180px]">
           <option value="">All categories</option>
           {ASSET_CATEGORY.map((c) => (

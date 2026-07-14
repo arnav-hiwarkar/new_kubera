@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ShieldCheck, Layers, Activity, Archive } from 'lucide-react'
 import {
   PageHeader,
   Button,
   DataTable,
   StatusBadge,
+  StatCard,
   Modal,
   Field,
   Input,
@@ -156,13 +158,25 @@ export function EngagementsPage() {
 
   const deleteNeedsTyping = deleteFor?.status === 'closed'
 
+  const totalCount = engagements.length
+  const activeCount = engagements.filter((e) => e.status !== 'closed').length
+  const closedCount = engagements.filter((e) => e.status === 'closed').length
+
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <PageHeader
+        eyebrow="AUDIT"
+        icon={<ShieldCheck />}
         title="AuditEase"
         description="Create audit engagements, import trial balances, and collaborate with auditors."
         actions={<Button onClick={() => setCreateOpen(true)}>New engagement</Button>}
       />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label="Total engagements" value={totalCount} icon={<Layers />} tone="accent" loading={isLoading} />
+        <StatCard label="Active" value={activeCount} icon={<Activity />} tone="info" loading={isLoading} />
+        <StatCard label="Closed" value={closedCount} icon={<Archive />} tone="neutral" loading={isLoading} />
+      </div>
 
       <DataTable
         columns={columns}

@@ -149,7 +149,7 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
         </div>
 
         <div>
-          <h4 className="text-sm font-medium text-text-primary mb-3 border-b border-border-base pb-2">
+          <h4 className="text-sm font-medium text-text-primary mb-3 border-b border-border pb-2">
             Module Access
           </h4>
           {isAdmin ? (
@@ -170,7 +170,7 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
           )}
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-border-base">
+        <div className="flex justify-end gap-3 pt-4 border-t border-border">
           <Button variant="ghost" type="button" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>

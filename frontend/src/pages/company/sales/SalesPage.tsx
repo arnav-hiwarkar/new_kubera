@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { PageHeader, Button, Card, DataTable, StatusBadge, Select, useToast, type Column } from '@/components/ui'
+import { TrendingUp } from 'lucide-react'
+import { PageHeader, Button, DataTable, StatusBadge, StatCard, Select, useToast, type Column } from '@/components/ui'
 import { useCompanyAuth } from '@/auth/company'
 import { useSales, useSalesAggregate } from '@/api/hooks/sales'
 import { useCustomFields } from '@/api/hooks/customFields'
@@ -92,9 +93,18 @@ export function SalesPage() {
 
   if (!me) return null
 
+  const statusTone: Record<(typeof SALES_STATUS)[number], 'gold' | 'accent' | 'info'> = {
+    lead: 'info',
+    negotiation: 'accent',
+    won: 'gold',
+    lost: 'info',
+  }
+
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <PageHeader
+        eyebrow="OPERATIONS"
+        icon={<TrendingUp />}
         title="Sales"
         description="Sales pipeline and deal log"
         actions={
@@ -106,24 +116,24 @@ export function SalesPage() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {SALES_STATUS.map((s) => {
           const row = aggregate.find((r) => r.status === s)
           return (
-            <Card key={s}>
-              <p className="text-sm text-text-secondary">{humanize(s)}</p>
-              <p className="mt-1 text-xl font-semibold text-text-primary">
-                {row?.count ?? 0}
-                <span className="ml-2 font-mono text-sm font-normal text-text-muted">
-                  {formatMoney(row?.total_amount ?? 0)}
-                </span>
-              </p>
-            </Card>
+            <StatCard
+              key={s}
+              label={humanize(s)}
+              value={row?.count ?? 0}
+              tone={statusTone[s]}
+              sub={
+                <span className="font-mono tabular-nums">{formatMoney(row?.total_amount ?? 0)}</span>
+              }
+            />
           )
         })}
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         <Select value={status} onChange={(e) => setStatus(e.target.value)} className="h-8 max-w-[180px]">
           <option value="">All statuses</option>
           {SALES_STATUS.map((s) => (

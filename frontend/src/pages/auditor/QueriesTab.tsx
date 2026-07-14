@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { Download, MessagesSquare } from 'lucide-react'
 import { Button, Card, Input, StatusBadge, Spinner, useToast, EmptyState } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import { cn } from '@/lib/cn'
@@ -129,7 +130,7 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
                   'flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors',
                   activeQueryId === q.id
                     ? 'border-accent bg-accent/5'
-                    : 'border-border bg-surface hover:bg-surface-hover'
+                    : 'border-border bg-bg-surface hover:bg-bg-raised'
                 )}
               >
                 <div className="flex w-full items-center justify-between">
@@ -148,7 +149,7 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
       </div>
 
       {/* Main Content: Thread */}
-      <div className="flex flex-1 flex-col rounded-lg border border-border bg-surface">
+      <div className="flex flex-1 flex-col rounded-lg border border-border bg-bg-surface">
         {activeQuery ? (
           <>
             <div className="flex items-center justify-between border-b border-border p-4">
@@ -172,8 +173,8 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
                       className={cn(
                         "rounded-2xl px-4 py-2 text-sm",
                         isAuditor
-                          ? "bg-accent text-white"
-                          : "bg-surface-hover text-text-primary"
+                          ? "bg-accent text-accent-contrast"
+                          : "bg-bg-raised text-text-primary"
                       )}
                     >
                       {msg.text}
@@ -181,9 +182,9 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
                     {msg.attached_document_id && (
                       <button
                         onClick={() => handleDownload(msg.attached_document_id!)}
-                        className="mt-1 text-xs font-medium text-accent hover:underline"
+                        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
                       >
-                        ↓ Download Attachment
+                        <Download className="h-3.5 w-3.5" /> Download Attachment
                       </button>
                     )}
                   </div>
@@ -218,7 +219,7 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
           </>
         ) : (
           <div className="flex h-full items-center justify-center">
-            <EmptyState title="Select a query" description="Choose a query from the list to view the thread." />
+            <EmptyState icon={<MessagesSquare />} title="Select a query" description="Choose a query from the list to view the thread." />
           </div>
         )}
       </div>

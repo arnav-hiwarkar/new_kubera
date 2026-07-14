@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import { UploadCloud } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 export interface FileUploadDropzoneProps {
@@ -46,8 +47,10 @@ export function FileUploadDropzone({
         if ((e.key === 'Enter' || e.key === ' ') && !disabled) inputRef.current?.click()
       }}
       className={cn(
-        'flex cursor-pointer flex-col items-center justify-center rounded-card border-2 border-dashed px-6 py-8 text-center transition-colors',
-        dragging ? 'border-accent bg-accent-subtle' : 'border-border bg-bg-surface hover:bg-bg-raised/50',
+        'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-card border-2 border-dashed px-6 py-10 text-center transition-all duration-200',
+        dragging
+          ? 'scale-[1.01] border-accent bg-accent-subtle'
+          : 'border-border-strong bg-bg-inset hover:border-accent/50 hover:bg-bg-raised',
         disabled && 'cursor-not-allowed opacity-60',
       )}
     >
@@ -59,10 +62,18 @@ export function FileUploadDropzone({
         className="hidden"
         onChange={(e) => handleFiles(e.target.files)}
       />
+      <span
+        className={cn(
+          'flex h-11 w-11 items-center justify-center rounded-2xl transition-colors',
+          dragging ? 'bg-accent text-white' : 'bg-accent-subtle text-accent',
+        )}
+      >
+        <UploadCloud className="h-5 w-5" />
+      </span>
       <p className="text-sm font-medium text-text-primary">
         Drop file{multiple ? 's' : ''} here or <span className="text-accent">browse</span>
       </p>
-      {hint && <p className="mt-1 text-xs text-text-muted">{hint}</p>}
+      {hint && <p className="text-xs text-text-muted">{hint}</p>}
     </div>
   )
 }

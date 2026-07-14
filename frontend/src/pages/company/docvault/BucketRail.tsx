@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, type ComponentType } from 'react'
+import { Files, Folder, FolderOpen, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button, Input, ConfirmDialog, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
@@ -57,31 +58,48 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
     }
   }
 
-  const item = (key: BucketSelection, label: string, count: number, deletable?: BucketResponse) => (
-    <li key={key} className="group flex items-center">
-      <button
-        onClick={() => onSelect(key)}
-        className={cn(
-          'flex flex-1 items-center justify-between rounded-btn px-2 py-1.5 text-left text-sm',
-          selected === key
-            ? 'bg-accent-subtle font-medium text-accent'
-            : 'text-text-secondary hover:bg-bg-raised hover:text-text-primary',
-        )}
-      >
-        <span className="truncate">{label}</span>
-        <span className="ml-2 shrink-0 text-xs text-text-muted">{count}</span>
-      </button>
-      {deletable && (
+  const item = (
+    key: BucketSelection,
+    label: string,
+    count: number,
+    Icon: ComponentType<{ className?: string }>,
+    deletable?: BucketResponse,
+  ) => {
+    const active = selected === key
+    return (
+      <li key={key} className="group flex items-center">
         <button
-          onClick={() => setToDelete(deletable)}
-          aria-label={`Delete bucket ${deletable.name}`}
-          className="ml-1 hidden px-1 text-text-muted hover:text-status-action group-hover:block"
+          onClick={() => onSelect(key)}
+          className={cn(
+            'flex flex-1 items-center gap-2 rounded-btn px-2 py-1.5 text-left text-sm transition-colors',
+            active
+              ? 'bg-accent-subtle font-medium text-accent'
+              : 'text-text-secondary hover:bg-bg-raised hover:text-text-primary',
+          )}
         >
-          ×
+          <Icon className="h-4 w-4 shrink-0" />
+          <span className="truncate">{label}</span>
+          <span
+            className={cn(
+              'ml-auto shrink-0 rounded-pill px-1.5 py-0.5 text-xs font-semibold tabular-nums',
+              active ? 'bg-accent/15 text-accent' : 'bg-bg-raised text-text-muted',
+            )}
+          >
+            {count}
+          </span>
         </button>
-      )}
-    </li>
-  )
+        {deletable && (
+          <button
+            onClick={() => setToDelete(deletable)}
+            aria-label={`Delete bucket ${deletable.name}`}
+            className="ml-1 hidden text-text-muted hover:text-status-action group-hover:block"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </li>
+    )
+  }
 
   return (
     <div className="flex w-56 shrink-0 flex-col rounded-card border border-border bg-bg-surface p-2">
@@ -91,9 +109,10 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
         </span>
         <button
           onClick={() => setCreating((c) => !c)}
-          className="text-sm text-accent hover:underline"
+          className="flex items-center gap-1 text-sm text-accent hover:underline"
         >
-          + New
+          <Plus className="h-3.5 w-3.5" />
+          New
         </button>
       </div>
 
@@ -117,10 +136,10 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
       )}
 
       <ul className="flex flex-col gap-0.5">
-        {item('all', 'All Documents', activeCount)}
-        {item('uncategorized', 'Uncategorized', uncategorizedCount)}
+        {item('all', 'All Documents', activeCount, Files)}
+        {item('uncategorized', 'Uncategorized', uncategorizedCount, FolderOpen)}
         <li className="my-1 border-t border-border" />
-        {buckets.map((b) => item(b.id, b.name, countFor(b.id), b))}
+        {buckets.map((b) => item(b.id, b.name, countFor(b.id), Folder, b))}
       </ul>
 
       <ConfirmDialog

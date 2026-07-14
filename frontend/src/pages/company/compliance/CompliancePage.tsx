@@ -1,52 +1,45 @@
 import { useState } from 'react'
-import { PageHeader } from '@/components/ui'
-import { cn } from '@/lib/cn'
+import { ClipboardCheck, ScrollText } from 'lucide-react'
+import { PageHeader, Tabs } from '@/components/ui'
 import type { Domain } from '@/api/hooks/compliance'
 import { RecordsTab } from './RecordsTab'
 import { DocumentTypesTab } from './DocumentTypesTab'
 
 type Tab = 'records' | 'types'
 
-const COPY: Record<Domain, { title: string; description: string }> = {
+const COPY: Record<Domain, { title: string; description: string; icon: typeof ClipboardCheck }> = {
   roc: {
     title: 'ROC Compliance',
     description: 'Registrar of Companies document types and meeting records',
+    icon: ClipboardCheck,
   },
   secretarial: {
     title: 'SecretarialEase',
     description: 'Secretarial compliance document types and meeting records',
+    icon: ScrollText,
   },
 }
 
 export function CompliancePage({ domain }: { domain: Domain }) {
   const [tab, setTab] = useState<Tab>('records')
   const copy = COPY[domain]
+  const Icon = copy.icon
 
-  const tabs: { id: Tab; label: string }[] = [
+  const tabs = [
     { id: 'records', label: 'Records' },
     { id: 'types', label: 'Document Types' },
   ]
 
   return (
-    <div>
-      <PageHeader title={copy.title} description={copy.description} />
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        eyebrow="COMPLIANCE"
+        icon={<Icon />}
+        title={copy.title}
+        description={copy.description}
+      />
 
-      <div className="mb-4 flex gap-1 border-b border-border">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-              tab === t.id
-                ? 'border-accent text-text-primary'
-                : 'border-transparent text-text-muted hover:text-text-primary',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={tabs} value={tab} onChange={(id) => setTab(id as Tab)} />
 
       {tab === 'records' ? (
         <RecordsTab domain={domain} />

@@ -9,11 +9,17 @@ export interface SwitchProps extends Omit<React.InputHTMLAttributes<HTMLInputEle
 
 export function Switch({ checked = false, onChange, label, className, disabled, ...props }: SwitchProps) {
   return (
-    <label className={cn('flex items-center gap-3 cursor-pointer', disabled && 'opacity-50 cursor-not-allowed', className)}>
+    <label
+      className={cn(
+        'flex cursor-pointer items-center gap-3',
+        disabled && 'cursor-not-allowed opacity-50',
+        className,
+      )}
+    >
       <div className="relative flex items-center">
         <input
           type="checkbox"
-          className="sr-only"
+          className="peer sr-only"
           checked={checked}
           onChange={(e) => onChange?.(e.target.checked)}
           disabled={disabled}
@@ -21,14 +27,14 @@ export function Switch({ checked = false, onChange, label, className, disabled, 
         />
         <div
           className={cn(
-            'block h-6 w-10 rounded-full transition-colors duration-200 ease-in-out',
-            checked ? 'bg-accent' : 'bg-bg-raised border border-border'
+            'block h-6 w-11 rounded-full transition-colors duration-200 ease-spring peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40 peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-bg-surface',
+            checked ? 'bg-accent-gradient' : 'border border-border-strong bg-bg-raised',
           )}
         />
         <div
           className={cn(
-            'absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform duration-200 ease-in-out',
-            checked ? 'translate-x-4' : 'translate-x-0'
+            'absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-spring',
+            checked ? 'translate-x-5' : 'translate-x-0',
           )}
         />
       </div>

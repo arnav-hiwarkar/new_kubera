@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '@/components/ui/Toast'
@@ -115,6 +115,9 @@ describe('CustomFieldsPage', () => {
 
     await screen.findByText('Serial number')
     await u.click(screen.getByRole('button', { name: 'Deactivate' }))
+    // Confirm the deactivation in the ConfirmDialog.
+    const dialog = await screen.findByRole('dialog')
+    await u.click(within(dialog).getByRole('button', { name: 'Deactivate' }))
     await waitFor(() =>
       expect(customFieldsApi.deactivate).toHaveBeenCalledWith('asset_management', 'f1'),
     )

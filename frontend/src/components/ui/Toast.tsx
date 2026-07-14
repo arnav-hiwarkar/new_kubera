@@ -7,6 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { CheckCircle2, XCircle, Info, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 type ToastVariant = 'success' | 'error' | 'info'
@@ -24,6 +26,12 @@ interface ToastApi {
 }
 
 const ToastContext = createContext<ToastApi | null>(null)
+
+const variantStyles: Record<ToastVariant, { border: string; icon: ReactNode }> = {
+  success: { border: 'border-status-verified/40', icon: <CheckCircle2 className="h-4 w-4 text-status-verified" /> },
+  error: { border: 'border-status-action/40', icon: <XCircle className="h-4 w-4 text-status-action" /> },
+  info: { border: 'border-accent/40', icon: <Info className="h-4 w-4 text-accent" /> },
+}
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -56,35 +64,33 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-80 flex-col gap-2">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            role="alert"
-            className={cn(
-              'pointer-events-auto flex items-start gap-2 rounded-card border bg-bg-surface p-3 text-sm shadow-dropdown',
-              t.variant === 'success' && 'border-status-verified/40',
-              t.variant === 'error' && 'border-status-action/40',
-              t.variant === 'info' && 'border-accent/40',
-            )}
-          >
-            <span
+        <AnimatePresence initial={false}>
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              role="alert"
+              layout
+              initial={{ opacity: 0, y: 16, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 32, scale: 0.95 }}
+              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
               className={cn(
-                'mt-1 h-2 w-2 shrink-0 rounded-full',
-                t.variant === 'success' && 'bg-status-verified',
-                t.variant === 'error' && 'bg-status-action',
-                t.variant === 'info' && 'bg-accent',
+                'pointer-events-auto flex items-start gap-2.5 rounded-card border bg-bg-surface p-3.5 text-sm shadow-dropdown',
+                variantStyles[t.variant].border,
               )}
-            />
-            <span className="flex-1 text-text-primary">{t.message}</span>
-            <button
-              onClick={() => remove(t.id)}
-              className="text-text-muted hover:text-text-primary"
-              aria-label="Dismiss"
             >
-              ×
-            </button>
-          </div>
-        ))}
+              <span className="mt-0.5 shrink-0">{variantStyles[t.variant].icon}</span>
+              <span className="flex-1 text-text-primary">{t.message}</span>
+              <button
+                onClick={() => remove(t.id)}
+                className="text-text-muted transition-colors hover:text-text-primary"
+                aria-label="Dismiss"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </ToastContext.Provider>
   )

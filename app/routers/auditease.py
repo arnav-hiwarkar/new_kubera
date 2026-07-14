@@ -2,15 +2,9 @@ import json
 import uuid
 from typing import Annotated, List, Optional
 from datetime import datetime, timezone
-<<<<<<< HEAD
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy import select, and_, update, func, delete
-=======
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, and_, or_, update, delete, func
->>>>>>> new_frontend
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -177,37 +171,6 @@ async def get_trial_balance(
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-<<<<<<< HEAD
-    from sqlalchemy.orm import aliased
-    L1 = aliased(LedgerGroup)
-    L2 = aliased(LedgerGroup)
-    L3 = aliased(LedgerGroup)
-    
-    result = await db.execute(
-        select(
-            TrialBalanceAccount,
-            L1.name,
-            L2.name,
-            L3.name
-        )
-        .outerjoin(L1, TrialBalanceAccount.mapped_group_id == L1.id)
-        .outerjoin(L2, L1.parent_id == L2.id)
-        .outerjoin(L3, L2.parent_id == L3.id)
-        .where(TrialBalanceAccount.company_id == current_user.company_id)
-        .order_by(TrialBalanceAccount.ledger_code)
-    )
-    
-    out = []
-    for tb, g1, g2, g3 in result.all():
-        data = tb.__dict__.copy()
-        data["mapped_group_name"] = g1
-        data["parent_group_name"] = g2
-        data["top_group_name"] = g3
-        out.append(data)
-        
-    return out
-
-=======
     await _get_owned_engagement(db, current_user.company_id, engagement_id)
     result = await db.execute(
         select(TrialBalanceAccount)
@@ -217,7 +180,6 @@ async def get_trial_balance(
     accounts = list(result.scalars().all())
     path_map = await lg.resolve_group_paths(db, current_user.company_id)
     return lg.attach_group_paths(accounts, path_map)
->>>>>>> new_frontend
 
 
 # --- Chart of accounts (ledger groups) ---
@@ -408,33 +370,6 @@ async def map_ledger(
 
     ledger.mapped_group_id = group.id
     await db.commit()
-<<<<<<< HEAD
-    
-    from sqlalchemy.orm import aliased
-    L1 = aliased(LedgerGroup)
-    L2 = aliased(LedgerGroup)
-    L3 = aliased(LedgerGroup)
-    
-    result = await db.execute(
-        select(
-            TrialBalanceAccount,
-            L1.name,
-            L2.name,
-            L3.name
-        )
-        .outerjoin(L1, TrialBalanceAccount.mapped_group_id == L1.id)
-        .outerjoin(L2, L1.parent_id == L2.id)
-        .outerjoin(L3, L2.parent_id == L3.id)
-        .where(TrialBalanceAccount.id == ledger.id)
-    )
-    
-    tb, g1, g2, g3 = result.one()
-    data = tb.__dict__.copy()
-    data["mapped_group_name"] = g1
-    data["parent_group_name"] = g2
-    data["top_group_name"] = g3
-    return data
-=======
     await db.refresh(ledger)
     path_map = await lg.resolve_group_paths(db, current_user.company_id)
     return lg.attach_group_paths([ledger], path_map)[0]
@@ -487,7 +422,6 @@ async def unmap_ledgers(
     )
     await db.commit()
     return {"updated": result.rowcount}
->>>>>>> new_frontend
 
 
 # --- Engagements ---
@@ -653,50 +587,35 @@ async def invite_auditor(
     if eng.status == EngagementStatus.closed:
         raise HTTPException(status_code=409, detail="Cannot invite on a closed engagement")
 
-<<<<<<< HEAD
-    aud_res = await db.execute(select(Auditor).where(func.lower(Auditor.email) == invite.email.lower()))
-    auditor = aud_res.scalar_one_or_none()
-    
-    is_new = False
-    if not auditor:
-        is_new = True
-        # Create a placeholder auditor account so they can receive invites before registering
-        auditor = Auditor(
-            email=invite.email,
-            hashed_password="__pending__",
-            name="Pending Auditor"
-        )
-        db.add(auditor)
-        await db.flush() # get auditor.id
-    else:
-        # Check if grant already exists
-        grant_res = await db.execute(select(AuditorEngagementGrant).where(
-            and_(AuditorEngagementGrant.auditor_id == auditor.id, AuditorEngagementGrant.engagement_id == engagement_id)
-        ))
-        if grant_res.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Auditor is already invited to this engagement")
-        
-    grant = AuditorEngagementGrant(
-        auditor_id=auditor.id,
-        engagement_id=engagement_id,
-        status=GrantStatus.invited if is_new else GrantStatus.accepted,
-        accepted_at=None if is_new else datetime.now(timezone.utc)
-=======
     email = invite.email.strip().lower()
+
+    aud_res = await db.execute(select(Auditor).where(func.lower(Auditor.email) == email))
+    auditor = aud_res.scalar_one_or_none()
+
+    # Reject an exact duplicate: the same auditor already has an active/pending grant here.
+    if auditor:
+        dup_res = await db.execute(
+            select(AuditorEngagementGrant).where(
+                and_(
+                    AuditorEngagementGrant.auditor_id == auditor.id,
+                    AuditorEngagementGrant.engagement_id == engagement_id,
+                    AuditorEngagementGrant.status != GrantStatus.revoked,
+                )
+            )
+        )
+        if dup_res.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Auditor is already invited to this engagement")
 
     # One auditor per engagement: clear any prior grant/pending before re-inviting.
     await db.execute(
         update(AuditorEngagementGrant)
         .where(AuditorEngagementGrant.engagement_id == engagement_id)
         .values(status=GrantStatus.revoked)
->>>>>>> new_frontend
     )
     await db.execute(
         delete(PendingAuditorInvite).where(PendingAuditorInvite.engagement_id == engagement_id)
     )
 
-    aud_res = await db.execute(select(Auditor).where(func.lower(Auditor.email) == email))
-    auditor = aud_res.scalar_one_or_none()
     if auditor:
         db.add(AuditorEngagementGrant(
             auditor_id=auditor.id,

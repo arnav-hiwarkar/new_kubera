@@ -20,7 +20,7 @@ function StatementSection({
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-bg-surface">
       <table className="w-full text-left text-sm text-text-secondary">
-        <thead className="bg-background-subtle text-xs font-medium uppercase tracking-wider text-text-muted">
+        <thead className="bg-bg-inset text-xs font-medium uppercase tracking-wider text-text-muted">
           <tr>
             <th className="px-4 py-2">Ledger</th>
             <th className="px-4 py-2 text-right">Closing</th>
@@ -58,7 +58,7 @@ function ReportGroupBlock({
 }) {
   return (
     <>
-      <tr className="bg-background-subtle/50">
+      <tr className="bg-bg-inset/50">
         <td className="px-4 py-2 font-semibold text-text-primary" colSpan={3}>
           {group}
         </td>
@@ -67,7 +67,7 @@ function ReportGroupBlock({
       {rows.map((r) => {
         const subPath = (r.group_path ?? []).slice(1).join(' › ')
         return (
-          <tr key={r.ledger_id} className="hover:bg-background-subtle/30">
+          <tr key={r.ledger_id} className="hover:bg-bg-inset/30">
             <td className="px-4 py-2 pl-8">
               <div className="font-medium text-text-primary">{r.ledger_name}</div>
               {subPath && <div className="text-xs text-text-muted">{subPath}</div>}
@@ -177,7 +177,7 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border bg-bg-surface">
             <table className="w-full text-left text-sm text-text-secondary">
-              <thead className="bg-background-subtle text-xs font-medium uppercase tracking-wider text-text-muted">
+              <thead className="bg-bg-inset text-xs font-medium uppercase tracking-wider text-text-muted">
                 <tr>
                   <th className="px-4 py-2">Code</th>
                   <th className="px-4 py-2">Description</th>
@@ -187,7 +187,7 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
               </thead>
               <tbody className="divide-y divide-border">
                 {report.entries.approved.map((e) => (
-                  <tr key={e.id} className="hover:bg-background-subtle/30">
+                  <tr key={e.id} className="hover:bg-bg-inset/30">
                     <td className="px-4 py-2 text-text-primary">{e.code || '—'}</td>
                     <td className="px-4 py-2">{e.description}</td>
                     <td className="px-4 py-2 text-right">{num(e.total)}</td>

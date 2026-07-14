@@ -201,13 +201,7 @@ async def auditor_register(
         hashed_password=hash_password(body.password),
         name=body.name,
     )
-<<<<<<< HEAD
     db.add(auditor_obj)
-    await db.commit()
-    await db.refresh(auditor_obj)
-    return AuditorOut.model_validate(auditor_obj)
-=======
-    db.add(auditor)
     await db.flush()
 
     # Convert any pending engagement invites addressed to this email into grants.
@@ -220,14 +214,15 @@ async def auditor_register(
     pendings = pend_res.scalars().all()
     for pend in pendings:
         db.add(AuditorEngagementGrant(
-            auditor_id=auditor.id,
+            auditor_id=auditor_obj.id,
             engagement_id=pend.engagement_id,
             status=GrantStatus.invited,
         ))
         await db.delete(pend)
 
-    return AuditorOut.model_validate(auditor)
->>>>>>> new_frontend
+    await db.commit()
+    await db.refresh(auditor_obj)
+    return AuditorOut.model_validate(auditor_obj)
 
 
 @router.post("/auditor/login", response_model=TokenResponse)
