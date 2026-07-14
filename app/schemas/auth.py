@@ -31,6 +31,7 @@ class CompanyUserOut(BaseModel):
     designation: str | None = None
     department: str | None = None
     is_active: bool = True
+    accessible_modules: list[str] = []
 
     model_config = {"from_attributes": True}
 
