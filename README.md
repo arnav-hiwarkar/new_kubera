@@ -59,7 +59,7 @@ sudo usermod -aG docker $USER
 
 1. Clone the repository and go to the directory:
    ```bash
-   git clone <repo-url> kubera && cd kubera
+   git clone https://github.com/arnav-hiwarkar/new_kubera && cd new_kubera
    ```
 
 2. Create your `.env` file from the example:
