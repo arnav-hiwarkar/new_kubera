@@ -106,13 +106,10 @@ INTERNAL_API_KEY=my-super-secret-key-123
 Kubera is split into a **Backend** (Dockerized) and a **Frontend** (Vite app).
 
 ### 1. Start the Backend Infrastructure
-The backend uses Docker Compose to orchestrate FastAPI, PostgreSQL, and Redis.
+The backend uses Docker Compose to orchestrate FastAPI, PostgreSQL, and Redis. Database migrations will run automatically on startup.
 ```bash
-# Start all containers in the background
+# Start all containers in the background (migrations will run automatically)
 docker compose up -d --build
-
-# Run database migrations to create the schema
-docker compose exec api alembic upgrade head
 ```
 
 ### 2. Start the Frontend
