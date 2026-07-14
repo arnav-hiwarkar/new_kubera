@@ -1,0 +1,10 @@
+curl -X POST http://34.124.160.177:8000/api/v1/auth/companies \
+  -H "Content-Type: application/json" \
+  -H "x-internal-api-key: b9db05d727ea2a3ec668777f941c07a4491066e1261ac75e525e8d9b41a1bfaa" \
+  -d '{
+    "name": "Trial company",
+    "admin": {
+      "email": "admin@trial.com",
+      "password": "password"
+    }
+  }'

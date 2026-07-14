@@ -103,24 +103,16 @@ INTERNAL_API_KEY=my-super-secret-key-123
 
 ## 🚀 Running the Stack (Deployment)
 
-Kubera is split into a **Backend** (Dockerized) and a **Frontend** (Vite app).
+Kubera is fully containerized using Docker Compose. The backend includes FastAPI, PostgreSQL, and Redis, while the frontend is a built Vite React app served via Nginx.
 
-### 1. Start the Backend Infrastructure
-The backend uses Docker Compose to orchestrate FastAPI, PostgreSQL, and Redis. Database migrations will run automatically on startup.
+### Start the entire infrastructure
+Run the following command to start all containers in the background (database migrations will run automatically):
 ```bash
-# Start all containers in the background (migrations will run automatically)
 docker compose up -d --build
 ```
-
-### 2. Start the Frontend
-In a new terminal window or screen/tmux session:
-```bash
-cd frontend
-npm install
-npm run build
-npm run preview
-# OR for development: npm run dev
-```
+This will expose:
+- **Frontend App**: `http://localhost` (Port 80)
+- **Backend API**: `http://localhost:8000`
 
 ---
 
