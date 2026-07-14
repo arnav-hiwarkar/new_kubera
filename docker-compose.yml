@@ -84,12 +84,27 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "80:80"
     depends_on:
       - api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
 
 volumes:
   pgdata:
   vault_data:
   backup_data:
+  caddy_data:
+  caddy_config:
