@@ -177,8 +177,8 @@ class AuditEntryResponse(BaseModel):
 # --- Requests & Queries ---
 
 class RequirementRequestCreate(BaseModel):
-    title: str
     description: str
+    title: Optional[str] = None
 
 class RequirementRequestResponse(BaseModel):
     id: uuid.UUID

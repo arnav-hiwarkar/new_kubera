@@ -99,6 +99,13 @@ async def create_company(
     )
     db.add(log)
 
+    # Persist and reload so server-default columns (e.g. accessible_modules,
+    # role, is_active) are populated before response validation — otherwise
+    # Pydantic accesses unloaded attributes and triggers an illegal lazy load.
+    await db.commit()
+    await db.refresh(company)
+    await db.refresh(user)
+
     return CompanyWithAdmin(
         company=CompanyOut.model_validate(company),
         admin=CompanyUserOut.model_validate(user),

@@ -241,7 +241,7 @@ async def create_requirement(
     db_req = RequirementRequest(
         engagement_id=engagement_id,
         raised_by=current_auditor.id,
-        title=req.title,
+        title=(req.title.strip() if req.title and req.title.strip() else req.description.strip()[:255]) or "Requirement",
         description=req.description
     )
     db.add(db_req)
@@ -267,7 +267,7 @@ async def update_requirement(
     if db_req.status != RequestStatus.open:
         raise HTTPException(status_code=400, detail="Cannot edit a fulfilled requirement request")
         
-    db_req.title = req.title
+    db_req.title = (req.title.strip() if req.title and req.title.strip() else req.description.strip()[:255]) or "Requirement"
     db_req.description = req.description
     await db.commit()
     await db.refresh(db_req)
