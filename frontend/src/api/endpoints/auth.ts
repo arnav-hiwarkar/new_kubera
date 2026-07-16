@@ -8,11 +8,22 @@ import type {
   CompanyUserOut,
 } from '@/api/types'
 
+/** Payload to activate a pending admin with the one-shot key. */
+export interface ActivationRequest {
+  email: string
+  activation_key: string
+  password: string
+  full_name: string
+}
+
 /** Company identity auth. Login/refresh handled by the HttpClient adapter. */
 export const companyAuth = {
   login: (body: LoginRequest) =>
     companyClient.post<TokenResponse>('/api/v1/auth/company/login', { body }),
   me: () => companyClient.get<CompanyUserOut>('/api/v1/auth/company/me'),
+  /** Public: set the admin's password using the activation key. Returns 204. */
+  activate: (body: ActivationRequest) =>
+    companyClient.post<void>('/api/v1/auth/company/activate', { body }),
 }
 
 /** Auditor identity auth — includes open self-registration. */

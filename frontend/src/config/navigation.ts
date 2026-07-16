@@ -12,6 +12,7 @@ import {
   Bell,
   History,
   FolderSearch,
+  Building2,
 } from 'lucide-react'
 import type { NavSection } from '@/components/ui/Sidebar'
 
@@ -53,6 +54,7 @@ export const companyNav: NavSection[] = [
   {
     title: 'System',
     items: [
+      { label: 'Company Profile', to: '/app/settings/profile', icon: Building2 },
       { label: 'Notifications', to: '/app/notifications', icon: Bell, moduleId: 'notifications' },
       { label: 'Activity Log', to: '/app/activity', icon: History, moduleId: 'activity' },
     ],

@@ -68,6 +68,12 @@ export function CompanyLogin() {
           Sign In
         </Button>
         <p className="text-center text-sm text-text-secondary">
+          First time here?{' '}
+          <Link to="/activate" className="font-medium text-accent hover:underline">
+            Activate your account
+          </Link>
+        </p>
+        <p className="text-center text-sm text-text-secondary">
           Are you an auditor?{' '}
           <Link to="/auditor/login" className="font-medium text-accent hover:underline">
             Auditor portal

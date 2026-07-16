@@ -1,8 +1,12 @@
 import uuid
+import secrets
+import shutil
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Header, status
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -17,15 +21,19 @@ from app.auth import (
 from app.config import get_settings
 from app.database import get_db
 from app.encryption import generate_company_kek
-from app.models.company import Company, CompanyKey, CompanyUser
+from app.rate_limit import enforce_rate_limit
+from app.models.company import Company, CompanyKey, CompanyUser, UserRole
 from app.models.auditor import Auditor
 from app.models.activity_log import ActivityLog, ActorType
 from app.schemas.auth import (
-    CompanyCreateRequest,
-    CompanyUserCreate,
+    CompanyInitRequest,
+    CompanyInitResponse,
+    ReissueKeyResponse,
+    ActivationRequest,
     CompanyOut,
     CompanyUserOut,
-    CompanyWithAdmin,
+    CompanyListItem,
+    CompanyDeleteRequest,
     AuditorRegister,
     AuditorOut,
     LoginRequest,
@@ -35,18 +43,13 @@ from app.schemas.auth import (
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
+# Activation key is valid for 48 hours after it is minted.
+ACTIVATION_TTL = timedelta(hours=48)
+PENDING_PASSWORD = "__pending__"
 
-@router.post(
-    "/companies",
-    response_model=CompanyWithAdmin,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_company(
-    body: CompanyCreateRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    x_internal_api_key: Annotated[str, Header()],
-):
-    """Create a new company with its first admin user. Internal only."""
+
+def _require_internal_key(x_internal_api_key: str) -> None:
+    """Guard for operator-only endpoints."""
     settings = get_settings()
     if x_internal_api_key != settings.INTERNAL_API_KEY:
         raise HTTPException(
@@ -54,9 +57,40 @@ async def create_company(
             detail="Invalid internal API key",
         )
 
-    # Check email uniqueness
+
+def _mint_activation_key(company: Company) -> str:
+    """Generate a fresh one-shot activation key, store its hash + expiry on the
+    company, and return the plaintext (shown to the operator exactly once)."""
+    plaintext = secrets.token_urlsafe(24)
+    company.activation_key_hash = hash_password(plaintext)
+    company.activation_expires_at = datetime.now(timezone.utc) + ACTIVATION_TTL
+    company.activation_used_at = None
+    return plaintext
+
+
+@router.post(
+    "/companies",
+    response_model=CompanyInitResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def initialize_company(
+    body: CompanyInitRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_internal_api_key: Annotated[str, Header()],
+):
+    """Initialize a company shell + pending admin. Internal only.
+
+    Creates the Company, its per-company KEK, and a pending admin CompanyUser
+    (no password yet). Returns a one-shot activation key valid for 48h that the
+    admin uses to set their own password. The plaintext key is returned once.
+    """
+    _require_internal_key(x_internal_api_key)
+
+    # Check email uniqueness (emails are globally unique across all companies)
     existing = await db.execute(
-        select(CompanyUser).where(CompanyUser.email == body.admin.email)
+        select(CompanyUser).where(
+            func.lower(CompanyUser.email) == body.admin_email.strip().lower()
+        )
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -64,8 +98,9 @@ async def create_company(
             detail="Email already registered",
         )
 
-    # Create company
+    # Create company + mint activation key
     company = Company(name=body.name)
+    activation_key = _mint_activation_key(company)
     db.add(company)
     await db.flush()
 
@@ -78,12 +113,13 @@ async def create_company(
     )
     db.add(company_key)
 
-    # Create admin user
+    # Create pending admin user (password set later via activation)
     user = CompanyUser(
         company_id=company.id,
-        email=body.admin.email,
-        hashed_password=hash_password(body.admin.password),
-        full_name=body.admin.email.split("@")[0],
+        email=body.admin_email.strip().lower(),
+        hashed_password=PENDING_PASSWORD,
+        role=UserRole.admin,
+        is_active=False,
     )
     db.add(user)
     await db.flush()
@@ -106,23 +142,243 @@ async def create_company(
     await db.refresh(company)
     await db.refresh(user)
 
-    return CompanyWithAdmin(
+    return CompanyInitResponse(
         company=CompanyOut.model_validate(company),
         admin=CompanyUserOut.model_validate(user),
+        activation_key=activation_key,
+        activation_expires_at=company.activation_expires_at,
     )
+
+
+@router.post(
+    "/companies/{company_id}/reissue-key",
+    response_model=ReissueKeyResponse,
+)
+async def reissue_activation_key(
+    company_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_internal_api_key: Annotated[str, Header()],
+):
+    """Mint a fresh activation key + 48h window for a company whose admin has
+    not activated yet. Internal only. No tenant data is touched."""
+    _require_internal_key(x_internal_api_key)
+
+    company = (
+        await db.execute(select(Company).where(Company.id == company_id))
+    ).scalar_one_or_none()
+    if company is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+
+    admin = (
+        await db.execute(
+            select(CompanyUser).where(
+                CompanyUser.company_id == company_id,
+                CompanyUser.role == UserRole.admin,
+            )
+        )
+    ).scalars().first()
+    if admin is not None and admin.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Admin already activated; cannot reissue key",
+        )
+
+    activation_key = _mint_activation_key(company)
+    await db.commit()
+    await db.refresh(company)
+
+    return ReissueKeyResponse(
+        activation_key=activation_key,
+        activation_expires_at=company.activation_expires_at,
+    )
+
+
+@router.post("/company/activate", status_code=status.HTTP_204_NO_CONTENT)
+async def activate_company_admin(
+    request: Request,
+    body: ActivationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Admin claims their pending account: email + one-shot key -> set password.
+
+    On success the password is set, the account is activated, and the key is
+    invalidated. No session is issued — the admin logs in normally afterwards.
+    All failure modes return the same generic error (no enumeration).
+    """
+    settings = get_settings()
+    await enforce_rate_limit(
+        request,
+        "activate",
+        body.email,
+        limit=settings.ACTIVATE_RATE_LIMIT,
+        window_seconds=settings.ACTIVATE_RATE_WINDOW,
+    )
+    generic_error = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid or expired activation details",
+    )
+
+    user = (
+        await db.execute(
+            select(CompanyUser).where(
+                func.lower(CompanyUser.email) == body.email.strip().lower()
+            )
+        )
+    ).scalar_one_or_none()
+
+    # Must be a pending admin awaiting activation.
+    if user is None or user.is_active or user.hashed_password != PENDING_PASSWORD:
+        raise generic_error
+
+    company = (
+        await db.execute(select(Company).where(Company.id == user.company_id))
+    ).scalar_one_or_none()
+    if company is None or not company.activation_key_hash:
+        raise generic_error
+
+    # Expiry check.
+    expires = company.activation_expires_at
+    if expires is not None and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires is None or expires < datetime.now(timezone.utc):
+        raise generic_error
+
+    # Key check (constant-time via bcrypt).
+    if not verify_password(body.activation_key, company.activation_key_hash):
+        raise generic_error
+
+    # Activate: set real password, flip active, one-shot the key.
+    user.hashed_password = hash_password(body.password)
+    user.full_name = body.full_name
+    user.is_active = True
+    company.activation_used_at = datetime.now(timezone.utc)
+    company.activation_key_hash = None
+    company.activation_expires_at = None
+
+    db.add(
+        ActivityLog(
+            company_id=company.id,
+            actor_type=ActorType.company_user,
+            actor_id=user.id,
+            action="company.admin_activated",
+            entity_type="company_user",
+            entity_id=user.id,
+        )
+    )
+    await db.commit()
+    return None
+
+
+@router.get("/companies", response_model=list[CompanyListItem])
+async def list_companies(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_internal_api_key: Annotated[str, Header()],
+):
+    """List all companies with onboarding/activation status. Internal only."""
+    _require_internal_key(x_internal_api_key)
+
+    companies = (
+        await db.execute(select(Company).order_by(Company.created_at.desc()))
+    ).scalars().all()
+
+    now = datetime.now(timezone.utc)
+    items: list[CompanyListItem] = []
+    for company in companies:
+        admin = next(
+            (u for u in company.users if u.role == UserRole.admin), None
+        )
+        expires = company.activation_expires_at
+        if expires is not None and expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        pending = bool(
+            company.activation_key_hash
+            and expires is not None
+            and expires > now
+        )
+        items.append(
+            CompanyListItem(
+                id=company.id,
+                name=company.name,
+                admin_email=admin.email if admin else None,
+                admin_active=bool(admin and admin.is_active),
+                profile_completed=company.profile_completed,
+                activation_pending=pending,
+                activation_expires_at=company.activation_expires_at,
+                created_at=company.created_at,
+            )
+        )
+    return items
+
+
+@router.delete("/companies/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_company(
+    company_id: uuid.UUID,
+    body: CompanyDeleteRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_internal_api_key: Annotated[str, Header()],
+):
+    """Hard-delete a company and ALL its tenant data. Internal only, irreversible.
+
+    DB-level ON DELETE CASCADE removes every tenant row; we then delete the
+    company's on-disk encrypted file directory. Requires ``confirm_name`` to
+    exactly match the company name as a safety rail.
+    """
+    _require_internal_key(x_internal_api_key)
+
+    company = (
+        await db.execute(select(Company).where(Company.id == company_id))
+    ).scalar_one_or_none()
+    if company is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+
+    if body.confirm_name != company.name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="confirm_name does not match the company name",
+        )
+
+    # Issue a Core DELETE so Postgres ON DELETE CASCADE handles all tenant rows.
+    # (ORM session.delete would try to NULL children's company_id and fail.)
+    await db.execute(delete(Company).where(Company.id == company.id))
+    await db.commit()
+
+    # Remove the on-disk encrypted file directory (KEK is now gone, so these
+    # files are unrecoverable anyway). Best-effort; DB delete already committed.
+    settings = get_settings()
+    vault_dir = Path(settings.VAULT_STORAGE_PATH) / str(company_id)
+    if vault_dir.exists():
+        shutil.rmtree(vault_dir, ignore_errors=True)
+
+    return None
 
 
 @router.post("/company/login", response_model=TokenResponse)
 async def company_login(
+    request: Request,
     body: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Login for company users."""
+    settings = get_settings()
+    await enforce_rate_limit(
+        request,
+        "login",
+        body.email,
+        limit=settings.LOGIN_RATE_LIMIT,
+        window_seconds=settings.LOGIN_RATE_WINDOW,
+    )
     result = await db.execute(
         select(CompanyUser).where(CompanyUser.email == body.email)
     )
     user = result.scalar_one_or_none()
-    if user is None or not verify_password(body.password, user.hashed_password):
+    # Reject unknown users, wrong passwords, and pending/deactivated accounts
+    # (a pending admin still has the "__pending__" placeholder, which never
+    # verifies) — all with the same generic error.
+    if (
+        user is None
+        or not user.is_active
+        or not verify_password(body.password, user.hashed_password)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

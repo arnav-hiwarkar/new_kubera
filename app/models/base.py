@@ -27,7 +27,7 @@ class TenantScopedMixin:
     """Mixin for all company-owned tables. Carries company_id FK."""
     company_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("companies.id"),
+        ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

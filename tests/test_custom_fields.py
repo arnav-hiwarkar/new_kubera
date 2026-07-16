@@ -5,18 +5,18 @@ from tests.conftest import create_test_company, get_company_token
 
 
 async def _admin(client, email="cfadmin@a.com"):
-    await create_test_company(client, email=email, password="pass")
-    return {"Authorization": f"Bearer {await get_company_token(client, email=email, password='pass')}"}
+    await create_test_company(client, email=email, password="pass1234")
+    return {"Authorization": f"Bearer {await get_company_token(client, email=email, password='pass1234')}"}
 
 
 async def _employee_headers(client, admin_headers, email):
     resp = await client.post(
         "/api/v1/users",
-        json={"email": email, "password": "pass", "full_name": "Emp", "role": "employee"},
+        json={"email": email, "password": "pass1234", "full_name": "Emp", "role": "employee"},
         headers=admin_headers,
     )
     assert resp.status_code == 201, resp.text
-    tok = await get_company_token(client, email=email, password="pass")
+    tok = await get_company_token(client, email=email, password="pass1234")
     return {"Authorization": f"Bearer {tok}"}
 
 

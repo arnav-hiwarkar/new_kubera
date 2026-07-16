@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     # Internal API key
     INTERNAL_API_KEY: str
 
+    # Rate limiting (activation + login)
+    RATE_LIMIT_ENABLED: bool = True
+    LOGIN_RATE_LIMIT: int = 10
+    LOGIN_RATE_WINDOW: int = 300
+    ACTIVATE_RATE_LIMIT: int = 10
+    ACTIVATE_RATE_WINDOW: int = 900
+
     # Storage
     VAULT_STORAGE_PATH: str = "/data/vault"
     BACKUP_PATH: str = "/data/backups"

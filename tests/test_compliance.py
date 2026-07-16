@@ -6,8 +6,8 @@ from app.models.compliance import ComplianceDomain
 
 @pytest.mark.asyncio
 async def test_secretarial_flow(client: AsyncClient):
-    await create_test_company(client, email="sec@a.com", password="pass")
-    token = await get_company_token(client, email="sec@a.com", password="pass")
+    await create_test_company(client, email="sec@a.com", password="pass1234")
+    token = await get_company_token(client, email="sec@a.com", password="pass1234")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create document type
@@ -41,8 +41,8 @@ async def test_secretarial_flow(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_roc_flow(client: AsyncClient):
-    await create_test_company(client, email="roc@a.com", password="pass")
-    token = await get_company_token(client, email="roc@a.com", password="pass")
+    await create_test_company(client, email="roc@a.com", password="pass1234")
+    token = await get_company_token(client, email="roc@a.com", password="pass1234")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create document type
@@ -72,12 +72,12 @@ async def test_roc_flow(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_cross_tenant_compliance(client: AsyncClient):
-    await create_test_company(client, email="c1@a.com", password="pass")
-    token1 = await get_company_token(client, email="c1@a.com", password="pass")
+    await create_test_company(client, email="c1@a.com", password="pass1234")
+    token1 = await get_company_token(client, email="c1@a.com", password="pass1234")
     h1 = {"Authorization": f"Bearer {token1}"}
     
-    await create_test_company(client, email="c2@a.com", password="pass")
-    token2 = await get_company_token(client, email="c2@a.com", password="pass")
+    await create_test_company(client, email="c2@a.com", password="pass1234")
+    token2 = await get_company_token(client, email="c2@a.com", password="pass1234")
     h2 = {"Authorization": f"Bearer {token2}"}
 
     # C1 creates dt
@@ -95,8 +95,8 @@ async def test_cross_tenant_compliance(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_record_date_roundtrip(client: AsyncClient):
-    await create_test_company(client, email="rd@a.com", password="pass")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='rd@a.com', password='pass')}"}
+    await create_test_company(client, email="rd@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='rd@a.com', password='pass1234')}"}
 
     dt_id = (await client.post("/api/v1/roc/document-types", json={"name": "Monthly Return"}, headers=headers)).json()["id"]
     resp = await client.post(
@@ -113,8 +113,8 @@ async def test_record_date_roundtrip(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_delete_type_guarded_by_records(client: AsyncClient):
-    await create_test_company(client, email="del@a.com", password="pass")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@a.com', password='pass')}"}
+    await create_test_company(client, email="del@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@a.com', password='pass1234')}"}
 
     # Type with a record cannot be deleted
     used = (await client.post("/api/v1/secretarial/document-types", json={"name": "Used"}, headers=headers)).json()["id"]
@@ -130,8 +130,8 @@ async def test_delete_type_guarded_by_records(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_record_rejects_wrong_domain_type(client: AsyncClient):
-    await create_test_company(client, email="dom@a.com", password="pass")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='dom@a.com', password='pass')}"}
+    await create_test_company(client, email="dom@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='dom@a.com', password='pass1234')}"}
     roc_dt = (await client.post("/api/v1/roc/document-types", json={"name": "ROC only"}, headers=headers)).json()["id"]
     # Using a ROC type under the secretarial domain must be rejected.
     resp = await client.post("/api/v1/secretarial/meeting-records", json={"doc_type_id": roc_dt}, headers=headers)

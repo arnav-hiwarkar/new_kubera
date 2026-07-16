@@ -64,13 +64,25 @@ async def setup_database():
 
 @pytest_asyncio.fixture(autouse=True)
 async def clean_tables():
-    """Truncate all tables between tests."""
+    """Truncate all tables + reset rate-limit counters between tests."""
     yield
     async with engine.begin() as conn:
         # Truncate all tables in one statement to avoid FK issues
         table_names = [t.name for t in reversed(Base.metadata.sorted_tables)]
         if table_names:
             await conn.execute(text(f"TRUNCATE {', '.join(table_names)} CASCADE"))
+    # Reset rate-limit counters so per-test attempt counts never accumulate
+    # across tests (best-effort — the limiter fails open if Redis is absent).
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        keys = await r.keys("rl:*")
+        if keys:
+            await r.delete(*keys)
+        await r.aclose()
+    except Exception:
+        pass
 
 
 async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -104,15 +116,53 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
 INTERNAL_API_KEY = settings.INTERNAL_API_KEY
 
 
-async def create_test_company(client: AsyncClient, name: str = "TestCo", email: str = "admin@testco.com", password: str = "testpass123") -> dict:
-    """Create a company + admin, return the response JSON."""
+async def init_company(client: AsyncClient, name: str = "TestCo", email: str = "admin@testco.com") -> dict:
+    """Operator-side: initialize a company shell + pending admin. Returns the
+    init response JSON (includes the one-shot activation_key)."""
     resp = await client.post(
         "/api/v1/auth/companies",
-        json={"name": name, "admin": {"email": email, "password": password}},
+        json={"name": name, "admin_email": email},
         headers={"X-Internal-Api-Key": INTERNAL_API_KEY},
     )
-    assert resp.status_code == 201, f"Failed to create company: {resp.text}"
+    assert resp.status_code == 201, f"Failed to init company: {resp.text}"
     return resp.json()
+
+
+async def activate_company(
+    client: AsyncClient,
+    email: str,
+    activation_key: str,
+    password: str = "testpass123",
+    full_name: str = "Test Admin",
+) -> None:
+    """Admin-side: claim the pending account by setting a password."""
+    resp = await client.post(
+        "/api/v1/auth/company/activate",
+        json={
+            "email": email,
+            "activation_key": activation_key,
+            "password": password,
+            "full_name": full_name,
+        },
+    )
+    assert resp.status_code == 204, f"Failed to activate: {resp.text}"
+
+
+async def create_test_company(
+    client: AsyncClient,
+    name: str = "TestCo",
+    email: str = "admin@testco.com",
+    password: str = "testpass123",
+    full_name: str = "Test Admin",
+) -> dict:
+    """Init + activate a company so the admin can log in. Returns the init
+    response JSON (company + admin + activation_key)."""
+    data = await init_company(client, name=name, email=email)
+    await activate_company(
+        client, email=email, activation_key=data["activation_key"],
+        password=password, full_name=full_name,
+    )
+    return data
 
 
 async def get_company_token(client: AsyncClient, email: str = "admin@testco.com", password: str = "testpass123") -> str:

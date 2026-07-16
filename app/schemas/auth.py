@@ -1,17 +1,14 @@
 import uuid
-from pydantic import BaseModel, EmailStr
+from datetime import datetime
+from pydantic import BaseModel, EmailStr, Field
 
 
 # === Company ===
 
-class CompanyUserCreate(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class CompanyCreateRequest(BaseModel):
-    name: str
-    admin: CompanyUserCreate
+class CompanyInitRequest(BaseModel):
+    """Operator-initiated company creation (internal API key gated)."""
+    name: str = Field(min_length=1, max_length=255)
+    admin_email: EmailStr
 
 
 class CompanyOut(BaseModel):
@@ -36,9 +33,44 @@ class CompanyUserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class CompanyWithAdmin(BaseModel):
+class CompanyInitResponse(BaseModel):
+    """Returned once at init/reissue — carries the plaintext activation key."""
     company: CompanyOut
     admin: CompanyUserOut
+    activation_key: str
+    activation_expires_at: datetime
+
+
+class ReissueKeyResponse(BaseModel):
+    activation_key: str
+    activation_expires_at: datetime
+
+
+class ActivationRequest(BaseModel):
+    """Admin claims their account with the one-shot key and sets a password."""
+    email: EmailStr
+    activation_key: str
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str = Field(min_length=1, max_length=255)
+
+
+class CompanyListItem(BaseModel):
+    """Backend-only company listing row."""
+    id: uuid.UUID
+    name: str
+    admin_email: str | None = None
+    admin_active: bool = False
+    profile_completed: bool = False
+    activation_pending: bool = False
+    activation_expires_at: datetime | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CompanyDeleteRequest(BaseModel):
+    """Confirmation safety rail for hard delete."""
+    confirm_name: str
 
 
 # === Auditor ===

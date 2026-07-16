@@ -1,6 +1,7 @@
 import uuid
 import enum
-from sqlalchemy import String, ForeignKey, LargeBinary, Enum as SAEnum, Boolean
+from datetime import date, datetime
+from sqlalchemy import String, ForeignKey, LargeBinary, Enum as SAEnum, Boolean, Date, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +16,36 @@ class Company(Base, TimestampMixin):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    # --- Profile (Indian Pvt Ltd). Populated during onboarding. ---
+    legal_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cin: Mapped[str | None] = mapped_column(String(21), nullable=True)
+    pan: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
+    tan: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    address_line1: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    address_line2: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    pincode: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    date_of_incorporation: Mapped[date | None] = mapped_column(Date, nullable=True)
+    website: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    logo_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    profile_completed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # --- Admin activation (one-shot key, 48h TTL). ---
+    activation_key_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    activation_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    activation_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     users = relationship("CompanyUser", back_populates="company", lazy="selectin")
     keys = relationship("CompanyKey", back_populates="company", lazy="selectin")
 
@@ -27,7 +58,7 @@ class CompanyKey(Base, TimestampMixin):
     )
     company_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("companies.id"),
+        ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
     )
@@ -51,7 +82,7 @@ class CompanyUser(Base, TimestampMixin):
     )
     company_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("companies.id"),
+        ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

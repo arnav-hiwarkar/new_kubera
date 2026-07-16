@@ -6,8 +6,8 @@ from tests.conftest import create_test_company, get_company_token
 @pytest.mark.asyncio
 async def test_bucket_crud(client: AsyncClient):
     # Setup company and get token
-    await create_test_company(client, email="b1@a.com", password="pass")
-    token = await get_company_token(client, email="b1@a.com", password="pass")
+    await create_test_company(client, email="b1@a.com", password="pass1234")
+    token = await get_company_token(client, email="b1@a.com", password="pass1234")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create bucket
@@ -33,8 +33,8 @@ async def test_bucket_crud(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_document_upload_and_download(client: AsyncClient):
-    await create_test_company(client, name="DocCo", email="doc@co.com", password="pass")
-    token = await get_company_token(client, email="doc@co.com", password="pass")
+    await create_test_company(client, name="DocCo", email="doc@co.com", password="pass1234")
+    token = await get_company_token(client, email="doc@co.com", password="pass1234")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Upload document
@@ -78,13 +78,13 @@ async def test_document_upload_and_download(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_document_cross_tenant_leak(client: AsyncClient):
     # Company A
-    await create_test_company(client, name="CompA", email="a@co.com", password="pass")
-    token_a = await get_company_token(client, email="a@co.com", password="pass")
+    await create_test_company(client, name="CompA", email="a@co.com", password="pass1234")
+    token_a = await get_company_token(client, email="a@co.com", password="pass1234")
     headers_a = {"Authorization": f"Bearer {token_a}"}
 
     # Company B
-    await create_test_company(client, name="CompB", email="b@co.com", password="pass")
-    token_b = await get_company_token(client, email="b@co.com", password="pass")
+    await create_test_company(client, name="CompB", email="b@co.com", password="pass1234")
+    token_b = await get_company_token(client, email="b@co.com", password="pass1234")
     headers_b = {"Authorization": f"Bearer {token_b}"}
 
     # A creates bucket and document

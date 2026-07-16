@@ -24,19 +24,23 @@ async def test_activity_log_created_on_company_creation(client: AsyncClient):
     assert resp.status_code == 200
     logs = resp.json()
     assert len(logs) >= 1
-    assert logs[0]["action"] == "company.created"
+    # Two-step onboarding: init logs "company.created", activation logs
+    # "company.admin_activated". Both should be present.
+    actions = {log["action"] for log in logs}
+    assert "company.created" in actions
+    assert "company.admin_activated" in actions
 
 
 @pytest.mark.asyncio
 async def test_activity_log_cross_tenant_leak(client: AsyncClient):
     """Company A must not see Company B's activity logs."""
     # Create company A
-    await create_test_company(client, name="CompA", email="a@a.com", password="pass")
-    token_a = await get_company_token(client, email="a@a.com", password="pass")
+    await create_test_company(client, name="CompA", email="a@a.com", password="pass1234")
+    token_a = await get_company_token(client, email="a@a.com", password="pass1234")
 
     # Create company B
-    await create_test_company(client, name="CompB", email="b@b.com", password="pass")
-    token_b = await get_company_token(client, email="b@b.com", password="pass")
+    await create_test_company(client, name="CompB", email="b@b.com", password="pass1234")
+    token_b = await get_company_token(client, email="b@b.com", password="pass1234")
 
     # Get logs for A
     resp_a = await client.get(
@@ -129,11 +133,11 @@ async def test_notification_cross_tenant_leak(client: AsyncClient):
     from tests.conftest import TestSessionLocal
 
     # Create two companies
-    data_a = await create_test_company(client, name="A", email="a@a.com", password="pass")
-    token_a = await get_company_token(client, email="a@a.com", password="pass")
+    data_a = await create_test_company(client, name="A", email="a@a.com", password="pass1234")
+    token_a = await get_company_token(client, email="a@a.com", password="pass1234")
 
-    data_b = await create_test_company(client, name="B", email="b@b.com", password="pass")
-    token_b = await get_company_token(client, email="b@b.com", password="pass")
+    data_b = await create_test_company(client, name="B", email="b@b.com", password="pass1234")
+    token_b = await get_company_token(client, email="b@b.com", password="pass1234")
 
     user_b_id = uuid.UUID(data_b["admin"]["id"])
 

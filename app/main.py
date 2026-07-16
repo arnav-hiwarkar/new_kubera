@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, activity, notifications, docvault, auditease, auditor_engagements, compliance, users, custom_fields, assets, sales, kra
+from app.routers import auth, activity, notifications, docvault, auditease, auditor_engagements, compliance, users, custom_fields, assets, sales, kra, company
 
 app = FastAPI(
     title="Kubera V1",
@@ -20,6 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(company.router)
 app.include_router(users.router)
 app.include_router(custom_fields.router)
 app.include_router(assets.router)

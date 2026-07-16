@@ -7,12 +7,12 @@ from tests.conftest import create_test_company, get_company_token
 
 
 async def _admin(client, email="sadmin@a.com"):
-    await create_test_company(client, email=email, password="pass")
-    return {"Authorization": f"Bearer {await get_company_token(client, email=email, password='pass')}"}
+    await create_test_company(client, email=email, password="pass1234")
+    return {"Authorization": f"Bearer {await get_company_token(client, email=email, password='pass1234')}"}
 
 
 async def _make_user(client, admin_headers, email, role="employee", manager_id=None):
-    body = {"email": email, "password": "pass", "full_name": email.split("@")[0], "role": role}
+    body = {"email": email, "password": "pass1234", "full_name": email.split("@")[0], "role": role}
     if manager_id:
         body["manager_id"] = manager_id
     resp = await client.post("/api/v1/users", json=body, headers=admin_headers)
@@ -21,7 +21,7 @@ async def _make_user(client, admin_headers, email, role="employee", manager_id=N
 
 
 async def _headers(client, email):
-    return {"Authorization": f"Bearer {await get_company_token(client, email=email, password='pass')}"}
+    return {"Authorization": f"Bearer {await get_company_token(client, email=email, password='pass1234')}"}
 
 
 @pytest.mark.asyncio

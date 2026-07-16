@@ -101,6 +101,7 @@ INTERNAL_API_KEY=my-super-secret-key-123
 
 ---
 
+
 ## 🚀 Running the Stack (Deployment)
 
 Kubera is fully containerized using Docker Compose. The backend includes FastAPI, PostgreSQL, and Redis, while the frontend is a built Vite React app served via Nginx.
@@ -162,3 +163,11 @@ Once the company is created, the admin can log in via the frontend (`/login`) us
 Once the backend is running, the interactive API documentation is available at:
 - **Swagger UI:** `http://localhost:8000/docs`
 - **ReDoc:** `http://localhost:8000/redoc`
+
+
+---
+
+Changes to make:
+[ ] Edit README.md to include the addition of the caddy on local deployment, like the command and changes to be made to the .env file -> Adding a DOMAIN=localhost funciton to it simply
+[ ] Make changes to company onboarding, with a sign up and landing page for new companies to register their stuff
+[ ] Make every companies logo and name at the top of the app

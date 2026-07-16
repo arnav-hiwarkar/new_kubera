@@ -26,7 +26,7 @@ async def test_create_company(client: AsyncClient):
 async def test_create_company_bad_api_key(client: AsyncClient):
     resp = await client.post(
         "/api/v1/auth/companies",
-        json={"name": "Bad", "admin": {"email": "x@x.com", "password": "pass"}},
+        json={"name": "Bad", "admin_email": "x@x.com"},
         headers={"X-Internal-Api-Key": "wrong-key"},
     )
     assert resp.status_code == 403
@@ -37,7 +37,7 @@ async def test_create_company_duplicate_email(client: AsyncClient):
     await create_test_company(client)
     resp = await client.post(
         "/api/v1/auth/companies",
-        json={"name": "Co2", "admin": {"email": "admin@testco.com", "password": "pass"}},
+        json={"name": "Co2", "admin_email": "admin@testco.com"},
         headers={"X-Internal-Api-Key": INTERNAL_API_KEY},
     )
     assert resp.status_code == 409
@@ -117,7 +117,7 @@ async def test_auditor_register_duplicate(client: AsyncClient):
     await create_test_auditor(client)
     resp = await client.post(
         "/api/v1/auth/auditor/register",
-        json={"email": "auditor@test.com", "password": "pass", "name": "Dup"},
+        json={"email": "auditor@test.com", "password": "pass1234", "name": "Dup"},
     )
     assert resp.status_code == 409
 
