@@ -25,7 +25,10 @@ export interface CompanyProfile {
 
 export type CompanyProfileUpdate = Partial<
   Omit<CompanyProfile, 'id' | 'name' | 'profile_completed' | 'has_logo'>
->
+> & {
+  /** Set by the onboarding flow to mark the profile complete regardless of which optional fields were filled. */
+  mark_completed?: boolean
+}
 
 export const companyProfileApi = {
   get: () => companyClient.get<CompanyProfile>('/api/v1/company/profile'),

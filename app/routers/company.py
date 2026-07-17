@@ -81,10 +81,17 @@ async def update_profile(
     company = await _load_company(db, user.company_id)
 
     changes = body.model_dump(exclude_unset=True)
+    # mark_completed is a control flag, not a company column.
+    mark_completed = changes.pop("mark_completed", False)
     for field, value in changes.items():
         setattr(company, field, value)
 
-    company.profile_completed = _profile_is_complete(company)
+    # All profile fields are optional. Completing onboarding (mark_completed) or
+    # filling every legacy required field marks the profile complete; once done it
+    # stays done, so a later settings edit that clears a field won't bounce the
+    # admin back to onboarding.
+    if mark_completed or _profile_is_complete(company):
+        company.profile_completed = True
 
     if changes:
         db.add(

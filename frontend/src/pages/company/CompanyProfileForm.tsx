@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { UploadCloud } from 'lucide-react'
 import { Button, Field, Input, useToast } from '@/components/ui'
 import { useCompanyAuth } from '@/auth/company'
@@ -11,18 +11,6 @@ const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/
 const CIN_RE = /^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/
 const PINCODE_RE = /^[0-9]{6}$/
-
-const REQUIRED_FIELDS = [
-  'legal_name',
-  'cin',
-  'pan',
-  'address_line1',
-  'city',
-  'state',
-  'pincode',
-  'contact_email',
-  'contact_phone',
-] as const
 
 type FieldKey = keyof CompanyProfileUpdate
 
@@ -79,11 +67,10 @@ export function CompanyProfileForm({
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
+  // Everything is optional. We only sanity-check the format of values the
+  // admin actually typed; empty fields are always allowed.
   function validate(): boolean {
     const e: Record<string, string> = {}
-    for (const k of REQUIRED_FIELDS) {
-      if (!form[k]?.trim()) e[k] = 'Required'
-    }
     if (form.pan?.trim() && !PAN_RE.test(form.pan.trim().toUpperCase()))
       e.pan = 'Invalid PAN (AAAAA9999A)'
     if (form.cin?.trim() && !CIN_RE.test(form.cin.trim().toUpperCase()))
@@ -107,6 +94,9 @@ export function CompanyProfileForm({
     for (const k of TEXT_FIELDS) {
       ;(body as Record<string, string | null>)[k] = emptyToNull(form[k] ?? '')
     }
+    // Finishing onboarding marks the profile complete even if fields were left
+    // blank, so the admin isn't bounced back to this page.
+    if (mode === 'onboarding') body.mark_completed = true
     try {
       const updated = await update.mutateAsync(body)
       toast.success('Company profile saved')
@@ -144,11 +134,6 @@ export function CompanyProfileForm({
     error: !!errors[k],
   })
 
-  const requiredMissing = useMemo(
-    () => REQUIRED_FIELDS.some((k) => !form[k]?.trim()),
-    [form],
-  )
-
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-8">
       {/* Logo */}
@@ -173,7 +158,7 @@ export function CompanyProfileForm({
       <section className="flex flex-col gap-4">
         <h3 className="text-sm font-semibold text-text-primary">Company details</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Legal name" htmlFor="legal_name" required error={errors.legal_name}>
+          <Field label="Legal name" htmlFor="legal_name" error={errors.legal_name}>
             <Input id="legal_name" placeholder="Acme Pvt Ltd" {...fieldProps('legal_name')} />
           </Field>
           <Field label="Industry" htmlFor="industry" error={errors.industry}>
@@ -192,10 +177,10 @@ export function CompanyProfileForm({
       <section className="flex flex-col gap-4">
         <h3 className="text-sm font-semibold text-text-primary">Statutory identifiers</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="CIN" htmlFor="cin" required error={errors.cin} hint="21-character Corporate Identity Number">
+          <Field label="CIN" htmlFor="cin" error={errors.cin} hint="21-character Corporate Identity Number">
             <Input id="cin" placeholder="U12345MH2020PTC123456" {...fieldProps('cin')} />
           </Field>
-          <Field label="PAN" htmlFor="pan" required error={errors.pan}>
+          <Field label="PAN" htmlFor="pan" error={errors.pan}>
             <Input id="pan" placeholder="AAAAA9999A" {...fieldProps('pan')} />
           </Field>
           <Field label="GSTIN" htmlFor="gstin" error={errors.gstin} hint="Optional — only if GST-registered">
@@ -211,19 +196,19 @@ export function CompanyProfileForm({
       <section className="flex flex-col gap-4">
         <h3 className="text-sm font-semibold text-text-primary">Registered office</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Address line 1" htmlFor="address_line1" required error={errors.address_line1} className="sm:col-span-2">
+          <Field label="Address line 1" htmlFor="address_line1" error={errors.address_line1} className="sm:col-span-2">
             <Input id="address_line1" {...fieldProps('address_line1')} />
           </Field>
           <Field label="Address line 2" htmlFor="address_line2" error={errors.address_line2} className="sm:col-span-2">
             <Input id="address_line2" {...fieldProps('address_line2')} />
           </Field>
-          <Field label="City" htmlFor="city" required error={errors.city}>
+          <Field label="City" htmlFor="city" error={errors.city}>
             <Input id="city" {...fieldProps('city')} />
           </Field>
-          <Field label="State" htmlFor="state" required error={errors.state}>
+          <Field label="State" htmlFor="state" error={errors.state}>
             <Input id="state" {...fieldProps('state')} />
           </Field>
-          <Field label="Pincode" htmlFor="pincode" required error={errors.pincode}>
+          <Field label="Pincode" htmlFor="pincode" error={errors.pincode}>
             <Input id="pincode" placeholder="400001" {...fieldProps('pincode')} />
           </Field>
         </div>
@@ -233,10 +218,10 @@ export function CompanyProfileForm({
       <section className="flex flex-col gap-4">
         <h3 className="text-sm font-semibold text-text-primary">Contact</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Contact email" htmlFor="contact_email" required error={errors.contact_email}>
+          <Field label="Contact email" htmlFor="contact_email" error={errors.contact_email}>
             <Input id="contact_email" type="email" {...fieldProps('contact_email')} />
           </Field>
-          <Field label="Contact phone" htmlFor="contact_phone" required error={errors.contact_phone}>
+          <Field label="Contact phone" htmlFor="contact_phone" error={errors.contact_phone}>
             <Input id="contact_phone" {...fieldProps('contact_phone')} />
           </Field>
         </div>
@@ -244,8 +229,8 @@ export function CompanyProfileForm({
 
       {canEdit ? (
         <div className="flex items-center justify-end gap-3">
-          {mode === 'onboarding' && requiredMissing && (
-            <span className="text-sm text-text-muted">Fill all required (*) fields to continue</span>
+          {mode === 'onboarding' && (
+            <span className="text-sm text-text-muted">All fields are optional — you can fill these in later.</span>
           )}
           <Button type="submit" size="lg" loading={update.isPending}>
             {mode === 'onboarding' ? 'Complete setup' : 'Save changes'}

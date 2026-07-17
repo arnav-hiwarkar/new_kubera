@@ -52,6 +52,10 @@ class CompanyProfileOut(BaseModel):
 class CompanyProfileUpdate(BaseModel):
     """Partial update — only provided fields change. Statutory identifiers are
     format-validated and normalized to uppercase when present."""
+    # All profile fields are optional. The onboarding flow sets ``mark_completed``
+    # so the profile counts as complete even when fields are left blank; it is not
+    # a company column and is consumed by the router.
+    mark_completed: bool = False
     legal_name: str | None = None
     cin: str | None = None
     pan: str | None = None
