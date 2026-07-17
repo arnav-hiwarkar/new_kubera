@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Users, ShieldCheck, UserCog, User } from 'lucide-react'
 import { usersApi } from '@/api/endpoints/users'
 import { ApiError } from '@/api/http'
+import { useCompanyAuth } from '@/auth/company'
 import type { UserResponse } from '@/api/types'
 import { PageHeader, DataTable, StatusBadge, StatCard, type Column, Button } from '@/components/ui'
 import { UserModal } from './users/UserModal'
@@ -48,6 +49,8 @@ const columns: Column<UserResponse>[] = [
 
 export function UsersDirectory() {
   const queryClient = useQueryClient()
+  const { profile: currentUser } = useCompanyAuth()
+  const isAdmin = currentUser?.role === 'admin'
   const [modalOpen, setModalOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<UserResponse | null>(null)
 
@@ -66,12 +69,21 @@ export function UsersDirectory() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => usersApi.remove(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+  })
+
   const handleSave = async (data: any) => {
     if (editingUser) {
       await updateMutation.mutateAsync({ id: editingUser.id, data })
     } else {
       await createMutation.mutateAsync(data)
     }
+  }
+
+  const handleDelete = async (id: string) => {
+    await deleteMutation.mutateAsync(id)
   }
 
   const handleRowClick = (u: UserResponse) => {
@@ -139,6 +151,8 @@ export function UsersDirectory() {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSave={handleSave}
+        onDelete={handleDelete}
+        canDelete={isAdmin && !!editingUser && editingUser.id !== currentUser?.id}
         initialData={editingUser}
       />
     </div>

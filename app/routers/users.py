@@ -2,7 +2,8 @@ import uuid
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -133,6 +134,48 @@ async def update_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """Permanently delete a user. Admin only, scoped to the caller's company.
+
+    You cannot delete your own account (that also guarantees the company always
+    retains at least one admin). Any direct reports are detached first; if the
+    user still owns other tenant records that block deletion, we return 409 so
+    the admin can deactivate them instead.
+    """
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
+    result = await db.execute(
+        select(CompanyUser).where(
+            CompanyUser.id == user_id,
+            CompanyUser.company_id == current_user.company_id
+        )
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Detach direct reports first — the self-referential manager FK has no cascade.
+    await db.execute(
+        update(CompanyUser).where(CompanyUser.manager_id == user_id).values(manager_id=None)
+    )
+    try:
+        await db.execute(delete(CompanyUser).where(CompanyUser.id == user_id))
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This user still owns records and can't be deleted. Deactivate them instead.",
+        )
+    return None
+
 
 @router.patch("/{user_id}/deactivate", response_model=UserResponse)
 async def deactivate_user(

@@ -48,7 +48,7 @@ def main():
 
     result = subprocess.run(
         [
-            "curl", "-s", "-S", "-w", "\n%{http_code}",
+            "curl", "-s", "-S", "-L", "-w", "\n%{http_code}",
             f"{domain}/api/v1/auth/companies",
             "-H", f"X-Internal-API-Key: {key}",
         ],

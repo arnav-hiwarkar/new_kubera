@@ -43,7 +43,7 @@ def api_base(env):
 
 def curl(args):
     result = subprocess.run(
-        ["curl", "-s", "-S", "-w", "\n%{http_code}", *args],
+        ["curl", "-s", "-S", "-L", "-w", "\n%{http_code}", *args],
         capture_output=True, text=True,
     )
     if result.returncode != 0:

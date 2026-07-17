@@ -7,6 +7,9 @@ interface UserModalProps {
   isOpen: boolean
   onClose: () => void
   onSave: (data: any) => Promise<void>
+  onDelete?: (id: string) => Promise<void>
+  /** Whether the current user may delete the user being edited (admin, not self). */
+  canDelete?: boolean
   initialData?: UserResponse | null
 }
 
@@ -22,7 +25,7 @@ const moduleNames: Record<ModuleId, string> = {
   activity: 'Activity Log',
 }
 
-export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalProps) {
+export function UserModal({ isOpen, onClose, onSave, onDelete, canDelete, initialData }: UserModalProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -32,9 +35,12 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
   const [accessibleModules, setAccessibleModules] = useState<ModuleId[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
     setError(null)
+    setConfirmingDelete(false)
     if (initialData) {
       setEmail(initialData.email)
       setFullName(initialData.full_name)
@@ -95,7 +101,23 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
     }
   }
 
+  const handleDelete = async () => {
+    if (!initialData || !onDelete) return
+    setIsDeleting(true)
+    setError(null)
+    try {
+      await onDelete(initialData.id)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete user')
+      setConfirmingDelete(false)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   const isAdmin = role === 'admin'
+  const busy = isSubmitting || isDeleting
 
   return (
     <Modal
@@ -182,13 +204,34 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
           )}
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-border">
-          <Button variant="ghost" type="button" onClick={onClose} disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" loading={isSubmitting}>
-            {initialData ? 'Save Changes' : 'Create User'}
-          </Button>
+        <div className="flex items-center justify-between gap-3 pt-4 border-t border-border">
+          <div>
+            {initialData && canDelete && onDelete && (
+              confirmingDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-text-secondary">Delete permanently?</span>
+                  <Button variant="danger" type="button" loading={isDeleting} onClick={handleDelete}>
+                    Yes, delete
+                  </Button>
+                  <Button variant="ghost" type="button" onClick={() => setConfirmingDelete(false)} disabled={isDeleting}>
+                    No
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="ghost" type="button" onClick={() => setConfirmingDelete(true)} disabled={busy}>
+                  <span className="text-status-action">Delete user</span>
+                </Button>
+              )
+            )}
+          </div>
+          <div className="flex gap-3">
+            <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={isSubmitting} disabled={isDeleting}>
+              {initialData ? 'Save Changes' : 'Create User'}
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>

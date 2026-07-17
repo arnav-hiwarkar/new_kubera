@@ -70,7 +70,7 @@ def main():
     # it cleanly from the JSON body.
     result = subprocess.run(
         [
-            "curl", "-s", "-S", "-w", "\n%{http_code}",
+            "curl", "-s", "-S", "-L", "-w", "\n%{http_code}",
             "-X", "POST", url,
             "-H", "Content-Type: application/json",
             "-H", f"X-Internal-API-Key: {internal_key}",
