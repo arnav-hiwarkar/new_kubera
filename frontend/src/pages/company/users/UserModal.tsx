@@ -31,8 +31,10 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
   const [designation, setDesignation] = useState('')
   const [accessibleModules, setAccessibleModules] = useState<ModuleId[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    setError(null)
     if (initialData) {
       setEmail(initialData.email)
       setFullName(initialData.full_name)
@@ -60,6 +62,7 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
+    setError(null)
     try {
       if (initialData) {
         const update: UserUpdate = {
@@ -82,7 +85,11 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
         }
         await onSave(create)
       }
+      // Only close on success — otherwise keep the modal open with the error
+      // shown, so the admin can correct and retry.
       onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save user')
     } finally {
       setIsSubmitting(false)
     }
@@ -97,6 +104,11 @@ export function UserModal({ isOpen, onClose, onSave, initialData }: UserModalPro
       title={initialData ? 'Edit User' : 'New User'}
     >
       <form onSubmit={handleSubmit} className="space-y-6">
+        {error && (
+          <div className="rounded-btn border border-status-action/40 bg-status-action/10 px-3 py-2 text-sm font-medium text-status-action">
+            {error}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Full Name" required>
             <Input
