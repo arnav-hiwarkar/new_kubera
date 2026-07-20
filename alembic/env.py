@@ -15,6 +15,14 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Source the DB URL from application settings (DATABASE_URL) rather than the
+# hardcoded alembic.ini value, so migrations hit the right host in every context:
+# localhost:5433 on the host (from .env) and postgres:5432 inside Docker (from the
+# compose override). `%%` escapes configparser interpolation.
+from app.config import get_settings
+
+config.set_main_option("sqlalchemy.url", get_settings().DATABASE_URL.replace("%", "%%"))
+
 target_metadata = Base.metadata
 
 

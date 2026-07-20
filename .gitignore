@@ -29,3 +29,7 @@ htmlcov/
 
 # Python virtualenv
 .venv/
+
+# Celery beat runtime state
+celerybeat-schedule
+celerybeat-schedule.*

@@ -1,0 +1,30 @@
+# Keep the build context small and never ship host-only or secret files.
+.git
+.gitignore
+
+# Host virtualenv (wrong architecture) — the image builds its own at /opt/venv.
+.venv
+
+# Python caches / build artifacts
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.coverage
+htmlcov
+
+# Secrets and local env
+.env
+
+# Frontend (built by frontend/Dockerfile, not this image)
+frontend/node_modules
+frontend/dist
+
+# Celery beat runtime state
+celerybeat-schedule
+celerybeat-schedule.*
+
+# Editor
+.vscode
+.idea
+*.swp
