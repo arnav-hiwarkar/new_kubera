@@ -614,6 +614,89 @@ REPORT_CSV = (
 )
 
 
+# Same figures as REPORT_CSV but in the standard SIGNED trial-balance convention:
+# credit-natured accounts (Income, Liabilities) carry a negative closing balance.
+SIGNED_REPORT_CSV = (
+    b"Code,Name,Opening,Debit,Credit,Closing\n"
+    b"A1,Cash,0,0,0,1000\n"
+    b"L1,Loan,0,0,600,-600\n"
+    b"I1,Sales,0,0,500,-500\n"
+    b"E1,Rent,0,100,0,100\n"
+)
+
+# Signed convention where expenditure exceeds income -> a genuine net LOSS.
+SIGNED_LOSS_CSV = (
+    b"Code,Name,Opening,Debit,Credit,Closing\n"
+    b"A1,Cash,0,0,0,1000\n"
+    b"L1,Loan,0,0,900,-900\n"
+    b"I1,Sales,0,0,100,-100\n"
+    b"E1,Rent,0,500,0,500\n"
+)
+
+
+async def _map_pl_ledgers(client, eng_id, co_headers, ledgers):
+    """Map Cash/Loan/Sales/Rent to the seeded Schedule III leaves (shared setup)."""
+    groups = await get_groups(client, co_headers)
+
+    async def map_to(ledger_name, group_name):
+        gid = find_group(groups, group_name)["id"]
+        lid = ledgers[ledger_name]["id"]
+        r = await client.post(
+            f"/api/v1/auditease/engagements/{eng_id}/ledgers/{lid}/map",
+            json={"group_id": gid}, headers=co_headers,
+        )
+        assert r.status_code == 200, r.text
+
+    await map_to("Cash", "Cash and Cash Equivalents")
+    await map_to("Loan", "Trade Payables")
+    await map_to("Sales", "Revenue from Operations")
+    await map_to("Rent", "Other Expenses")
+
+
+@pytest.mark.asyncio
+async def test_report_preview_signed_trial_balance(client: AsyncClient):
+    """Regression: a signed trial balance (credit accounts negative) must still yield
+    net profit = Income - Expenditure, not -(|Income| + |Expenditure|). Previously the
+    negative Income flipped the subtraction into an addition and reported a false loss."""
+    await create_test_company(client, email="signed@a.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='signed@a.com', password='pass1234')}"}
+    eng_id = await make_engagement(client, co_headers)
+    imp = await import_tb(client, eng_id, co_headers, csv=SIGNED_REPORT_CSV)
+    ledgers = {a["ledger_name"]: a for a in imp.json()["accounts"]}
+    await _map_pl_ledgers(client, eng_id, co_headers, ledgers)
+
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/reports/preview", headers=co_headers)
+    assert resp.status_code == 200, resp.text
+    p = resp.json()
+    # Totals are reported as positive natural-side magnitudes despite the negative source.
+    assert p["totals"] == {"assets": 1000.0, "liabilities": 600.0, "income": 500.0, "expenditure": 100.0}
+    # The net is the difference (500 - 100 = 400 profit) — NOT the -600 sum-of-magnitudes.
+    assert p["net_profit"] == 400.0
+    # And the balance sheet reconciles (Liabilities is also normalized to a magnitude).
+    assert p["balance_check"]["liabilities_plus_equity"] == 1000.0
+    assert p["balance_check"]["balanced"] is True
+
+
+@pytest.mark.asyncio
+async def test_report_preview_signed_net_loss(client: AsyncClient):
+    """A signed trial balance where Expenditure > Income reports a real net LOSS
+    (negative net_profit), confirming the sign is genuine and not a flip artifact."""
+    await create_test_company(client, email="loss@a.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='loss@a.com', password='pass1234')}"}
+    eng_id = await make_engagement(client, co_headers)
+    imp = await import_tb(client, eng_id, co_headers, csv=SIGNED_LOSS_CSV)
+    ledgers = {a["ledger_name"]: a for a in imp.json()["accounts"]}
+    await _map_pl_ledgers(client, eng_id, co_headers, ledgers)
+
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/reports/preview", headers=co_headers)
+    assert resp.status_code == 200, resp.text
+    p = resp.json()
+    assert p["totals"]["income"] == 100.0
+    assert p["totals"]["expenditure"] == 500.0
+    # Income 100 - Expenditure 500 = -400 (a real loss), not +600 or -600.
+    assert p["net_profit"] == -400.0
+
+
 @pytest.mark.asyncio
 async def test_report_preview(client: AsyncClient):
     await create_test_company(client, email="rep@a.com", password="pass1234")

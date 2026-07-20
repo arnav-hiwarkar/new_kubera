@@ -864,14 +864,25 @@ async def _compute_report(db: AsyncSession, company_id: uuid.UUID, eng: AuditEng
     for acc in accounts:
         top = acc.mapped_group_path[0] if acc.mapped_group_path else None
         adj = adjustments.get(acc.id, 0.0)
-        closing = float(acc.closing_balance)
+        raw_closing = float(acc.closing_balance)
+        # Statement totals need each balance as a POSITIVE magnitude on its group's
+        # natural side; nature comes from the mapped group, not the stored sign.
         # Debit-natured groups grow with a net debit; credit-natured shrink.
         if top in ("Assets", "Expenditure"):
-            final = closing + adj
+            # Debit-natured: positive under both the signed and the magnitude source
+            # conventions, so use the stored value as-is (preserves any contra sign).
+            base = raw_closing
+            final = base + adj
         elif top in ("Liabilities", "Income"):
-            final = closing - adj
+            # Credit-natured: source trial balances commonly store these NEGATIVE
+            # (standard signed convention). Normalize to the positive natural-side
+            # magnitude so a negative Income can't flip `Income - Expenditure` into an
+            # addition. abs() is correct for both conventions: -500 -> 500, 500 -> 500.
+            base = abs(raw_closing)
+            final = base - adj
         else:
-            final = closing  # unmapped — excluded from statement totals
+            base = raw_closing  # unmapped — shown raw, excluded from statement totals
+            final = raw_closing
         if top is None:
             unmapped_count += 1
         else:
@@ -882,7 +893,7 @@ async def _compute_report(db: AsyncSession, company_id: uuid.UUID, eng: AuditEng
             ledger_code=acc.ledger_code,
             top_group=top,
             group_path=acc.mapped_group_path,
-            closing=_round2(closing),
+            closing=_round2(base),
             adjustment=_round2(adj),
             final=_round2(final),
         ))
