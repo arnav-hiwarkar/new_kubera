@@ -31,6 +31,7 @@ class UserResponse(BaseModel):
     designation: str | None
     department: str | None
     is_active: bool
+    deleted_at: datetime | None = None
     accessible_modules: list[str]
     company_id: uuid.UUID
     created_at: datetime

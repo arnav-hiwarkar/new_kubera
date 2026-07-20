@@ -195,11 +195,11 @@ async def test_list_bad_key_403(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_cascades_and_blocks_login(client: AsyncClient):
+async def test_delete_archives_and_blocks_login(client: AsyncClient):
     data = await create_test_company(client, name="Doomed Co", email="doom@co.com")
     cid = data["company"]["id"]
     token = await get_company_token(client, email="doom@co.com")
-    # Seed a tenant child row (employee) to exercise cascade.
+    # Seed a tenant child row (employee) so the delete has attached work to handle.
     await _make_employee(client, {"Authorization": f"Bearer {token}"}, email="e@doom.com")
 
     resp = await client.request(
@@ -208,11 +208,12 @@ async def test_delete_cascades_and_blocks_login(client: AsyncClient):
     )
     assert resp.status_code == 204
 
-    # Company gone from listing.
+    # Company is retained but marked archived (encrypted data is not destroyed).
     listed = await client.get("/api/v1/auth/companies", headers=GOOD_KEY)
-    assert all(c["id"] != cid for c in listed.json())
+    entry = next((c for c in listed.json() if c["id"] == cid), None)
+    assert entry is not None and entry["archived"] is True
 
-    # Admin can no longer log in (user cascaded away).
+    # Admin can no longer log in (all users deactivated + company archived).
     login = await client.post(
         "/api/v1/auth/company/login",
         json={"email": "doom@co.com", "password": "testpass123"},

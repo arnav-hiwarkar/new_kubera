@@ -73,7 +73,8 @@ def main():
         where = f"WHERE lower(u.email) LIKE '%{f}%' OR lower(c.name) LIKE '%{f}%'"
 
     sql = f"""
-        SELECT c.name, u.email, u.full_name, u.role, u.is_active::text, u.id
+        SELECT c.name, u.email, u.full_name, u.role, u.is_active::text,
+               (u.deleted_at IS NOT NULL)::text, u.id
         FROM company_users u JOIN companies c ON c.id = u.company_id
         {where}
         ORDER BY c.name, u.role, u.email;
@@ -85,11 +86,16 @@ def main():
 
     print(f"\n{len(rows)} user(s):\n")
     current = None
-    for name, email, full_name, role, is_active, uid in rows:
+    for name, email, full_name, role, is_active, deleted, uid in rows:
         if name != current:
             current = name
             print(f"  ── {name} ──")
-        status = "active" if is_active in ("t", "true") else "INACTIVE"
+        if deleted in ("t", "true"):
+            status = "DELETED"
+        elif is_active in ("t", "true"):
+            status = "active"
+        else:
+            status = "INACTIVE"
         print(f"     {email}")
         print(f"       name={full_name!r}  role={role}  status={status}")
         print(f"       id={uid}")

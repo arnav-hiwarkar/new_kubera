@@ -64,6 +64,7 @@ class CompanyListItem(BaseModel):
     activation_pending: bool = False
     activation_expires_at: datetime | None = None
     created_at: datetime
+    archived: bool = False
 
     model_config = {"from_attributes": True}
 

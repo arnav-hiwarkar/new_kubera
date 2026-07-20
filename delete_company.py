@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Delete a company (and ALL its tenant data) via the internal operator endpoint.
+"""Archive a company via the internal operator endpoint.
 
-IRREVERSIBLE. Reads DOMAIN and INTERNAL_API_KEY from the .env next to this
-script, shows the current companies, asks which one to delete, and requires you
-to retype its exact name as a safety rail before calling
+Archiving disables every login for the company and frees its name + admin email
+so a fresh company can reuse them; the encrypted tenant data is retained (it is
+unrecoverable once archived anyway). Reads DOMAIN and INTERNAL_API_KEY from the
+.env next to this script, shows the current companies, asks which one to archive,
+and requires you to retype its exact name as a safety rail before calling
 ``DELETE {DOMAIN}/api/v1/auth/companies/{id}``.
 
 Usage:
@@ -77,10 +79,11 @@ def main():
 
     print(f"\nCompanies on {domain}:\n")
     for i, c in enumerate(companies, 1):
-        print(f"  [{i}] {c.get('name')}  ({c.get('id')})  admin={c.get('admin_email')}")
+        flag = "  [ARCHIVED]" if c.get("archived") else ""
+        print(f"  [{i}] {c.get('name')}  ({c.get('id')})  admin={c.get('admin_email')}{flag}")
     print()
 
-    choice = prompt("Number (or company id) to delete: ")
+    choice = prompt("Number (or company id) to archive: ")
     target = None
     if choice.isdigit() and 1 <= int(choice) <= len(companies):
         target = companies[int(choice) - 1]
@@ -90,7 +93,10 @@ def main():
         sys.exit("error: no matching company")
 
     name = target["name"]
-    print(f"\n⚠  This PERMANENTLY deletes '{name}' and ALL its data. This cannot be undone.")
+    if target.get("archived"):
+        sys.exit(f"'{name}' is already archived.")
+    print(f"\n⚠  This ARCHIVES '{name}': all its logins are disabled and its name + admin "
+          f"email are freed for reuse. Encrypted data is retained.")
     typed = prompt(f"Retype the company name exactly to confirm: ")
     if typed != name:
         sys.exit("error: name did not match — aborted")
@@ -101,14 +107,14 @@ def main():
         "-d", json.dumps({"confirm_name": typed}),
     ])
     if status == "204":
-        print(f"\n✓ Deleted '{name}'.")
+        print(f"\n✓ Archived '{name}'. Logins disabled; name + admin email freed for reuse.")
     else:
         detail = body
         try:
             detail = json.loads(body).get("detail", body)
         except (json.JSONDecodeError, AttributeError):
             pass
-        sys.exit(f"error: delete failed (HTTP {status}): {detail}")
+        sys.exit(f"error: archive failed (HTTP {status}): {detail}")
 
 
 if __name__ == "__main__":

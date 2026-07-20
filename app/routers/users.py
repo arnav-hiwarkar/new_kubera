@@ -11,6 +11,7 @@ from app.auth import get_current_company_user, require_admin, require_manager_or
 from app.models.company import CompanyUser, UserRole
 from app.schemas.users import UserCreate, UserUpdate, UserResponse
 from app.auth import get_direct_report_ids
+from app.services import account_admin
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -141,12 +142,12 @@ async def delete_user(
     current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    """Permanently delete a user. Admin only, scoped to the caller's company.
+    """Soft-delete a user. Admin only, scoped to the caller's company.
 
-    You cannot delete your own account (that also guarantees the company always
-    retains at least one admin). Any direct reports are detached first; if the
-    user still owns other tenant records that block deletion, we return 409 so
-    the admin can deactivate them instead.
+    The user's login is disabled and their email is freed for reuse, but the row
+    (and full_name) is kept so any file or record they created still shows their
+    name. This always succeeds even when the user owns tenant data. You cannot
+    delete your own account (which also keeps at least one admin around).
     """
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
@@ -161,19 +162,8 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Detach direct reports first — the self-referential manager FK has no cascade.
-    await db.execute(
-        update(CompanyUser).where(CompanyUser.manager_id == user_id).values(manager_id=None)
-    )
-    try:
-        await db.execute(delete(CompanyUser).where(CompanyUser.id == user_id))
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="This user still owns records and can't be deleted. Deactivate them instead.",
-        )
+    await account_admin.soft_delete_company_user(db, user)
+    await db.commit()
     return None
 
 

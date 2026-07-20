@@ -46,6 +46,13 @@ class Company(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
 
+    # --- Archival (soft delete). When set, the company is archived: every login is
+    # disabled and its name/admin email are freed for reuse, but the encrypted
+    # tenant data is retained (it is unrecoverable once archived anyway). ---
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     users = relationship("CompanyUser", back_populates="company", lazy="selectin")
     keys = relationship("CompanyKey", back_populates="company", lazy="selectin")
 
@@ -100,6 +107,11 @@ class CompanyUser(Base, TimestampMixin):
     designation: Mapped[str | None] = mapped_column(String(255), nullable=True)
     department: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
+    # When set, the user has been soft-deleted: login is disabled and the email is
+    # freed for reuse, but the row (and full_name) is retained so historical work
+    # still shows who created it. Distinct from a merely deactivated (is_active=False)
+    # user, which keeps its email.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     accessible_modules: Mapped[list[str]] = mapped_column(JSONB, server_default='[]', nullable=False)
 
     company = relationship("Company", back_populates="users")

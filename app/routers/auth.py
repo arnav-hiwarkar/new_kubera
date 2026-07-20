@@ -21,6 +21,7 @@ from app.auth import (
 from app.config import get_settings
 from app.database import get_db
 from app.encryption import generate_company_kek
+from app.services import account_admin
 from app.rate_limit import enforce_rate_limit
 from app.models.company import Company, CompanyKey, CompanyUser, UserRole
 from app.models.auditor import Auditor
@@ -305,6 +306,7 @@ async def list_companies(
                 activation_pending=pending,
                 activation_expires_at=company.activation_expires_at,
                 created_at=company.created_at,
+                archived=company.archived_at is not None,
             )
         )
     return items
@@ -317,11 +319,12 @@ async def delete_company(
     db: Annotated[AsyncSession, Depends(get_db)],
     x_internal_api_key: Annotated[str, Header()],
 ):
-    """Hard-delete a company and ALL its tenant data. Internal only, irreversible.
+    """Archive a company. Internal only.
 
-    DB-level ON DELETE CASCADE removes every tenant row; we then delete the
-    company's on-disk encrypted file directory. Requires ``confirm_name`` to
-    exactly match the company name as a safety rail.
+    Encrypted tenant data cannot be meaningfully deleted, so instead of a hard
+    cascade we archive: every company login is disabled and the company's name +
+    admin email are freed so a fresh company can reuse them. The on-disk encrypted
+    files are retained. Requires ``confirm_name`` to match the company name.
     """
     _require_internal_key(x_internal_api_key)
 
@@ -337,18 +340,11 @@ async def delete_company(
             detail="confirm_name does not match the company name",
         )
 
-    # Issue a Core DELETE so Postgres ON DELETE CASCADE handles all tenant rows.
-    # (ORM session.delete would try to NULL children's company_id and fail.)
-    await db.execute(delete(Company).where(Company.id == company.id))
+    try:
+        await account_admin.archive_company(db, company)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     await db.commit()
-
-    # Remove the on-disk encrypted file directory (KEK is now gone, so these
-    # files are unrecoverable anyway). Best-effort; DB delete already committed.
-    settings = get_settings()
-    vault_dir = Path(settings.VAULT_STORAGE_PATH) / str(company_id)
-    if vault_dir.exists():
-        shutil.rmtree(vault_dir, ignore_errors=True)
-
     return None
 
 
@@ -379,6 +375,17 @@ async def company_login(
         or not user.is_active
         or not verify_password(body.password, user.hashed_password)
     ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+    # Defense-in-depth: block login into an archived company even if a user row
+    # were somehow still active (archiving deactivates all users, but this makes
+    # the company-level state authoritative).
+    company = (
+        await db.execute(select(Company).where(Company.id == user.company_id))
+    ).scalar_one_or_none()
+    if company is None or company.archived_at is not None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

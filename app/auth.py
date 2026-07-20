@@ -87,6 +87,13 @@ async def get_current_company_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+    # A soft-deleted / deactivated user (or one whose company was archived, which
+    # deactivates every user) loses access immediately, not just at token expiry.
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is inactive",
+        )
     return user
 
 
