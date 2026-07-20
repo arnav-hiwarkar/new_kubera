@@ -693,3 +693,76 @@ async def test_report_preview(client: AsyncClient):
     resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/reports/generate", headers=co_headers)
     assert resp.status_code == 200, resp.text
     assert "id" in resp.json() and "url" in resp.json()
+
+
+# --- Report HTML rendering (Profit & Loss must be a difference, never a sum) ----
+
+import uuid as _uuid
+
+from app.routers.auditease import _report_to_html
+from app.schemas.auditease import (
+    ReportLine, ReportTotals, ReportBalanceCheck, ReportEntriesBlock,
+    ReportPreviewResponse,
+)
+
+
+def _make_report(*, income: float, expenditure: float) -> ReportPreviewResponse:
+    """A minimal P&L-focused report with one Income and one Expenditure ledger.
+
+    Balances are stored as absolute (positive) values, mirroring how AuditEase
+    persists them, so an accidental sum is easy to distinguish from the difference.
+    """
+    net = income - expenditure
+    return ReportPreviewResponse(
+        period_label="FY24",
+        lines=[
+            ReportLine(
+                ledger_id=_uuid.uuid4(), ledger_name="Sales", ledger_code="I1",
+                top_group="Income", group_path=["Income", "Revenue from Operations"],
+                closing=income, adjustment=0.0, final=income,
+            ),
+            ReportLine(
+                ledger_id=_uuid.uuid4(), ledger_name="Rent", ledger_code="E1",
+                top_group="Expenditure", group_path=["Expenditure", "Other Expenses"],
+                closing=expenditure, adjustment=0.0, final=expenditure,
+            ),
+        ],
+        totals=ReportTotals(assets=0.0, liabilities=0.0, income=income, expenditure=expenditure),
+        net_profit=net,
+        balance_check=ReportBalanceCheck(
+            assets=0.0, liabilities_plus_equity=net, difference=-net, balanced=False,
+        ),
+        entries=ReportEntriesBlock(approved=[], approved_count=0, proposed_count=0),
+        unmapped_count=0,
+    )
+
+
+def test_report_html_pl_net_is_difference_not_sum():
+    """Regression: the P&L bottom line must be Income - Expenditure, and Income and
+    Expenditure must render as separate sections so no combined section lumps their
+    absolute balances into a meaningless sum."""
+    html = _report_to_html(_make_report(income=700.0, expenditure=100.0))
+
+    # Net is the difference (600.00), labelled Profit because it is positive.
+    assert "Net Profit: 600.00" in html
+    # The misleading sum (700 + 100 = 800) must never surface as the net.
+    assert "Net Profit: 800.00" not in html
+    assert "Net Loss" not in html
+
+    # Income and Expenditure are separated into their own sections (like the
+    # Assets / Liabilities split), not merged under one "Profit & Loss" data block.
+    assert "<h2>Income</h2>" in html
+    assert "<h2>Expenditure</h2>" in html
+
+    # The correctly computed component totals are still reported.
+    assert "Total Income: 700.00" in html
+    assert "Total Expenditure: 100.00" in html
+
+
+def test_report_html_pl_reports_a_loss():
+    """When Expenditure exceeds Income the report shows a Net Loss of the difference."""
+    html = _report_to_html(_make_report(income=100.0, expenditure=700.0))
+    assert "Net Loss: 600.00" in html
+    assert "Net Profit" not in html
+    # Not the sum (800) under either label.
+    assert "800.00" not in html

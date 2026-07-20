@@ -984,7 +984,12 @@ def _report_to_html(report: ReportPreviewResponse) -> str:
         f"<p class='total'>Total Assets: {money(t.assets)} &nbsp;|&nbsp; "
         f"Total Liabilities: {money(t.liabilities)} &nbsp;|&nbsp; "
         f"Liabilities + Equity: {money(bc.liabilities_plus_equity)} &nbsp;|&nbsp; {balance_note}</p>"
-        f"{section('Profit &amp; Loss', ['Income', 'Expenditure'])}"
+        # P&L: keep Income and Expenditure in SEPARATE sections. They have opposite
+        # accounting natures, so lumping them into one block invites a meaningless
+        # abs(Income)+abs(Expenditure) "total"; the net is the explicit difference below.
+        f"<h2>Profit &amp; Loss</h2>"
+        f"{section('Income', ['Income'])}"
+        f"{section('Expenditure', ['Expenditure'])}"
         f"<p class='total'>Total Income: {money(t.income)} &nbsp;|&nbsp; "
         f"Total Expenditure: {money(t.expenditure)} &nbsp;|&nbsp; "
         f"Net {'Profit' if report.net_profit >= 0 else 'Loss'}: {money(abs(report.net_profit))}</p>"

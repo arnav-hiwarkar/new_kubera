@@ -135,11 +135,13 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
       {/* Profit & Loss */}
       <div>
         <h4 className="mb-2 text-base font-semibold text-text-primary">Profit &amp; Loss</h4>
-        <StatementSection
-          title="Income &amp; Expenditure"
-          groups={['Income', 'Expenditure']}
-          lines={report.lines}
-        />
+        {/* Income and Expenditure are kept in SEPARATE sections (like Assets /
+         * Liabilities above). Combining them produced a section total that summed
+         * their absolute balances — a meaningless figure users mistook for the net.
+         * The real bottom line is the Net Profit / Loss difference shown below. */}
+        <StatementSection title="Income" groups={['Income']} lines={report.lines} />
+        <div className="h-3" />
+        <StatementSection title="Expenditure" groups={['Expenditure']} lines={report.lines} />
         <div className="mt-3 flex flex-wrap justify-end gap-x-8 gap-y-1 text-sm">
           <span className="text-text-secondary">
             Total Income <span className="font-semibold text-text-primary">{num(totals.income)}</span>

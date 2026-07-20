@@ -112,6 +112,23 @@ describe('ReportsTab preview', () => {
     await waitFor(() => expect(auditeaseCompanyApi.generateReport).toHaveBeenCalledWith('eng-1'))
   })
 
+  it('shows the P&L net as a difference, with Income and Expenditure kept separate', async () => {
+    (auditeaseCompanyApi.previewReport as ReturnType<typeof vi.fn>).mockResolvedValue(preview)
+    wrap(<ReportsTab engagementId="eng-1" />)
+
+    // The net profit is the difference (700 - 100 = 600), labelled Profit.
+    expect(await screen.findByText('Net Profit')).toBeInTheDocument()
+    expect(screen.getAllByText('600.00').length).toBeGreaterThan(0)
+    // The misleading combined "Income & Expenditure total" (700 + 100 = 800) is gone —
+    // that sum must not appear anywhere in the report.
+    expect(screen.queryByText(/Income & Expenditure total/)).not.toBeInTheDocument()
+    expect(screen.queryByText('800.00')).not.toBeInTheDocument()
+
+    // Income and Expenditure render as separate sections, each with its own total.
+    expect(screen.getByText(/^Income total/)).toBeInTheDocument()
+    expect(screen.getByText(/^Expenditure total/)).toBeInTheDocument()
+  })
+
   it('shows an empty state when there is nothing mapped', async () => {
     (auditeaseCompanyApi.previewReport as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...preview,
