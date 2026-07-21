@@ -34,6 +34,12 @@ interface IdentityAuthConfig<Profile> {
   loginPath: string
   /** Registers the client's 401/refresh-failure handler (forces sign-out). */
   registerFailureHandler: (handler: () => void) => void
+  /**
+   * Called on every auth transition (sign-in and sign-out) to drop cached
+   * per-tenant data (e.g. `queryClient.clear()`). Without this, the shared
+   * React Query cache would serve the previous account's data after a switch.
+   */
+  clearCache?: () => void
 }
 
 /**
@@ -53,6 +59,9 @@ export function createIdentityAuth<Profile>(config: IdentityAuthConfig<Profile>)
 
     const signOut = useCallback(() => {
       config.storage.clear()
+      // Drop the previous session's cached queries so a later login (possibly a
+      // different tenant) never sees stale data.
+      config.clearCache?.()
       if (mounted.current) {
         setProfile(null)
         setStatus('unauthenticated')
@@ -82,6 +91,9 @@ export function createIdentityAuth<Profile>(config: IdentityAuthConfig<Profile>)
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
         })
+        // Clear any cache left over from a previous account BEFORE loading the
+        // new profile, so subsequent queries refetch against the new token.
+        config.clearCache?.()
         const p = await config.loadProfile()
         if (!mounted.current) return
         setProfile(p)

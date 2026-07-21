@@ -2,6 +2,7 @@ import { createIdentityAuth } from '@/auth/createIdentityAuth'
 import { auditorTokenStorage } from '@/auth/tokenStorage'
 import { auditorAuth } from '@/api/endpoints/auth'
 import { setAuditorAuthFailureHandler } from '@/api/clients/auditor'
+import { queryClient } from '@/lib/queryClient'
 import type { AuditorOut } from '@/api/types'
 
 const auditor = createIdentityAuth<AuditorOut>({
@@ -11,6 +12,8 @@ const auditor = createIdentityAuth<AuditorOut>({
   login: (credentials) => auditorAuth.login(credentials),
   loginPath: '/auditor/login',
   registerFailureHandler: setAuditorAuthFailureHandler,
+  // Drop cached data on sign-in/out so a new session never sees stale data.
+  clearCache: () => queryClient.clear(),
 })
 
 export const AuditorAuthProvider = auditor.Provider
