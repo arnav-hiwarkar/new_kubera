@@ -24,11 +24,15 @@ export interface SidebarProps {
   accent?: 'company' | 'auditor'
   /** Optional tagline under the brand (e.g. "Compliance OS"). */
   tagline?: string
+  /** Tenant company name, shown at the bottom when no logo is uploaded. */
+  orgName?: string
+  /** Object-URL of the tenant company logo, shown at the bottom when present. */
+  orgLogoUrl?: string | null
 }
 
 const STORAGE_KEY = 'kubera.sidebar.collapsed'
 
-export function Sidebar({ brand, sections, accent = 'company', tagline }: SidebarProps) {
+export function Sidebar({ brand, sections, accent = 'company', tagline, orgName, orgLogoUrl }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
     return window.localStorage.getItem(STORAGE_KEY) === '1'
@@ -123,6 +127,32 @@ export function Sidebar({ brand, sections, accent = 'company', tagline }: Sideba
           </div>
         ))}
       </nav>
+
+      {/* Tenant company branding: logo if uploaded, else the name. When collapsed,
+          only a small logo is shown (nothing if there's no logo). */}
+      {((!collapsed && !!orgName) || !!orgLogoUrl) && (
+        <div className="shrink-0 border-t border-border p-2.5">
+          {orgLogoUrl ? (
+            <div className={cn('flex items-center', collapsed && 'justify-center')} title={orgName}>
+              <img
+                src={orgLogoUrl}
+                alt={orgName ?? 'Company logo'}
+                className={cn(
+                  'object-contain',
+                  collapsed ? 'h-8 w-8 rounded-md' : 'max-h-9 w-auto max-w-full',
+                )}
+              />
+            </div>
+          ) : (
+            <p
+              className="truncate px-1 text-sm font-semibold text-text-primary"
+              title={orgName}
+            >
+              {orgName}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Collapse toggle */}
       <div className="shrink-0 border-t border-border p-2.5">
