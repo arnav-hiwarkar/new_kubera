@@ -11,14 +11,92 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * List Companies
+         * @description List all companies with onboarding/activation status. Internal only.
+         */
+        get: operations["list_companies_api_v1_auth_companies_get"];
+        put?: never;
+        /**
+         * Initialize Company
+         * @description Initialize a company shell + pending admin. Internal only.
+         *
+         *     Creates the Company, its per-company KEK, and a pending admin CompanyUser
+         *     (no password yet). Returns a one-shot activation key valid for 48h that the
+         *     admin uses to set their own password. The plaintext key is returned once.
+         */
+        post: operations["initialize_company_api_v1_auth_companies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/companies/{company_id}/reissue-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
         get?: never;
         put?: never;
         /**
-         * Create Company
-         * @description Create a new company with its first admin user. Internal only.
+         * Reissue Activation Key
+         * @description Mint a fresh activation key + 48h window for a company whose admin has
+         *     not activated yet. Internal only. No tenant data is touched.
          */
-        post: operations["create_company_api_v1_auth_companies_post"];
+        post: operations["reissue_activation_key_api_v1_auth_companies__company_id__reissue_key_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/company/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate Company Admin
+         * @description Admin claims their pending account: email + one-shot key -> set password.
+         *
+         *     On success the password is set, the account is activated, and the key is
+         *     invalidated. No session is issued — the admin logs in normally afterwards.
+         *     All failure modes return the same generic error (no enumeration).
+         */
+        post: operations["activate_company_admin_api_v1_auth_company_activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/companies/{company_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Company
+         * @description Archive a company. Internal only.
+         *
+         *     Encrypted tenant data cannot be meaningfully deleted, so instead of a hard
+         *     cascade we archive: every company login is disabled and the company's name +
+         *     admin email are freed so a fresh company can reuse them. The on-disk encrypted
+         *     files are retained. Requires ``confirm_name`` to match the company name.
+         */
+        delete: operations["delete_company_api_v1_auth_companies__company_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -164,6 +242,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/company/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Profile
+         * @description View the company profile. Any authenticated company user.
+         */
+        get: operations["get_profile_api_v1_company_profile_get"];
+        /**
+         * Update Profile
+         * @description Update the company profile. Admin only. Every change is audit-logged.
+         */
+        put: operations["update_profile_api_v1_company_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/company/profile/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Logo
+         * @description Stream the decrypted company logo. Any authenticated company user.
+         */
+        get: operations["get_logo_api_v1_company_profile_logo_get"];
+        put?: never;
+        /**
+         * Upload Logo
+         * @description Upload/replace the company logo. Admin only. PNG/JPG/SVG, <=2 MB.
+         *
+         *     Stored encrypted-at-rest under the per-company KEK (nonce prepended to the
+         *     ciphertext), consistent with the rest of the vault.
+         */
+        post: operations["upload_logo_api_v1_company_profile_logo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users": {
         parameters: {
             query?: never;
@@ -227,7 +356,16 @@ export interface paths {
         get: operations["get_user_api_v1_users__user_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete User
+         * @description Soft-delete a user. Admin only, scoped to the caller's company.
+         *
+         *     The user's login is disabled and their email is freed for reuse, but the row
+         *     (and full_name) is kept so any file or record they created still shows their
+         *     name. This always succeeds even when the user owns tenant data. You cannot
+         *     delete your own account (which also keeps at least one admin around).
+         */
+        delete: operations["delete_user_api_v1_users__user_id__delete"];
         options?: never;
         head?: never;
         /** Update User */
@@ -247,8 +385,32 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Deactivate User */
+        /**
+         * Deactivate User
+         * @description Reversibly disable a user's login. Keeps the account and email.
+         */
         patch: operations["deactivate_user_api_v1_users__user_id__deactivate_patch"];
+        trace?: never;
+    };
+    "/api/v1/users/{user_id}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Reactivate User
+         * @description Re-enable a deactivated user. A soft-deleted user cannot be reactivated —
+         *     recreate the account instead (their email is already free to reuse).
+         */
+        patch: operations["reactivate_user_api_v1_users__user_id__reactivate_patch"];
         trace?: never;
     };
     "/api/v1/custom-fields/{module}": {
@@ -632,6 +794,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/docvault/buckets/{bucket_id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Bucket Access
+         * @description Set a bucket's visibility and, for `restricted`, the exact list of users
+         *     granted access. Admin only. Replaces any existing grants.
+         */
+        patch: operations["update_bucket_access_api_v1_docvault_buckets__bucket_id__access_patch"];
+        trace?: never;
+    };
     "/api/v1/docvault/buckets/{bucket_id}": {
         parameters: {
             query?: never;
@@ -910,11 +1093,7 @@ export interface paths {
         get: operations["get_engagement_api_v1_auditease_engagements__engagement_id__get"];
         put?: never;
         post?: never;
-        /**
-         * Delete Engagement
-         * @description Hard-delete an engagement and everything under it (cascade). Allowed only
-         *     while draft/invited (before real audit work), or closed (cleanup).
-         */
+        /** Delete Engagement */
         delete: operations["delete_engagement_api_v1_auditease_engagements__engagement_id__delete"];
         options?: never;
         head?: never;
@@ -1200,6 +1379,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auditor/engagements/{engagement_id}/requirement-requests/{req_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Requirement */
+        put: operations["update_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__put"];
+        post?: never;
+        /** Delete Requirement */
+        delete: operations["delete_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auditor/engagements/{engagement_id}/queries": {
         parameters: {
             query?: never;
@@ -1212,6 +1409,23 @@ export interface paths {
         put?: never;
         /** Create Query */
         post: operations["create_query_api_v1_auditor_engagements__engagement_id__queries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditor/engagements/{engagement_id}/queries/{query_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Query */
+        get: operations["get_query_api_v1_auditor_engagements__engagement_id__queries__query_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1398,6 +1612,23 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ActivationRequest
+         * @description Admin claims their account with the one-shot key and sets a password.
+         */
+        ActivationRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Activation Key */
+            activation_key: string;
+            /** Password */
+            password: string;
+            /** Full Name */
+            full_name: string;
+        };
         /** ActivityLogOut */
         ActivityLogOut: {
             /**
@@ -1655,6 +1886,8 @@ export interface components {
             /** Description */
             description: string;
             status: components["schemas"]["AuditEntryStatus"];
+            /** Rejection Comment */
+            rejection_comment: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1808,6 +2041,23 @@ export interface components {
              */
             file: string;
         };
+        /** Body_upload_logo_api_v1_company_profile_logo_post */
+        Body_upload_logo_api_v1_company_profile_logo_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
+        /** BucketAccessUpdate */
+        BucketAccessUpdate: {
+            visibility: components["schemas"]["BucketVisibility"];
+            /**
+             * User Ids
+             * @default []
+             */
+            user_ids: string[];
+        };
         /** BucketCreate */
         BucketCreate: {
             /** Name */
@@ -1829,6 +2079,12 @@ export interface components {
             company_id: string;
             /** Created By */
             created_by: string | null;
+            visibility: components["schemas"]["BucketVisibility"];
+            /**
+             * Access User Ids
+             * @default []
+             */
+            access_user_ids: string[];
             /**
              * Created At
              * Format: date-time
@@ -1840,6 +2096,11 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * BucketVisibility
+         * @enum {string}
+         */
+        BucketVisibility: "everyone" | "restricted";
         /** BulkMapRequest */
         BulkMapRequest: {
             /** Ledger Ids */
@@ -1850,11 +2111,83 @@ export interface components {
              */
             group_id: string;
         };
-        /** CompanyCreateRequest */
-        CompanyCreateRequest: {
+        /**
+         * CompanyDeleteRequest
+         * @description Confirmation safety rail for hard delete.
+         */
+        CompanyDeleteRequest: {
+            /** Confirm Name */
+            confirm_name: string;
+        };
+        /**
+         * CompanyInitRequest
+         * @description Operator-initiated company creation (internal API key gated).
+         */
+        CompanyInitRequest: {
             /** Name */
             name: string;
-            admin: components["schemas"]["CompanyUserCreate"];
+            /**
+             * Admin Email
+             * Format: email
+             */
+            admin_email: string;
+        };
+        /**
+         * CompanyInitResponse
+         * @description Returned once at init/reissue — carries the plaintext activation key.
+         */
+        CompanyInitResponse: {
+            company: components["schemas"]["CompanyOut"];
+            admin: components["schemas"]["CompanyUserOut"];
+            /** Activation Key */
+            activation_key: string;
+            /**
+             * Activation Expires At
+             * Format: date-time
+             */
+            activation_expires_at: string;
+        };
+        /**
+         * CompanyListItem
+         * @description Backend-only company listing row.
+         */
+        CompanyListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Admin Email */
+            admin_email?: string | null;
+            /**
+             * Admin Active
+             * @default false
+             */
+            admin_active: boolean;
+            /**
+             * Profile Completed
+             * @default false
+             */
+            profile_completed: boolean;
+            /**
+             * Activation Pending
+             * @default false
+             */
+            activation_pending: boolean;
+            /** Activation Expires At */
+            activation_expires_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Archived
+             * @default false
+             */
+            archived: boolean;
         };
         /** CompanyOut */
         CompanyOut: {
@@ -1866,15 +2199,97 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** CompanyUserCreate */
-        CompanyUserCreate: {
+        /** CompanyProfileOut */
+        CompanyProfileOut: {
             /**
-             * Email
-             * Format: email
+             * Id
+             * Format: uuid
              */
-            email: string;
-            /** Password */
-            password: string;
+            id: string;
+            /** Name */
+            name: string;
+            /** Legal Name */
+            legal_name?: string | null;
+            /** Cin */
+            cin?: string | null;
+            /** Pan */
+            pan?: string | null;
+            /** Gstin */
+            gstin?: string | null;
+            /** Tan */
+            tan?: string | null;
+            /** Address Line1 */
+            address_line1?: string | null;
+            /** Address Line2 */
+            address_line2?: string | null;
+            /** City */
+            city?: string | null;
+            /** State */
+            state?: string | null;
+            /** Pincode */
+            pincode?: string | null;
+            /** Contact Email */
+            contact_email?: string | null;
+            /** Contact Phone */
+            contact_phone?: string | null;
+            /** Date Of Incorporation */
+            date_of_incorporation?: string | null;
+            /** Website */
+            website?: string | null;
+            /** Industry */
+            industry?: string | null;
+            /**
+             * Profile Completed
+             * @default false
+             */
+            profile_completed: boolean;
+            /**
+             * Has Logo
+             * @default false
+             */
+            has_logo: boolean;
+        };
+        /**
+         * CompanyProfileUpdate
+         * @description Partial update — only provided fields change. Statutory identifiers are
+         *     format-validated and normalized to uppercase when present.
+         */
+        CompanyProfileUpdate: {
+            /**
+             * Mark Completed
+             * @default false
+             */
+            mark_completed: boolean;
+            /** Legal Name */
+            legal_name?: string | null;
+            /** Cin */
+            cin?: string | null;
+            /** Pan */
+            pan?: string | null;
+            /** Gstin */
+            gstin?: string | null;
+            /** Tan */
+            tan?: string | null;
+            /** Address Line1 */
+            address_line1?: string | null;
+            /** Address Line2 */
+            address_line2?: string | null;
+            /** City */
+            city?: string | null;
+            /** State */
+            state?: string | null;
+            /** Pincode */
+            pincode?: string | null;
+            /** Contact Email */
+            contact_email?: string | null;
+            /** Contact Phone */
+            contact_phone?: string | null;
+            /** Date Of Incorporation */
+            date_of_incorporation?: string | null;
+            /** Website */
+            website?: string | null;
+            /** Industry */
+            industry?: string | null;
         };
         /** CompanyUserOut */
         CompanyUserOut: {
@@ -1908,11 +2323,11 @@ export interface components {
              * @default true
              */
             is_active: boolean;
-        };
-        /** CompanyWithAdmin */
-        CompanyWithAdmin: {
-            company: components["schemas"]["CompanyOut"];
-            admin: components["schemas"]["CompanyUserOut"];
+            /**
+             * Accessible Modules
+             * @default []
+             */
+            accessible_modules: string[];
         };
         /**
          * ComplianceDomain
@@ -2456,6 +2871,16 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /** ReissueKeyResponse */
+        ReissueKeyResponse: {
+            /** Activation Key */
+            activation_key: string;
+            /**
+             * Activation Expires At
+             * Format: date-time
+             */
+            activation_expires_at: string;
+        };
         /** ReportBalanceCheck */
         ReportBalanceCheck: {
             /** Assets */
@@ -2559,6 +2984,8 @@ export interface components {
         RequirementRequestCreate: {
             /** Description */
             description: string;
+            /** Title */
+            title?: string | null;
         };
         /** RequirementRequestResponse */
         RequirementRequestResponse: {
@@ -2577,6 +3004,8 @@ export interface components {
              * Format: uuid
              */
             raised_by: string;
+            /** Title */
+            title: string;
             /** Description */
             description: string;
             status: components["schemas"]["RequestStatus"];
@@ -2752,6 +3181,12 @@ export interface components {
             ledger_name: string;
             /** Mapped Group Id */
             mapped_group_id?: string | null;
+            /** Mapped Group Name */
+            mapped_group_name?: string | null;
+            /** Parent Group Name */
+            parent_group_name?: string | null;
+            /** Top Group Name */
+            top_group_name?: string | null;
             /**
              * Opening Balance
              * @default 0
@@ -2833,10 +3268,7 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Email
-             * Format: email
-             */
+            /** Email */
             email: string;
             /** Full Name */
             full_name: string;
@@ -2903,7 +3335,38 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    create_company_api_v1_auth_companies_post: {
+    list_companies_api_v1_auth_companies_get: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-internal-api-key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyListItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    initialize_company_api_v1_auth_companies_post: {
         parameters: {
             query?: never;
             header: {
@@ -2914,7 +3377,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CompanyCreateRequest"];
+                "application/json": components["schemas"]["CompanyInitRequest"];
             };
         };
         responses: {
@@ -2924,8 +3387,107 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CompanyWithAdmin"];
+                    "application/json": components["schemas"]["CompanyInitResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reissue_activation_key_api_v1_auth_companies__company_id__reissue_key_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-internal-api-key": string;
+            };
+            path: {
+                company_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReissueKeyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_company_admin_api_v1_auth_company_activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_company_api_v1_auth_companies__company_id__delete: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-internal-api-key": string;
+            };
+            path: {
+                company_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -3143,6 +3705,112 @@ export interface operations {
             };
         };
     };
+    get_profile_api_v1_company_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyProfileOut"];
+                };
+            };
+        };
+    };
+    update_profile_api_v1_company_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_logo_api_v1_company_profile_logo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    upload_logo_api_v1_company_profile_logo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_logo_api_v1_company_profile_logo_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_users_api_v1_users_get: {
         parameters: {
             query?: never;
@@ -3267,6 +3935,35 @@ export interface operations {
             };
         };
     };
+    delete_user_api_v1_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_user_api_v1_users__user_id__patch: {
         parameters: {
             query?: never;
@@ -3303,6 +4000,37 @@ export interface operations {
         };
     };
     deactivate_user_api_v1_users__user_id__deactivate_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reactivate_user_api_v1_users__user_id__reactivate_patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -4221,6 +4949,41 @@ export interface operations {
             };
         };
     };
+    update_bucket_access_api_v1_docvault_buckets__bucket_id__access_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BucketAccessUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BucketResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_bucket_api_v1_docvault_buckets__bucket_id__delete: {
         parameters: {
             query?: never;
@@ -4931,11 +5694,13 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
@@ -5519,6 +6284,74 @@ export interface operations {
             };
         };
     };
+    update_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                req_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementRequestCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequirementRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                req_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_queries_api_v1_auditor_engagements__engagement_id__queries_get: {
         parameters: {
             query?: never;
@@ -5564,6 +6397,38 @@ export interface operations {
                 "multipart/form-data": components["schemas"]["Body_create_query_api_v1_auditor_engagements__engagement_id__queries_post"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_query_api_v1_auditor_engagements__engagement_id__queries__query_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                query_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

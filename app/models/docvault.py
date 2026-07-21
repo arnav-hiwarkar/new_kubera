@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import String, ForeignKey, Boolean, Enum as SAEnum, Integer, BigInteger, LargeBinary, ARRAY, DateTime
+from sqlalchemy import String, ForeignKey, Boolean, Enum as SAEnum, Integer, BigInteger, LargeBinary, ARRAY, DateTime, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,14 @@ class DocumentStatus(str, enum.Enum):
     archived = "archived"
 
 
+class BucketVisibility(str, enum.Enum):
+    # Visible to every company user who has DocVault module access.
+    everyone = "everyone"
+    # Visible only to users explicitly granted access (see BucketAccessGrant),
+    # plus the bucket's creator and company admins.
+    restricted = "restricted"
+
+
 class Bucket(Base, TimestampMixin, TenantScopedMixin):
     __tablename__ = "buckets"
 
@@ -26,6 +34,34 @@ class Bucket(Base, TimestampMixin, TenantScopedMixin):
     # Nullable so system buckets (e.g. "Audit Attachments") can be created during
     # an auditor's action, when there is no company user to attribute.
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True)
+    visibility: Mapped[BucketVisibility] = mapped_column(
+        SAEnum(BucketVisibility, name="bucket_visibility"),
+        default=BucketVisibility.everyone,
+        server_default="everyone",
+        nullable=False,
+    )
+
+    access_grants = relationship(
+        "BucketAccessGrant", back_populates="bucket", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    @property
+    def access_user_ids(self) -> list[uuid.UUID]:
+        """Company-user ids explicitly granted access (populated from access_grants,
+        which is eager-loaded). Empty for `everyone` buckets."""
+        return [g.company_user_id for g in self.access_grants]
+
+
+class BucketAccessGrant(Base):
+    """A company user explicitly granted access to a `restricted` bucket."""
+    __tablename__ = "bucket_access_grants"
+    __table_args__ = (UniqueConstraint("bucket_id", "company_user_id", name="uq_bucket_access_grant"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bucket_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("buckets.id", ondelete="CASCADE"), nullable=False, index=True)
+    company_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    bucket = relationship("Bucket", back_populates="access_grants")
 
 
 class Document(Base, TimestampMixin, TenantScopedMixin):

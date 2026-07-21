@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { docvaultApi } from '@/api/endpoints/docvault'
-import type { DocumentUpdate } from '@/api/types'
+import type { BucketAccessUpdate, DocumentUpdate } from '@/api/types'
 import { saveBlob } from '@/lib/download'
 
 export const docvaultKeys = {
@@ -39,6 +39,19 @@ export function useDeleteBucket() {
   return useMutation({
     mutationFn: (id: string) => docvaultApi.deleteBucket(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: docvaultKeys.buckets }),
+  })
+}
+
+export function useUpdateBucketAccess() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: BucketAccessUpdate }) =>
+      docvaultApi.updateBucketAccess(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: docvaultKeys.buckets })
+      // Restricting a bucket changes which documents the viewer can see.
+      qc.invalidateQueries({ queryKey: ['docvault', 'documents'] })
+    },
   })
 }
 

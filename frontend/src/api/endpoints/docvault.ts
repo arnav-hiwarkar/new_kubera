@@ -2,6 +2,7 @@ import { companyClient } from '@/api/clients/company'
 import type {
   BucketResponse,
   BucketCreate,
+  BucketAccessUpdate,
   DocumentResponse,
   DocumentUpdate,
   DocumentVersionResponse,
@@ -11,6 +12,8 @@ export const docvaultApi = {
   listBuckets: () => companyClient.get<BucketResponse[]>('/api/v1/docvault/buckets'),
   createBucket: (body: BucketCreate) =>
     companyClient.post<BucketResponse>('/api/v1/docvault/buckets', { body }),
+  updateBucketAccess: (id: string, body: BucketAccessUpdate) =>
+    companyClient.patch<BucketResponse>(`/api/v1/docvault/buckets/${id}/access`, { body }),
   deleteBucket: (id: string) =>
     companyClient.delete<void>(`/api/v1/docvault/buckets/${id}`),
 

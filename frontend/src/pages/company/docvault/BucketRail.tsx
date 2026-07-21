@@ -1,10 +1,12 @@
 import { useState, type ComponentType } from 'react'
-import { Files, Folder, FolderOpen, Plus, X } from 'lucide-react'
+import { Files, Folder, FolderOpen, Lock, Plus, Users, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button, Input, ConfirmDialog, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
+import { useCompanyAuth } from '@/auth/company'
 import type { BucketResponse, DocumentResponse } from '@/api/types'
 import { useCreateBucket, useDeleteBucket } from '@/api/hooks/docvault'
+import { BucketAccessModal } from './BucketAccessModal'
 
 export type BucketSelection = 'all' | 'uncategorized' | string
 
@@ -17,12 +19,15 @@ export interface BucketRailProps {
 
 export function BucketRail({ buckets, documents, selected, onSelect }: BucketRailProps) {
   const toast = useToast()
+  const { profile } = useCompanyAuth()
+  const isAdmin = profile?.role === 'admin'
   const createBucket = useCreateBucket()
   const deleteBucket = useDeleteBucket()
 
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [toDelete, setToDelete] = useState<BucketResponse | null>(null)
+  const [toManage, setToManage] = useState<BucketResponse | null>(null)
 
   const activeCount = documents.filter((d) => d.status !== 'archived').length
   const uncategorizedCount = documents.filter(
@@ -79,6 +84,9 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
         >
           <Icon className="h-4 w-4 shrink-0" />
           <span className="truncate">{label}</span>
+          {deletable?.visibility === 'restricted' && (
+            <Lock className="h-3 w-3 shrink-0 text-text-muted" aria-label="Restricted bucket" />
+          )}
           <span
             className={cn(
               'ml-auto shrink-0 rounded-pill px-1.5 py-0.5 text-xs font-semibold tabular-nums',
@@ -88,6 +96,15 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
             {count}
           </span>
         </button>
+        {deletable && isAdmin && (
+          <button
+            onClick={() => setToManage(deletable)}
+            aria-label={`Manage access for bucket ${deletable.name}`}
+            className="ml-1 hidden text-text-muted hover:text-accent group-hover:block"
+          >
+            <Users className="h-4 w-4" />
+          </button>
+        )}
         {deletable && (
           <button
             onClick={() => setToDelete(deletable)}
@@ -151,6 +168,12 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
         loading={deleteBucket.isPending}
         onConfirm={confirmDelete}
         onCancel={() => setToDelete(null)}
+      />
+
+      <BucketAccessModal
+        bucket={toManage}
+        open={!!toManage}
+        onClose={() => setToManage(null)}
       />
     </div>
   )

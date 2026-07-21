@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
-from app.models.docvault import DocumentStatus
+from app.models.docvault import DocumentStatus, BucketVisibility
 
 
 class BucketCreate(BaseModel):
@@ -15,10 +15,19 @@ class BucketResponse(BaseModel):
     name: str
     company_id: uuid.UUID
     created_by: Optional[uuid.UUID]
+    visibility: BucketVisibility
+    access_user_ids: List[uuid.UUID] = []
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class BucketAccessUpdate(BaseModel):
+    visibility: BucketVisibility
+    # Company-user ids granted access when visibility is `restricted`. Ignored
+    # (grants cleared) when visibility is `everyone`.
+    user_ids: List[uuid.UUID] = []
 
 
 class DocumentVersionResponse(BaseModel):
