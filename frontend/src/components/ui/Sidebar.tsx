@@ -133,7 +133,7 @@ export function Sidebar({ brand, sections, accent = 'company', tagline, orgName,
       {((!collapsed && !!orgName) || !!orgLogoUrl) && (
         <div className="shrink-0 border-t border-border p-2.5">
           {orgLogoUrl ? (
-            <div className={cn('flex items-center', collapsed && 'justify-center')} title={orgName}>
+            <div className="flex items-center justify-center" title={orgName}>
               <img
                 src={orgLogoUrl}
                 alt={orgName ?? 'Company logo'}
