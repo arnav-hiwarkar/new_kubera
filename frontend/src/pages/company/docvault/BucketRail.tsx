@@ -1,11 +1,11 @@
 import { useState, type ComponentType } from 'react'
-import { Files, Folder, FolderOpen, Lock, Plus, Users, X } from 'lucide-react'
+import { Files, Folder, FolderOpen, Lock, Pencil, Plus, Users, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button, Input, ConfirmDialog, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import { useCompanyAuth } from '@/auth/company'
 import type { BucketResponse, DocumentResponse } from '@/api/types'
-import { useCreateBucket, useDeleteBucket } from '@/api/hooks/docvault'
+import { useCreateBucket, useDeleteBucket, useUpdateBucket } from '@/api/hooks/docvault'
 import { BucketAccessModal } from './BucketAccessModal'
 
 export type BucketSelection = 'all' | 'uncategorized' | string
@@ -23,11 +23,14 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
   const isAdmin = profile?.role === 'admin'
   const createBucket = useCreateBucket()
   const deleteBucket = useDeleteBucket()
+  const updateBucket = useUpdateBucket()
 
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [toDelete, setToDelete] = useState<BucketResponse | null>(null)
   const [toManage, setToManage] = useState<BucketResponse | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const activeCount = documents.filter((d) => d.status !== 'archived').length
   const uncategorizedCount = documents.filter(
@@ -46,6 +49,28 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
       setCreating(false)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not create bucket')
+    }
+  }
+
+  const startRename = (b: BucketResponse) => {
+    setRenameValue(b.name)
+    setRenamingId(b.id)
+  }
+
+  const submitRename = async () => {
+    if (!renamingId) return
+    const name = renameValue.trim()
+    const current = buckets.find((b) => b.id === renamingId)
+    if (!name || name === current?.name) {
+      setRenamingId(null)
+      return
+    }
+    try {
+      await updateBucket.mutateAsync({ id: renamingId, body: { name } })
+      toast.success('Bucket renamed')
+      setRenamingId(null)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not rename bucket')
     }
   }
 
@@ -71,6 +96,24 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
     deletable?: BucketResponse,
   ) => {
     const active = selected === key
+    if (deletable && renamingId === deletable.id) {
+      return (
+        <li key={key} className="px-1 py-0.5">
+          <Input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={() => void submitRename()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void submitRename()
+              if (e.key === 'Escape') setRenamingId(null)
+            }}
+            className="h-8"
+            aria-label={`Rename bucket ${deletable.name}`}
+          />
+        </li>
+      )
+    }
     return (
       <li key={key} className="group flex items-center">
         <button
@@ -96,6 +139,15 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
             {count}
           </span>
         </button>
+        {deletable && isAdmin && (
+          <button
+            onClick={() => startRename(deletable)}
+            aria-label={`Rename bucket ${deletable.name}`}
+            className="ml-1 hidden text-text-muted hover:text-accent group-hover:block"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
         {deletable && isAdmin && (
           <button
             onClick={() => setToManage(deletable)}

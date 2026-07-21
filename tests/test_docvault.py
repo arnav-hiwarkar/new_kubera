@@ -322,3 +322,101 @@ async def test_revert_restricted_to_everyone(client: AsyncClient):
     assert resp.json()["visibility"] == "everyone"
     assert resp.json()["access_user_ids"] == []
     assert bucket_id in [b["id"] for b in (await client.get("/api/v1/docvault/buckets", headers=b_headers)).json()]
+
+
+# === Rename + editability ===
+
+
+async def _upload(client: AsyncClient, headers: dict, title: str, bucket_id: str | None = None) -> dict:
+    data = {"title": title}
+    if bucket_id:
+        data["bucket_id"] = bucket_id
+    resp = await client.post(
+        "/api/v1/docvault/documents",
+        data=data,
+        files={"file": ("f.txt", b"contents", "text/plain")},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+@pytest.mark.asyncio
+async def test_rename_bucket(client: AsyncClient):
+    admin_headers, a_headers, b_headers, a_id, b_id = await _setup_company_with_members(client)
+
+    resp = await client.post("/api/v1/docvault/buckets", json={"name": "Old Name"}, headers=admin_headers)
+    bucket_id = resp.json()["id"]
+    await _upload(client, admin_headers, "Doc", bucket_id)
+
+    # Admin renames the bucket.
+    resp = await client.patch(f"/api/v1/docvault/buckets/{bucket_id}", json={"name": "New Name"}, headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "New Name"
+
+    # New name is reflected in the bucket list, and the document still belongs to it.
+    buckets = (await client.get("/api/v1/docvault/buckets", headers=admin_headers)).json()
+    assert next(b["name"] for b in buckets if b["id"] == bucket_id) == "New Name"
+    docs = (await client.get("/api/v1/docvault/documents", headers=admin_headers)).json()
+    assert docs[0]["bucket_id"] == bucket_id
+
+    # Non-admin cannot rename.
+    resp = await client.patch(f"/api/v1/docvault/buckets/{bucket_id}", json={"name": "Hacked"}, headers=a_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_rename_document(client: AsyncClient):
+    await create_test_company(client, name="RenameCo", email="r@co.com", password="pass1234")
+    token = await get_company_token(client, email="r@co.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    doc = await _upload(client, headers, "Original Title")
+    doc_id = doc["id"]
+
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"title": "Renamed Title"}, headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "Renamed Title"
+    assert (await client.get(f"/api/v1/docvault/documents/{doc_id}", headers=headers)).json()["title"] == "Renamed Title"
+
+
+@pytest.mark.asyncio
+async def test_uneditable_document_gating(client: AsyncClient):
+    await create_test_company(client, name="LockCo", email="l@co.com", password="pass1234")
+    token = await get_company_token(client, email="l@co.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {token}"}
+    other_bucket = (await client.post("/api/v1/docvault/buckets", json={"name": "Elsewhere"}, headers=headers)).json()["id"]
+
+    doc = await _upload(client, headers, "Locked Doc")
+    doc_id = doc["id"]
+
+    # Lock it.
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"is_editable": False}, headers=headers)
+    assert resp.status_code == 200 and resp.json()["is_editable"] is False
+
+    # Gated fields are rejected while locked.
+    assert (await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"title": "Nope"}, headers=headers)).status_code == 409
+    assert (await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"tags": ["x"]}, headers=headers)).status_code == 409
+    assert (await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"bucket_id": other_bucket}, headers=headers)).status_code == 409
+    # New version upload is rejected.
+    resp = await client.post(
+        f"/api/v1/docvault/documents/{doc_id}/versions",
+        files={"file": ("v2.txt", b"v2", "text/plain")},
+        headers=headers,
+    )
+    assert resp.status_code == 409
+
+    # Status changes (incl. archive) remain allowed while locked.
+    assert (await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"status": "verified"}, headers=headers)).status_code == 200
+    assert (await client.delete(f"/api/v1/docvault/documents/{doc_id}", headers=headers)).status_code == 204
+
+    # Re-enabling editing together with a rename in one request works (doc was
+    # archived+locked by delete; this restores editability and renames at once).
+    resp = await client.patch(
+        f"/api/v1/docvault/documents/{doc_id}",
+        json={"is_editable": True, "title": "Unlocked Name"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["is_editable"] is True
+    assert resp.json()["title"] == "Unlocked Name"

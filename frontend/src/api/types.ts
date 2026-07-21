@@ -49,6 +49,7 @@ export type KRAUpdate = S['KRAUpdate']
 // DocVault
 export type BucketResponse = S['BucketResponse']
 export type BucketCreate = S['BucketCreate']
+export type BucketUpdate = S['BucketUpdate']
 export type BucketAccessUpdate = S['BucketAccessUpdate']
 export type BucketVisibility = S['BucketVisibility']
 export type DocumentResponse = S['DocumentResponse']

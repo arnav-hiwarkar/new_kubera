@@ -10,6 +10,10 @@ class BucketCreate(BaseModel):
     name: str = Field(..., max_length=255)
 
 
+class BucketUpdate(BaseModel):
+    name: str = Field(..., max_length=255)
+
+
 class BucketResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -63,6 +67,7 @@ class DocumentResponse(BaseModel):
 
 
 class DocumentUpdate(BaseModel):
+    title: Optional[str] = Field(None, max_length=255)
     status: Optional[DocumentStatus] = None
     bucket_id: Optional[uuid.UUID] = None
     tags: Optional[List[str]] = None

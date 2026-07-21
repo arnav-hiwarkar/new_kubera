@@ -794,6 +794,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/docvault/buckets/{bucket_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Bucket */
+        delete: operations["delete_bucket_api_v1_docvault_buckets__bucket_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Bucket
+         * @description Rename a bucket. Admin only. Documents need no change — they resolve the
+         *     bucket name via `bucket_id`, so the rename is reflected everywhere at once.
+         */
+        patch: operations["rename_bucket_api_v1_docvault_buckets__bucket_id__patch"];
+        trace?: never;
+    };
     "/api/v1/docvault/buckets/{bucket_id}/access": {
         parameters: {
             query?: never;
@@ -813,23 +835,6 @@ export interface paths {
          *     granted access. Admin only. Replaces any existing grants.
          */
         patch: operations["update_bucket_access_api_v1_docvault_buckets__bucket_id__access_patch"];
-        trace?: never;
-    };
-    "/api/v1/docvault/buckets/{bucket_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Bucket */
-        delete: operations["delete_bucket_api_v1_docvault_buckets__bucket_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/v1/docvault/documents": {
@@ -2096,6 +2101,11 @@ export interface components {
              */
             updated_at: string;
         };
+        /** BucketUpdate */
+        BucketUpdate: {
+            /** Name */
+            name: string;
+        };
         /**
          * BucketVisibility
          * @enum {string}
@@ -2506,6 +2516,8 @@ export interface components {
         };
         /** DocumentUpdate */
         DocumentUpdate: {
+            /** Title */
+            title?: string | null;
             status?: components["schemas"]["DocumentStatus"] | null;
             /** Bucket Id */
             bucket_id?: string | null;
@@ -4949,7 +4961,36 @@ export interface operations {
             };
         };
     };
-    update_bucket_access_api_v1_docvault_buckets__bucket_id__access_patch: {
+    delete_bucket_api_v1_docvault_buckets__bucket_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_bucket_api_v1_docvault_buckets__bucket_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -4960,7 +5001,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BucketAccessUpdate"];
+                "application/json": components["schemas"]["BucketUpdate"];
             };
         };
         responses: {
@@ -4984,7 +5025,7 @@ export interface operations {
             };
         };
     };
-    delete_bucket_api_v1_docvault_buckets__bucket_id__delete: {
+    update_bucket_access_api_v1_docvault_buckets__bucket_id__access_patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -4993,14 +5034,20 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BucketAccessUpdate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BucketResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

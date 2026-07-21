@@ -5,6 +5,7 @@ import {
   Field,
   Input,
   Select,
+  Switch,
   StatusBadge,
   FileUploadDropzone,
   ConfirmDialog,
@@ -40,15 +41,20 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
   const download = useDownloadDocument()
 
   const [tagsInput, setTagsInput] = useState('')
+  const [titleInput, setTitleInput] = useState('')
   const [confirmArchive, setConfirmArchive] = useState(false)
 
   useEffect(() => {
     setTagsInput(document?.tags.join(', ') ?? '')
+    setTitleInput(document?.title ?? '')
   }, [document])
 
   if (!document) return null
 
   const isArchived = document.status === 'archived'
+  // A locked (non-editable) document freezes its name, tags, bucket and new
+  // versions. Status changes (incl. archive) and the editable toggle stay open.
+  const locked = !document.is_editable
   const bucketName = buckets.find((b) => b.id === document.bucket_id)?.name ?? 'Uncategorized'
   const currentVersionNo =
     document.versions.find((v) => v.id === document.current_version_id)?.version_number ??
@@ -72,6 +78,15 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
       update.mutateAsync({ id: document.id, body: { bucket_id: (value || null) as never } }),
       'Moved',
     )
+
+  const saveTitle = () => {
+    const title = titleInput.trim()
+    if (!title || title === document.title) return
+    return wrap(update.mutateAsync({ id: document.id, body: { title } }), 'Name updated')
+  }
+
+  const changeEditable = (checked: boolean) =>
+    wrap(update.mutateAsync({ id: document.id, body: { is_editable: checked } }), 'Updated')
 
   const saveTags = () => {
     const tags = tagsInput
@@ -129,6 +144,35 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
         }
       >
         <div className="flex flex-col gap-5">
+          {/* Name */}
+          <Field label="Name" hint={locked ? 'Locked — enable editing to rename' : undefined}>
+            <div className="flex gap-2">
+              <Input
+                value={titleInput}
+                onChange={(e) => setTitleInput(e.target.value)}
+                disabled={isArchived || locked}
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={saveTitle}
+                disabled={isArchived || locked || update.isPending}
+              >
+                Save
+              </Button>
+            </div>
+          </Field>
+
+          {/* Editable toggle */}
+          <Field label="Editable" hint="When off, the file is locked: no new versions, renaming, tags or bucket changes.">
+            <Switch
+              checked={document.is_editable}
+              onChange={changeEditable}
+              disabled={isArchived || update.isPending}
+              label={document.is_editable ? 'Editable' : 'Locked'}
+            />
+          </Field>
+
           {/* Status */}
           <Field label="Status">
             {isArchived ? (
@@ -156,7 +200,7 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
             <Select
               value={document.bucket_id ?? ''}
               onChange={(e) => changeBucket(e.target.value)}
-              disabled={update.isPending || isArchived}
+              disabled={update.isPending || isArchived || locked}
             >
               <option value="">Uncategorized</option>
               {buckets.map((b) => (
@@ -174,13 +218,13 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
                 placeholder="board, 2026"
-                disabled={isArchived}
+                disabled={isArchived || locked}
               />
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={saveTags}
-                disabled={isArchived || update.isPending}
+                disabled={isArchived || locked || update.isPending}
               >
                 Save
               </Button>

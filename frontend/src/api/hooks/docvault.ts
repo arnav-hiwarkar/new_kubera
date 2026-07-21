@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { docvaultApi } from '@/api/endpoints/docvault'
-import type { BucketAccessUpdate, DocumentUpdate } from '@/api/types'
+import type { BucketAccessUpdate, BucketUpdate, DocumentUpdate } from '@/api/types'
 import { saveBlob } from '@/lib/download'
 
 export const docvaultKeys = {
@@ -38,6 +38,16 @@ export function useDeleteBucket() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => docvaultApi.deleteBucket(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: docvaultKeys.buckets }),
+  })
+}
+
+export function useUpdateBucket() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: BucketUpdate }) =>
+      docvaultApi.updateBucket(id, body),
+    // The documents table resolves bucket names from the buckets list.
     onSuccess: () => qc.invalidateQueries({ queryKey: docvaultKeys.buckets }),
   })
 }

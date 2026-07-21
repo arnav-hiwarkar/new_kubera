@@ -17,7 +17,7 @@ from app.models.docvault import (
 )
 from app.models.activity_log import ActivityLog, ActorType
 from app.schemas.docvault import (
-    BucketCreate, BucketResponse, BucketAccessUpdate, DocumentResponse, DocumentVersionResponse, DocumentUpdate
+    BucketCreate, BucketResponse, BucketUpdate, BucketAccessUpdate, DocumentResponse, DocumentVersionResponse, DocumentUpdate
 )
 from app.encryption import (
     generate_dek, encrypt_dek, decrypt_dek, encrypt_file_data, decrypt_file_data, decrypt_company_kek
@@ -130,6 +130,33 @@ async def list_buckets(
         query = query.where(Bucket.id.in_(accessible))
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.patch("/buckets/{bucket_id}", response_model=BucketResponse)
+async def rename_bucket(
+    bucket_id: uuid.UUID,
+    body: BucketUpdate,
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """Rename a bucket. Admin only. Documents need no change — they resolve the
+    bucket name via `bucket_id`, so the rename is reflected everywhere at once."""
+    result = await db.execute(
+        select(Bucket).where(and_(Bucket.id == bucket_id, Bucket.company_id == current_user.company_id))
+    )
+    bucket = result.scalar_one_or_none()
+    if not bucket:
+        raise HTTPException(status_code=404, detail="Bucket not found")
+
+    old_name = bucket.name
+    bucket.name = body.name
+    await log_activity(
+        db, current_user.company_id, current_user.id, "bucket.renamed", "bucket", bucket_id,
+        {"from": old_name, "to": body.name},
+    )
+    await db.commit()
+    await db.refresh(bucket)
+    return bucket
 
 
 @router.patch("/buckets/{bucket_id}/access", response_model=BucketResponse)
@@ -472,17 +499,26 @@ async def update_document(
     if not await can_access_bucket(db, current_user, doc.bucket_id):
         raise HTTPException(status_code=404, detail="Document not found")
 
+    update_data = updates.model_dump(exclude_unset=True)
+    if not update_data:
+        return doc
+
+    # A locked (non-editable) document freezes its content/metadata — title, tags
+    # and bucket. Status changes (incl. archive) and toggling is_editable back on
+    # are always allowed. A request that re-enables editing in the same call may
+    # also change the gated fields.
+    GATED = {"title", "tags", "bucket_id"}
+    effective_editable = update_data.get("is_editable", doc.is_editable)
+    if not effective_editable and GATED & update_data.keys():
+        raise HTTPException(status_code=409, detail="Document is not editable")
+
     if updates.bucket_id:
         bucket = await db.execute(select(Bucket).where(and_(Bucket.id == updates.bucket_id, Bucket.company_id == current_user.company_id)))
         if not bucket.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Invalid bucket")
         if not await can_access_bucket(db, current_user, updates.bucket_id):
             raise HTTPException(status_code=403, detail="No access to this bucket")
-            
-    update_data = updates.model_dump(exclude_unset=True)
-    if not update_data:
-        return doc
-        
+
     for key, value in update_data.items():
         setattr(doc, key, value)
         
