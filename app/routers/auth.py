@@ -87,10 +87,12 @@ async def initialize_company(
     """
     _require_internal_key(x_internal_api_key)
 
-    # Check email uniqueness (emails are globally unique across all companies)
+    # Email uniqueness is enforced over LIVE accounts only (a soft-deleted or
+    # archived-company user's email is free to reuse).
     existing = await db.execute(
         select(CompanyUser).where(
-            func.lower(CompanyUser.email) == body.admin_email.strip().lower()
+            func.lower(CompanyUser.email) == body.admin_email.strip().lower(),
+            CompanyUser.deleted_at.is_(None),
         )
     )
     if existing.scalar_one_or_none():

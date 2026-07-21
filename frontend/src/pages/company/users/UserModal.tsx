@@ -8,8 +8,10 @@ interface UserModalProps {
   onClose: () => void
   onSave: (data: any) => Promise<void>
   onDelete?: (id: string) => Promise<void>
-  /** Whether the current user may delete the user being edited (admin, not self). */
-  canDelete?: boolean
+  onDeactivate?: (id: string) => Promise<void>
+  onReactivate?: (id: string) => Promise<void>
+  /** Whether the current user may manage (deactivate/delete) the edited user (admin, not self). */
+  canManage?: boolean
   initialData?: UserResponse | null
 }
 
@@ -25,7 +27,7 @@ const moduleNames: Record<ModuleId, string> = {
   activity: 'Activity Log',
 }
 
-export function UserModal({ isOpen, onClose, onSave, onDelete, canDelete, initialData }: UserModalProps) {
+export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onReactivate, canManage, initialData }: UserModalProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -37,6 +39,11 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, canDelete, initia
   const [error, setError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isToggling, setIsToggling] = useState(false)
+
+  // Status of the user being edited (new users have no status yet).
+  const isDeleted = !!initialData?.deleted_at
+  const isInactive = !!initialData && !initialData.is_active && !isDeleted
 
   useEffect(() => {
     setError(null)
@@ -116,8 +123,24 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, canDelete, initia
     }
   }
 
+  const handleToggleActive = async () => {
+    if (!initialData) return
+    const action = isInactive ? onReactivate : onDeactivate
+    if (!action) return
+    setIsToggling(true)
+    setError(null)
+    try {
+      await action(initialData.id)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update user')
+    } finally {
+      setIsToggling(false)
+    }
+  }
+
   const isAdmin = role === 'admin'
-  const busy = isSubmitting || isDeleting
+  const busy = isSubmitting || isDeleting || isToggling
 
   return (
     <Modal
@@ -205,11 +228,15 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, canDelete, initia
         </div>
 
         <div className="flex items-center justify-between gap-3 pt-4 border-t border-border">
-          <div>
-            {initialData && canDelete && onDelete && (
+          <div className="flex items-center gap-2">
+            {initialData && isDeleted ? (
+              <span className="text-sm text-text-muted">This user has been deleted.</span>
+            ) : initialData && canManage ? (
               confirmingDelete ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-text-secondary">Delete permanently?</span>
+                  <span className="text-sm text-text-secondary">
+                    Delete this user? Their login is disabled and email freed; their name stays on files they created.
+                  </span>
                   <Button variant="danger" type="button" loading={isDeleting} onClick={handleDelete}>
                     Yes, delete
                   </Button>
@@ -218,19 +245,30 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, canDelete, initia
                   </Button>
                 </div>
               ) : (
-                <Button variant="ghost" type="button" onClick={() => setConfirmingDelete(true)} disabled={busy}>
-                  <span className="text-status-action">Delete user</span>
-                </Button>
+                <>
+                  {(onDeactivate || onReactivate) && (
+                    <Button variant="ghost" type="button" onClick={handleToggleActive} loading={isToggling} disabled={busy}>
+                      {isInactive ? 'Reactivate' : 'Deactivate'}
+                    </Button>
+                  )}
+                  {onDelete && (
+                    <Button variant="ghost" type="button" onClick={() => setConfirmingDelete(true)} disabled={busy}>
+                      <span className="text-status-action">Delete user</span>
+                    </Button>
+                  )}
+                </>
               )
-            )}
+            ) : null}
           </div>
           <div className="flex gap-3">
             <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" loading={isSubmitting} disabled={isDeleting}>
-              {initialData ? 'Save Changes' : 'Create User'}
-            </Button>
+            {!isDeleted && (
+              <Button type="submit" variant="primary" loading={isSubmitting} disabled={isDeleting || isToggling}>
+                {initialData ? 'Save Changes' : 'Create User'}
+              </Button>
+            )}
           </div>
         </div>
       </form>

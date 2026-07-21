@@ -31,7 +31,7 @@ async def test_soft_delete_user_disables_login_frees_email_keeps_row(
     client: AsyncClient, db: AsyncSession
 ):
     """Deleting a user must succeed even when they own data, disable their login,
-    free their email for reuse, and keep the row so their name still resolves."""
+    keep the row (with its real email + name), and free the email for reuse."""
     await create_test_company(client, name="SoftCo", email="admin@softco.com")
     admin_token = await get_company_token(client, email="admin@softco.com")
 
@@ -65,20 +65,56 @@ async def test_soft_delete_user_disables_login_frees_email_keeps_row(
     )
     assert login.status_code == 401
 
-    # The row survives: name intact, marked deleted, email freed to the sentinel.
+    # The row survives: real email + name kept, marked deleted/inactive.
     row = (await db.execute(select(CompanyUser).where(CompanyUser.id == emp_id))).scalar_one()
     assert row.is_active is False
     assert row.deleted_at is not None
     assert row.full_name == "Emp User"
-    assert row.email == f"deleted+{emp_id}@deleted.invalid"
+    assert row.email == "emp@softco.com"
+
+    # The Directory listing must still load (regression: a soft-deleted row used to
+    # 500 the whole list) and include the deleted user, marked deleted/inactive.
+    listing = await client.get("/api/v1/users", headers={"Authorization": f"Bearer {admin_token}"})
+    assert listing.status_code == 200, listing.text
+    deleted_row = next(u for u in listing.json() if u["id"] == emp["id"])
+    assert deleted_row["is_active"] is False
+    assert deleted_row["deleted_at"] is not None
 
     # The attached bucket still points at the surviving row (name still resolvable).
     bucket = (await db.execute(select(Bucket).where(Bucket.created_by == emp_id))).scalar_one()
     assert bucket.created_by == emp_id
 
-    # The original email is free — a brand-new user can reuse it.
+    # The email is free — a brand-new (live) user can reuse it.
     again = await _create_user(client, admin_token, email="emp@softco.com", password="newpass123", full_name="New Hire")
     assert again["id"] != emp["id"]
+
+
+@pytest.mark.asyncio
+async def test_deactivate_then_reactivate_user(client: AsyncClient):
+    """Deactivate blocks login and is reversible; a deleted user can't be reactivated."""
+    await create_test_company(client, name="DeactCo", email="admin@deactco.com")
+    admin_token = await get_company_token(client, email="admin@deactco.com")
+    hdr = {"Authorization": f"Bearer {admin_token}"}
+
+    emp = await _create_user(client, admin_token, email="d@deactco.com", password="emppass123")
+    emp_id = emp["id"]
+
+    # Deactivate -> login blocked.
+    r = await client.patch(f"/api/v1/users/{emp_id}/deactivate", headers=hdr)
+    assert r.status_code == 200 and r.json()["is_active"] is False
+    blocked = await client.post("/api/v1/auth/company/login", json={"email": "d@deactco.com", "password": "emppass123"})
+    assert blocked.status_code == 401
+
+    # Reactivate -> login works again.
+    r = await client.patch(f"/api/v1/users/{emp_id}/reactivate", headers=hdr)
+    assert r.status_code == 200 and r.json()["is_active"] is True
+    ok = await client.post("/api/v1/auth/company/login", json={"email": "d@deactco.com", "password": "emppass123"})
+    assert ok.status_code == 200
+
+    # Delete, then reactivate must be refused (409).
+    assert (await client.delete(f"/api/v1/users/{emp_id}", headers=hdr)).status_code == 204
+    refused = await client.patch(f"/api/v1/users/{emp_id}/reactivate", headers=hdr)
+    assert refused.status_code == 409
 
 
 # --- Password reset -------------------------------------------------------------

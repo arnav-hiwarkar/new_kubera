@@ -24,7 +24,10 @@ class UserUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     id: uuid.UUID
-    email: EmailStr
+    # Plain str (not EmailStr): output never needs email validation, and a
+    # soft-deleted/legacy row could hold a non-RFC address — validating it here
+    # would 500 the entire list response.
+    email: str
     full_name: str
     role: UserRole
     manager_id: uuid.UUID | None

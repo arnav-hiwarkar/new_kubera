@@ -11,5 +11,7 @@ export const usersApi = {
     companyClient.patch<UserResponse>(`/api/v1/users/${id}`, { body }),
   deactivate: (id: string) =>
     companyClient.patch<UserResponse>(`/api/v1/users/${id}/deactivate`),
+  reactivate: (id: string) =>
+    companyClient.patch<UserResponse>(`/api/v1/users/${id}/reactivate`),
   remove: (id: string) => companyClient.delete<void>(`/api/v1/users/${id}`),
 }

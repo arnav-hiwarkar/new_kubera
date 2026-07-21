@@ -78,19 +78,19 @@ async def set_password(db: AsyncSession, principal_type: str, account_id: uuid.U
 
 
 async def soft_delete_company_user(db: AsyncSession, user: CompanyUser) -> None:
-    """Soft-delete a company user: block login, free their email, keep the row.
+    """Soft-delete a company user: block login, keep the row (and its real email).
 
-    The row (and full_name) survives so any file/record they created still shows
-    their name. The email is released to a collision-proof sentinel so a new
-    account can reuse the original address. Direct reports are detached first
-    because the self-referential manager FK has no cascade.
+    Marking `deleted_at` blocks login and removes the row from the active-email
+    uniqueness index (a partial unique index over `deleted_at IS NULL`), so a new
+    account can reuse the same email while this row — and its `full_name` — survives
+    so any file/record they created still shows their name. Direct reports are
+    detached first because the self-referential manager FK has no cascade.
     """
     await db.execute(
         update(CompanyUser).where(CompanyUser.manager_id == user.id).values(manager_id=None)
     )
     user.is_active = False
     user.deleted_at = _now()
-    user.email = f"deleted+{user.id}@deleted.invalid"
 
 
 async def archive_company(db: AsyncSession, company: Company) -> None:
@@ -104,10 +104,15 @@ async def archive_company(db: AsyncSession, company: Company) -> None:
     if company.archived_at is not None:
         raise ValueError("company is already archived")
 
-    company.archived_at = _now()
+    now = _now()
+    company.archived_at = now
     users = (
         await db.execute(select(CompanyUser).where(CompanyUser.company_id == company.id))
     ).scalars().all()
     for u in users:
+        # Deactivate + mark deleted so logins stop and every email is freed for
+        # reuse via the active-email partial unique index. Real emails/names are
+        # kept (the company name was never unique anyway).
         u.is_active = False
-        u.email = f"archived+{u.id}@archived.invalid"
+        if u.deleted_at is None:
+            u.deleted_at = now

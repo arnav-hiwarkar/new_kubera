@@ -2,7 +2,7 @@ import uuid
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,14 @@ async def create_user(
     current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    existing = await db.execute(select(CompanyUser).where(CompanyUser.email == body.email))
+    # Only live accounts hold an email (matches the active-email partial unique
+    # index) — a soft-deleted user's address is free to reuse.
+    existing = await db.execute(
+        select(CompanyUser).where(
+            func.lower(CompanyUser.email) == body.email.lower(),
+            CompanyUser.deleted_at.is_(None),
+        )
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
 
@@ -173,9 +180,13 @@ async def deactivate_user(
     current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
+    """Reversibly disable a user's login. Keeps the account and email."""
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+
     result = await db.execute(
         select(CompanyUser).where(
-            CompanyUser.id == user_id, 
+            CompanyUser.id == user_id,
             CompanyUser.company_id == current_user.company_id
         )
     )
@@ -184,6 +195,35 @@ async def deactivate_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     user.is_active = False
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.patch("/{user_id}/reactivate", response_model=UserResponse)
+async def reactivate_user(
+    user_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """Re-enable a deactivated user. A soft-deleted user cannot be reactivated —
+    recreate the account instead (their email is already free to reuse)."""
+    result = await db.execute(
+        select(CompanyUser).where(
+            CompanyUser.id == user_id,
+            CompanyUser.company_id == current_user.company_id
+        )
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.deleted_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="This user was deleted and cannot be reactivated. Recreate the account instead.",
+        )
+
+    user.is_active = True
     await db.commit()
     await db.refresh(user)
     return user

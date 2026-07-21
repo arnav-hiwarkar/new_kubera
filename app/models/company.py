@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import date, datetime
-from sqlalchemy import String, ForeignKey, LargeBinary, Enum as SAEnum, Boolean, Date, DateTime
+from sqlalchemy import String, ForeignKey, LargeBinary, Enum as SAEnum, Boolean, Date, DateTime, Index, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -93,7 +93,9 @@ class CompanyUser(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
-    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    # Uniqueness is enforced only over LIVE accounts by a partial unique index
+    # (see below), so a soft-deleted user's email can be reused by a new account.
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
         SAEnum(UserRole, name="user_role"),
@@ -115,3 +117,13 @@ class CompanyUser(Base, TimestampMixin):
     accessible_modules: Mapped[list[str]] = mapped_column(JSONB, server_default='[]', nullable=False)
 
     company = relationship("Company", back_populates="users")
+
+
+# Case-insensitive email uniqueness, restricted to live (non-deleted) accounts.
+# Kept in sync with migration e1f2a3b4c5d6 so create_all (tests) matches prod.
+Index(
+    "uq_company_users_email_active",
+    func.lower(CompanyUser.email),
+    unique=True,
+    postgresql_where=CompanyUser.deleted_at.is_(None),
+)

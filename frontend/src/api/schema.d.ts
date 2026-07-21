@@ -2849,6 +2849,8 @@ export interface components {
             department: string | null;
             /** Is Active */
             is_active: boolean;
+            /** Deleted At */
+            deleted_at?: string | null;
             /** Accessible Modules */
             accessible_modules: string[];
             /**
