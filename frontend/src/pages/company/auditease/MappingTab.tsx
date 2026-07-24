@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ArrowDownToLine } from 'lucide-react'
 import { Button, Input, Spinner, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import type { TrialBalanceAccountResponse } from '@/api/types'
@@ -114,7 +115,13 @@ export function MappingTab({ engagementId }: { engagementId: string }) {
           </h3>
           <div className="flex items-center gap-2">
             {accounts.length > 0 && (
-              <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
+              <Button
+                size="sm"
+                variant="subtle"
+                className="border border-accent/25 shadow-sm hover:border-accent/50 hover:shadow-glow"
+                onClick={() => setImportOpen(true)}
+              >
+                <ArrowDownToLine />
                 Import mapping
               </Button>
             )}
