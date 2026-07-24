@@ -1069,6 +1069,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auditease/engagements/{engagement_id}/mapping-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Mapping Sources
+         * @description List other company engagements that have at least one mapped ledger.
+         */
+        get: operations["list_mapping_sources_api_v1_auditease_engagements__engagement_id__mapping_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/mappings/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Mappings
+         * @description Copy ledger mappings from another engagement as a one-time snapshot.
+         */
+        post: operations["import_mappings_api_v1_auditease_engagements__engagement_id__mappings_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auditease/engagements": {
         parameters: {
             query?: never;
@@ -2732,6 +2772,72 @@ export interface components {
              * Format: uuid
              */
             group_id: string;
+        };
+        /** MappingImportIssue */
+        MappingImportIssue: {
+            /**
+             * Target Ledger Id
+             * Format: uuid
+             */
+            target_ledger_id: string;
+            /** Ledger Code */
+            ledger_code?: string | null;
+            /** Ledger Name */
+            ledger_name: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "unmatched" | "source_exhausted" | "identity_disagreement" | "ambiguous_source_mapping";
+        };
+        /** MappingImportRequest */
+        MappingImportRequest: {
+            /**
+             * Source Engagement Id
+             * Format: uuid
+             */
+            source_engagement_id: string;
+            /**
+             * Overwrite Existing
+             * @default true
+             */
+            overwrite_existing: boolean;
+        };
+        /** MappingImportResult */
+        MappingImportResult: {
+            /** Total Target Ledgers */
+            total_target_ledgers: number;
+            /** Source Mapped Count */
+            source_mapped_count: number;
+            /** Assigned Count */
+            assigned_count: number;
+            /** Updated Count */
+            updated_count: number;
+            /** Already Correct Count */
+            already_correct_count: number;
+            /** Preserved Existing Count */
+            preserved_existing_count: number;
+            /** Unused Source Count */
+            unused_source_count: number;
+            /** Unresolved Count */
+            unresolved_count: number;
+            /** Issues */
+            issues: components["schemas"]["MappingImportIssue"][];
+        };
+        /** MappingSourceResponse */
+        MappingSourceResponse: {
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /** Period Label */
+            period_label: string;
+            status: components["schemas"]["EngagementStatus"];
+            /** Total Ledger Count */
+            total_ledger_count: number;
+            /** Mapped Ledger Count */
+            mapped_ledger_count: number;
         };
         /** MeetingRecordCreate */
         MeetingRecordCreate: {
@@ -5632,6 +5738,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mapping_sources_api_v1_auditease_engagements__engagement_id__mapping_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MappingSourceResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_mappings_api_v1_auditease_engagements__engagement_id__mappings_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MappingImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MappingImportResult"];
                 };
             };
             /** @description Validation Error */

@@ -7,6 +7,7 @@ import type {
   LedgerGroupRename,
   BulkMapRequest,
   UnmapRequest,
+  MappingImportRequest,
   EntryApproval,
 } from '@/api/types'
 
@@ -16,6 +17,7 @@ export const auditeaseKeys = {
   trialBalance: (id: string) => ['auditease', 'trial-balance', id] as const,
   ledgerGroups: ['auditease', 'ledger-groups'] as const,
   entries: (id: string) => ['auditease', 'entries', id] as const,
+  mappingSources: (id: string) => ['auditease', 'mapping-sources', id] as const,
 }
 
 // --- Engagements ---
@@ -170,6 +172,29 @@ export function useUnmapLedgers() {
     mutationFn: ({ engagementId, body }: { engagementId: string; body: UnmapRequest }) =>
       auditeaseCompanyApi.unmapLedgers(engagementId, body),
     onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: auditeaseKeys.trialBalance(engagementId) }),
+  })
+}
+
+export function useMappingSources(engagementId: string, enabled = true) {
+  return useQuery({
+    queryKey: auditeaseKeys.mappingSources(engagementId),
+    queryFn: () => auditeaseCompanyApi.listMappingSources(engagementId),
+    enabled: enabled && !!engagementId,
+  })
+}
+
+export function useImportMappings() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      engagementId,
+      body,
+    }: {
+      engagementId: string
+      body: MappingImportRequest
+    }) => auditeaseCompanyApi.importMappings(engagementId, body),
+    onSuccess: (_result, { engagementId }) =>
       qc.invalidateQueries({ queryKey: auditeaseKeys.trialBalance(engagementId) }),
   })
 }

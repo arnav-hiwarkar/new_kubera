@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.auditease import EngagementStatus, GrantStatus, AuditEntryStatus, EntryLineSide, RequestStatus, QueryStatus, SenderType
@@ -33,6 +33,39 @@ class BulkMapRequest(BaseModel):
 
 class UnmapRequest(BaseModel):
     ledger_ids: List[uuid.UUID]
+
+class MappingSourceResponse(BaseModel):
+    engagement_id: uuid.UUID
+    period_label: str
+    status: EngagementStatus
+    total_ledger_count: int
+    mapped_ledger_count: int
+
+class MappingImportRequest(BaseModel):
+    source_engagement_id: uuid.UUID
+    overwrite_existing: bool = True
+
+class MappingImportIssue(BaseModel):
+    target_ledger_id: uuid.UUID
+    ledger_code: Optional[str] = None
+    ledger_name: str
+    reason: Literal[
+        "unmatched",
+        "source_exhausted",
+        "identity_disagreement",
+        "ambiguous_source_mapping",
+    ]
+
+class MappingImportResult(BaseModel):
+    total_target_ledgers: int
+    source_mapped_count: int
+    assigned_count: int
+    updated_count: int
+    already_correct_count: int
+    preserved_existing_count: int
+    unused_source_count: int
+    unresolved_count: int
+    issues: List[MappingImportIssue]
 
 class TrialBalanceAccountBase(BaseModel):
     ledger_code: Optional[str] = None

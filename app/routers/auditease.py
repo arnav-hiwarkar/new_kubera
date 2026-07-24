@@ -19,7 +19,8 @@ from app.models.auditease import (
 )
 from app.schemas.auditease import (
     TrialBalanceAccountResponse, LedgerGroupResponse, LedgerGroupCreate, LedgerGroupRename,
-    MapLedgerRequest, BulkMapRequest, UnmapRequest, AuditEngagementCreate,
+    MapLedgerRequest, BulkMapRequest, UnmapRequest, MappingSourceResponse,
+    MappingImportRequest, MappingImportResult, MappingImportIssue, AuditEngagementCreate,
     AuditEngagementResponse, AuditEntryResponse, RequirementRequestResponse,
     QueryResponse, QueryMessageResponse, QueryMessageCreate,
     TBColumnMap, TBInspectResponse, TBImportResult,
@@ -29,6 +30,7 @@ from app.schemas.auditease import (
 from app.config import get_settings
 from app.services import import_service
 from app.services import ledger_groups as lg
+from app.services import mapping_import
 
 router = APIRouter(prefix="/api/v1/auditease", tags=["auditease-company"])
 
@@ -422,6 +424,171 @@ async def unmap_ledgers(
     )
     await db.commit()
     return {"updated": result.rowcount}
+
+
+@router.get(
+    "/engagements/{engagement_id}/mapping-sources",
+    response_model=List[MappingSourceResponse],
+)
+async def list_mapping_sources(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """List other company engagements that have at least one mapped ledger."""
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    result = await db.execute(
+        select(
+            AuditEngagement,
+            func.count(TrialBalanceAccount.id).label("total_ledger_count"),
+            func.count(TrialBalanceAccount.id)
+            .filter(TrialBalanceAccount.mapped_group_id.is_not(None))
+            .label("mapped_ledger_count"),
+        )
+        .outerjoin(
+            TrialBalanceAccount,
+            TrialBalanceAccount.engagement_id == AuditEngagement.id,
+        )
+        .where(
+            and_(
+                AuditEngagement.company_id == current_user.company_id,
+                AuditEngagement.id != engagement_id,
+            )
+        )
+        .group_by(AuditEngagement.id)
+        .having(
+            func.count(TrialBalanceAccount.id)
+            .filter(TrialBalanceAccount.mapped_group_id.is_not(None))
+            > 0
+        )
+        .order_by(AuditEngagement.created_at.desc())
+    )
+    return [
+        MappingSourceResponse(
+            engagement_id=eng.id,
+            period_label=eng.period_label,
+            status=eng.status,
+            total_ledger_count=total_count,
+            mapped_ledger_count=mapped_count,
+        )
+        for eng, total_count, mapped_count in result.all()
+    ]
+
+
+@router.post(
+    "/engagements/{engagement_id}/mappings/import",
+    response_model=MappingImportResult,
+)
+async def import_mappings(
+    engagement_id: uuid.UUID,
+    payload: MappingImportRequest,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Copy ledger mappings from another engagement as a one-time snapshot."""
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    if payload.source_engagement_id == engagement_id:
+        raise HTTPException(status_code=400, detail="An engagement cannot import mappings from itself")
+    await _get_owned_engagement(db, current_user.company_id, payload.source_engagement_id)
+
+    target_result = await db.execute(
+        select(TrialBalanceAccount)
+        .where(TrialBalanceAccount.engagement_id == engagement_id)
+        .order_by(TrialBalanceAccount.created_at, TrialBalanceAccount.id)
+        .with_for_update()
+    )
+    targets = list(target_result.scalars().all())
+    if not targets:
+        raise HTTPException(
+            status_code=409,
+            detail="Import a trial balance before importing ledger mappings.",
+        )
+
+    source_result = await db.execute(
+        select(TrialBalanceAccount)
+        .where(
+            and_(
+                TrialBalanceAccount.engagement_id == payload.source_engagement_id,
+                TrialBalanceAccount.mapped_group_id.is_not(None),
+            )
+        )
+        .order_by(TrialBalanceAccount.created_at, TrialBalanceAccount.id)
+        .with_for_update()
+    )
+    sources = list(source_result.scalars().all())
+    if not sources:
+        raise HTTPException(
+            status_code=409,
+            detail="The source engagement has no mapped ledgers.",
+        )
+
+    source_rows = [
+        mapping_import.LedgerForMapping(
+            id=source.id,
+            ledger_code=source.ledger_code,
+            ledger_name=source.ledger_name,
+            mapped_group_id=source.mapped_group_id,
+            order=index,
+        )
+        for index, source in enumerate(sources)
+    ]
+    target_rows = [
+        mapping_import.LedgerForMapping(
+            id=target.id,
+            ledger_code=target.ledger_code,
+            ledger_name=target.ledger_name,
+            mapped_group_id=target.mapped_group_id,
+            order=index,
+        )
+        for index, target in enumerate(targets)
+    ]
+    plan = mapping_import.plan_mapping_import(source_rows, target_rows)
+    target_by_id = {target.id: target for target in targets}
+
+    if len(plan.assignments) > len(sources):
+        raise HTTPException(status_code=500, detail="Mapping import cardinality check failed")
+    if len({item.source_id for item in plan.assignments}) != len(plan.assignments):
+        raise HTTPException(status_code=500, detail="Mapping import reused a source ledger")
+    if len({item.target_id for item in plan.assignments}) != len(plan.assignments):
+        raise HTTPException(status_code=500, detail="Mapping import reused a target ledger")
+
+    updated_count = 0
+    already_correct_count = 0
+    preserved_existing_count = 0
+
+    for assignment in plan.assignments:
+        target = target_by_id[assignment.target_id]
+        if target.mapped_group_id is not None and not payload.overwrite_existing:
+            preserved_existing_count += 1
+            continue
+        if target.mapped_group_id == assignment.group_id:
+            already_correct_count += 1
+        else:
+            target.mapped_group_id = assignment.group_id
+            updated_count += 1
+
+    issues = []
+    for issue in plan.issues:
+        target = target_by_id[issue.target_id]
+        issues.append(MappingImportIssue(
+            target_ledger_id=target.id,
+            ledger_code=target.ledger_code,
+            ledger_name=target.ledger_name,
+            reason=issue.reason,
+        ))
+
+    await db.commit()
+    return MappingImportResult(
+        total_target_ledgers=len(targets),
+        source_mapped_count=len(sources),
+        assigned_count=len(plan.assignments),
+        updated_count=updated_count,
+        already_correct_count=already_correct_count,
+        preserved_existing_count=preserved_existing_count,
+        unused_source_count=len(plan.unused_source_ids),
+        unresolved_count=len(plan.issues),
+        issues=issues,
+    )
 
 
 # --- Engagements ---

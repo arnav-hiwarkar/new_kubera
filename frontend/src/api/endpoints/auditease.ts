@@ -14,6 +14,9 @@ import type {
   MapLedgerRequest,
   BulkMapRequest,
   UnmapRequest,
+  MappingSourceResponse,
+  MappingImportRequest,
+  MappingImportResult,
   RequirementRequestResponse,
   RequirementFulfill,
   QueryResponse,
@@ -80,6 +83,15 @@ export const auditeaseCompanyApi = {
   unmapLedgers: (engagementId: string, body: UnmapRequest) =>
     companyClient.post<{ updated: number }>(
       `/api/v1/auditease/engagements/${engagementId}/ledgers/unmap`,
+      { body },
+    ),
+  listMappingSources: (engagementId: string) =>
+    companyClient.get<MappingSourceResponse[]>(
+      `/api/v1/auditease/engagements/${engagementId}/mapping-sources`,
+    ),
+  importMappings: (engagementId: string, body: MappingImportRequest) =>
+    companyClient.post<MappingImportResult>(
+      `/api/v1/auditease/engagements/${engagementId}/mappings/import`,
       { body },
     ),
 

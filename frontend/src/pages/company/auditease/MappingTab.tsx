@@ -11,6 +11,7 @@ import {
 } from '@/api/hooks/auditease'
 import { GroupTree } from './GroupTree'
 import { GroupPicker } from '@/components/auditease/GroupPicker'
+import { ImportMappingModal } from './ImportMappingModal'
 
 export function MappingTab({ engagementId }: { engagementId: string }) {
   const toast = useToast()
@@ -23,6 +24,7 @@ export function MappingTab({ engagementId }: { engagementId: string }) {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkLeaf, setBulkLeaf] = useState<string | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -110,12 +112,19 @@ export function MappingTab({ engagementId }: { engagementId: string }) {
           <h3 className="text-sm font-semibold text-text-primary">
             Ledgers <span className="text-text-muted">({accounts.length})</span>
           </h3>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search ledgers…"
-            className="h-8 max-w-xs"
-          />
+          <div className="flex items-center gap-2">
+            {accounts.length > 0 && (
+              <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
+                Import mapping
+              </Button>
+            )}
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search ledgers…"
+              className="h-8 max-w-xs"
+            />
+          </div>
         </div>
 
         {totalCount > 0 && (
@@ -210,6 +219,12 @@ export function MappingTab({ engagementId }: { engagementId: string }) {
           </div>
         )}
       </div>
+      <ImportMappingModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        engagementId={engagementId}
+        mappedTargetCount={mappedCount}
+      />
     </div>
   )
 }

@@ -363,6 +363,222 @@ async def test_ledger_mapping(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_import_mapping_from_another_engagement(client: AsyncClient):
+    await create_test_company(client, email="mapping-import@a.com", password="pass1234")
+    headers = {
+        "Authorization": f"Bearer {await get_company_token(client, email='mapping-import@a.com', password='pass1234')}"
+    }
+    source_id = await make_engagement(client, headers, "FY23")
+    target_id = await make_engagement(client, headers, "FY24")
+
+    source_csv = (
+        b"Code,Name,Opening,Debit,Credit,Closing\n"
+        b"100,Cash,0,0,0,0\n"
+        b"200,Bank,0,0,0,0\n"
+        b"DUP,Duplicate,0,0,0,0\n"
+        b"DUP,Duplicate,0,0,0,0\n"
+        b"AMB,Ambiguous,0,0,0,0\n"
+        b"AMB,Ambiguous,0,0,0,0\n"
+        b",Trade Receivable,0,0,0,0\n"
+    )
+    target_csv = (
+        b"Code,Name,Opening,Debit,Credit,Closing\n"
+        b"100,Cash,0,0,0,0\n"
+        b"200,Renamed Bank,0,0,0,0\n"
+        b"DUP,Duplicate,0,0,0,0\n"
+        b"DUP,Duplicate,0,0,0,0\n"
+        b"DUP,Duplicate,0,0,0,0\n"
+        b"AMB,Ambiguous,0,0,0,0\n"
+        b"300,Trade Receivable,0,0,0,0\n"
+        b"NO,No Match,0,0,0,0\n"
+    )
+    source_accounts = (await import_tb(client, source_id, headers, csv=source_csv)).json()["accounts"]
+    target_accounts = (await import_tb(client, target_id, headers, csv=target_csv)).json()["accounts"]
+
+    groups = await get_groups(client, headers)
+    assets = find_group(groups, "Assets")
+    liabilities = find_group(groups, "Liabilities")
+    asset_leaf = (
+        await client.post(
+            "/api/v1/auditease/ledger-groups",
+            json={"name": "Mapping Import Assets", "parent_id": assets["id"]},
+            headers=headers,
+        )
+    ).json()
+    liability_leaf = (
+        await client.post(
+            "/api/v1/auditease/ledger-groups",
+            json={"name": "Mapping Import Liabilities", "parent_id": liabilities["id"]},
+            headers=headers,
+        )
+    ).json()
+
+    # Duplicate exact identities map one-to-one only. AMB is indistinguishable
+    # but points at two groups and therefore must remain unresolved.
+    source_groups = [
+        asset_leaf["id"],
+        asset_leaf["id"],
+        asset_leaf["id"],
+        asset_leaf["id"],
+        asset_leaf["id"],
+        liability_leaf["id"],
+        asset_leaf["id"],
+    ]
+    for account, group_id in zip(source_accounts, source_groups):
+        response = await client.post(
+            f"/api/v1/auditease/engagements/{source_id}/ledgers/{account['id']}/map",
+            json={"group_id": group_id},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+
+    # An incorrect existing target mapping should be overwritten by default.
+    response = await client.post(
+        f"/api/v1/auditease/engagements/{target_id}/ledgers/{target_accounts[0]['id']}/map",
+        json={"group_id": liability_leaf["id"]},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+
+    sources_response = await client.get(
+        f"/api/v1/auditease/engagements/{target_id}/mapping-sources",
+        headers=headers,
+    )
+    assert sources_response.status_code == 200, sources_response.text
+    assert sources_response.json() == [{
+        "engagement_id": source_id,
+        "period_label": "FY23",
+        "status": "draft",
+        "total_ledger_count": 7,
+        "mapped_ledger_count": 7,
+    }]
+
+    # One source row is never reused: only two of three DUP targets are assigned.
+    # Identifier disagreement and ambiguous source destinations are not guessed.
+    response = await client.post(
+        f"/api/v1/auditease/engagements/{target_id}/mappings/import",
+        json={"source_engagement_id": source_id},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "total_target_ledgers": 8,
+        "source_mapped_count": 7,
+        "assigned_count": 4,
+        "updated_count": 4,
+        "already_correct_count": 0,
+        "preserved_existing_count": 0,
+        "unused_source_count": 3,
+        "unresolved_count": 4,
+        "issues": [
+            {
+                "target_ledger_id": target_accounts[1]["id"],
+                "ledger_code": "200",
+                "ledger_name": "Renamed Bank",
+                "reason": "identity_disagreement",
+            },
+            {
+                "target_ledger_id": target_accounts[4]["id"],
+                "ledger_code": "DUP",
+                "ledger_name": "Duplicate",
+                "reason": "source_exhausted",
+            },
+            {
+                "target_ledger_id": target_accounts[5]["id"],
+                "ledger_code": "AMB",
+                "ledger_name": "Ambiguous",
+                "reason": "ambiguous_source_mapping",
+            },
+            {
+                "target_ledger_id": target_accounts[7]["id"],
+                "ledger_code": "NO",
+                "ledger_name": "No Match",
+                "reason": "unmatched",
+            },
+        ],
+    }
+
+    # A repeated overwrite identifies already-correct mappings.
+    response = await client.post(
+        f"/api/v1/auditease/engagements/{target_id}/mappings/import",
+        json={"source_engagement_id": source_id},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["updated_count"] == 0
+    assert response.json()["already_correct_count"] == 4
+    assert response.json()["assigned_count"] == 4
+
+    # Preserve mode leaves all four resolved target mappings untouched while
+    # still consuming their four source rows.
+    response = await client.post(
+        f"/api/v1/auditease/engagements/{target_id}/mappings/import",
+        json={"source_engagement_id": source_id, "overwrite_existing": False},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["updated_count"] == 0
+    assert response.json()["already_correct_count"] == 0
+    assert response.json()["preserved_existing_count"] == 4
+    assert response.json()["assigned_count"] == 4
+
+    target_tb = (
+        await client.get(
+            f"/api/v1/auditease/engagements/{target_id}/trial-balance",
+            headers=headers,
+        )
+    ).json()
+    duplicate_targets = [account for account in target_tb if account["ledger_code"] == "DUP"]
+    assert sum(account["mapped_group_id"] == asset_leaf["id"] for account in duplicate_targets) == 2
+    assert next(account for account in target_tb if account["ledger_code"] == "100")["mapped_group_id"] == asset_leaf["id"]
+    assert next(account for account in target_tb if account["ledger_code"] == "200")["mapped_group_id"] is None
+    assert next(account for account in target_tb if account["ledger_code"] == "AMB")["mapped_group_id"] is None
+    assert next(account for account in target_tb if account["ledger_code"] == "300")["mapped_group_id"] == asset_leaf["id"]
+    assert next(account for account in target_tb if account["ledger_code"] == "NO")["mapped_group_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_mapping_import_validation_and_tenant_isolation(client: AsyncClient):
+    await create_test_company(client, email="mapping-a@a.com", password="pass1234")
+    headers_a = {
+        "Authorization": f"Bearer {await get_company_token(client, email='mapping-a@a.com', password='pass1234')}"
+    }
+    source_id = await make_engagement(client, headers_a, "Source")
+    target_without_tb = await make_engagement(client, headers_a, "Target")
+
+    response = await client.post(
+        f"/api/v1/auditease/engagements/{target_without_tb}/mappings/import",
+        json={"source_engagement_id": target_without_tb},
+        headers=headers_a,
+    )
+    assert response.status_code == 400
+
+    await import_tb(client, source_id, headers_a)
+    await import_tb(client, target_without_tb, headers_a)
+    response = await client.post(
+        f"/api/v1/auditease/engagements/{target_without_tb}/mappings/import",
+        json={"source_engagement_id": source_id},
+        headers=headers_a,
+    )
+    assert response.status_code == 409
+    assert "no mapped ledgers" in response.json()["detail"]
+
+    await create_test_company(client, email="mapping-b@a.com", password="pass1234")
+    headers_b = {
+        "Authorization": f"Bearer {await get_company_token(client, email='mapping-b@a.com', password='pass1234')}"
+    }
+    foreign_target = await make_engagement(client, headers_b, "Foreign")
+    await import_tb(client, foreign_target, headers_b)
+
+    response = await client.post(
+        f"/api/v1/auditease/engagements/{foreign_target}/mappings/import",
+        json={"source_engagement_id": source_id},
+        headers=headers_b,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_audit_entries(client: AsyncClient):
     await create_test_company(client, email="co2@a.com", password="pass1234")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co2@a.com', password='pass1234')}"}
