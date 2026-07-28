@@ -30,7 +30,7 @@ class Asset(Base, TimestampMixin, TenantScopedMixin):
     purchase_cost: Mapped[Numeric | None] = mapped_column(Numeric(10, 2), nullable=True)
     depreciation_rate: Mapped[Numeric | None] = mapped_column(Numeric(5, 2), nullable=True) # Percentage
     
-    custodian_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True)
-    document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
+    custodian_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
     
     custom_fields: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)

@@ -33,7 +33,7 @@ class Bucket(Base, TimestampMixin, TenantScopedMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Nullable so system buckets (e.g. "Audit Attachments") can be created during
     # an auditor's action, when there is no company user to attribute.
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
     visibility: Mapped[BucketVisibility] = mapped_column(
         SAEnum(BucketVisibility, name="bucket_visibility"),
         default=BucketVisibility.everyone,
@@ -68,15 +68,17 @@ class Document(Base, TimestampMixin, TenantScopedMixin):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("document_versions.id", use_alter=True, name="fk_documents_current_version_id"), nullable=True)
-    bucket_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("buckets.id"), nullable=True)
+    # SET NULL rather than CASCADE: a company purge deletes versions and documents
+    # in one statement, and this back-pointer must not dictate the order.
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("document_versions.id", use_alter=True, name="fk_documents_current_version_id", ondelete="SET NULL"), nullable=True)
+    bucket_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("buckets.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[DocumentStatus] = mapped_column(SAEnum(DocumentStatus, name="document_status"), default=DocumentStatus.uploaded, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     doc_type_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True) # Will point to DocumentType in later phases
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False)
     is_editable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Nullable for auditor-uploaded audit attachments (no company_users row for an auditor).
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
 
     versions = relationship("DocumentVersion", back_populates="document", foreign_keys="[DocumentVersion.document_id]")
 
@@ -85,7 +87,7 @@ class DocumentVersion(Base):
     __tablename__ = "document_versions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False, index=True)
+    document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -94,7 +96,7 @@ class DocumentVersion(Base):
     encrypted_dek: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     dek_nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     
-    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
 

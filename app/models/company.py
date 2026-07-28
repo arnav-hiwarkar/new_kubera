@@ -46,9 +46,10 @@ class Company(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
 
-    # --- Archival (soft delete). When set, the company is archived: every login is
-    # disabled and its name/admin email are freed for reuse, but the encrypted
-    # tenant data is retained (it is unrecoverable once archived anyway). ---
+    # --- Legacy archive marker. Nothing sets this any more — the operator delete is
+    # a hard purge (see account_admin.purge_company). Rows archived before that change
+    # keep the flag: logins stay blocked and the operator listing shows them as
+    # archived so they can be purged for real. ---
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -103,7 +104,7 @@ class CompanyUser(Base, TimestampMixin):
         nullable=False,
     )
     manager_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True
     )
     full_name: Mapped[str] = mapped_column(String(255), nullable=False, server_default="Unknown")
     designation: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -22,6 +22,6 @@ class SalesRecord(Base, TimestampMixin, TenantScopedMixin):
     status: Mapped[SalesStatus] = mapped_column(SAEnum(SalesStatus, name="sales_status"), default=SalesStatus.lead, nullable=False)
     closing_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
     
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="CASCADE"), nullable=False)
     
     custom_fields: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)

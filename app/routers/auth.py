@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 from sqlalchemy import select, func, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -87,15 +88,15 @@ async def initialize_company(
     """
     _require_internal_key(x_internal_api_key)
 
-    # Email uniqueness is enforced over LIVE accounts only (a soft-deleted or
-    # archived-company user's email is free to reuse).
+    # Email uniqueness is enforced over LIVE accounts only (a soft-deleted user's
+    # email is free to reuse; a purged company's user rows are gone entirely).
     existing = await db.execute(
         select(CompanyUser).where(
             func.lower(CompanyUser.email) == body.admin_email.strip().lower(),
             CompanyUser.deleted_at.is_(None),
         )
     )
-    if existing.scalar_one_or_none():
+    if existing.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
@@ -125,7 +126,17 @@ async def initialize_company(
         is_active=False,
     )
     db.add(user)
-    await db.flush()
+    # The pre-check above is a TOCTOU race, and a database still carrying the old
+    # global UNIQUE(email) constraint rejects a legitimately-freed email here —
+    # either way, report a conflict rather than a raw 500.
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
 
     # Activity log
     log = ActivityLog(
@@ -221,13 +232,17 @@ async def activate_company_admin(
         detail="Invalid or expired activation details",
     )
 
+    # Only live rows: an email is unique across live accounts only, so soft-deleted
+    # rows can share it. Without the filter this raises MultipleResultsFound (500)
+    # for any email that was ever reused.
     user = (
         await db.execute(
             select(CompanyUser).where(
-                func.lower(CompanyUser.email) == body.email.strip().lower()
+                func.lower(CompanyUser.email) == body.email.strip().lower(),
+                CompanyUser.deleted_at.is_(None),
             )
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
 
     # Must be a pending admin awaiting activation.
     if user is None or user.is_active or user.hashed_password != PENDING_PASSWORD:
@@ -321,12 +336,15 @@ async def delete_company(
     db: Annotated[AsyncSession, Depends(get_db)],
     x_internal_api_key: Annotated[str, Header()],
 ):
-    """Archive a company. Internal only.
+    """Permanently delete a company and everything it owns. Internal only.
 
-    Encrypted tenant data cannot be meaningfully deleted, so instead of a hard
-    cascade we archive: every company login is disabled and the company's name +
-    admin email are freed so a fresh company can reuse them. The on-disk encrypted
-    files are retained. Requires ``confirm_name`` to match the company name.
+    This is a hard delete, not an archive: the `companies` row is deleted and the
+    database cascade takes every tenant-owned row with it (users, documents and
+    their versions, engagements and audit data, compliance records, activity logs),
+    then the company's encrypted files are removed from disk. Afterwards a fresh
+    company can be created with the same name and the same admin email.
+
+    Requires ``confirm_name`` to match the company name. Irreversible.
     """
     _require_internal_key(x_internal_api_key)
 
@@ -342,11 +360,21 @@ async def delete_company(
             detail="confirm_name does not match the company name",
         )
 
-    try:
-        await account_admin.archive_company(db, company)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    paths = await account_admin.purge_company(db, company)
     await db.commit()
+
+    # Only after the delete has committed — a rolled-back transaction must never
+    # leave the rows in place with their files already gone.
+    vault_dir = Path(get_settings().VAULT_STORAGE_PATH) / str(company_id)
+    shutil.rmtree(vault_dir, ignore_errors=True)
+    for path in paths:
+        # Anything recorded outside this company's vault directory (older code paths).
+        try:
+            file = Path(path)
+            if vault_dir not in file.parents:
+                file.unlink(missing_ok=True)
+        except OSError:
+            pass
     return None
 
 
@@ -365,10 +393,15 @@ async def company_login(
         limit=settings.LOGIN_RATE_LIMIT,
         window_seconds=settings.LOGIN_RATE_WINDOW,
     )
+    # Case-insensitive and live-rows-only: creation lowercases the address but
+    # `users.create_user` stores it verbatim, and soft-deleted rows may share it.
     result = await db.execute(
-        select(CompanyUser).where(CompanyUser.email == body.email)
+        select(CompanyUser).where(
+            func.lower(CompanyUser.email) == body.email.strip().lower(),
+            CompanyUser.deleted_at.is_(None),
+        )
     )
-    user = result.scalar_one_or_none()
+    user = result.scalars().first()
     # Reject unknown users, wrong passwords, and pending/deactivated accounts
     # (a pending admin still has the "__pending__" placeholder, which never
     # verifies) — all with the same generic error.

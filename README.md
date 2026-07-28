@@ -274,7 +274,7 @@ uv run delete_user.py
 | Script | Purpose |
 |--------|---------|
 | `create_company.py`  | Create a company + admin (prints the activation key). |
-| `delete_company.py`  | **Archive** a company: disables all its logins, frees its name + admin email for reuse, retains encrypted data. |
+| `delete_company.py`  | **Permanently delete** a company: every user, document, file and audit record is destroyed, and the name + admin email are free to reuse from scratch. Irreversible. |
 | `list_companies.py`  | List companies. |
 | `list_users.py [filter]` | List users across companies (marks `DELETED` / `INACTIVE`). |
 

@@ -195,7 +195,7 @@ async def test_list_bad_key_403(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_archives_and_blocks_login(client: AsyncClient):
+async def test_delete_removes_company_and_blocks_login(client: AsyncClient):
     data = await create_test_company(client, name="Doomed Co", email="doom@co.com")
     cid = data["company"]["id"]
     token = await get_company_token(client, email="doom@co.com")
@@ -208,12 +208,11 @@ async def test_delete_archives_and_blocks_login(client: AsyncClient):
     )
     assert resp.status_code == 204
 
-    # Company is retained but marked archived (encrypted data is not destroyed).
+    # Hard delete: the company is gone from the listing entirely.
     listed = await client.get("/api/v1/auth/companies", headers=GOOD_KEY)
-    entry = next((c for c in listed.json() if c["id"] == cid), None)
-    assert entry is not None and entry["archived"] is True
+    assert all(c["id"] != cid for c in listed.json())
 
-    # Admin can no longer log in (all users deactivated + company archived).
+    # Its users are gone too, so nobody can log in.
     login = await client.post(
         "/api/v1/auth/company/login",
         json={"email": "doom@co.com", "password": "testpass123"},

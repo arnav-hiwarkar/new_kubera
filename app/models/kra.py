@@ -28,8 +28,8 @@ class KRAItem(Base, TimestampMixin, TenantScopedMixin):
     
     status: Mapped[KRAStatus] = mapped_column(SAEnum(KRAStatus, name="kra_status"), default=KRAStatus.draft, nullable=False)
     
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=False)
-    manager_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id"), nullable=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="CASCADE"), nullable=False)
+    manager_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
 
     employee_self_rating: Mapped[Numeric | None] = mapped_column(Numeric(5, 2), nullable=True)
     employee_comment: Mapped[str | None] = mapped_column(Text, nullable=True)

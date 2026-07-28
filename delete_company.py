@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Archive a company via the internal operator endpoint.
+"""Permanently delete a company via the internal operator endpoint.
 
-Archiving disables every login for the company and frees its name + admin email
-so a fresh company can reuse them; the encrypted tenant data is retained (it is
-unrecoverable once archived anyway). Reads DOMAIN and INTERNAL_API_KEY from the
-.env next to this script, shows the current companies, asks which one to archive,
-and requires you to retype its exact name as a safety rail before calling
+This is a hard delete. Everything the company owns is destroyed: its users,
+DocVault buckets/documents and the encrypted files on disk, audit engagements and
+entries, compliance records, assets, sales, KRAs and activity logs. Afterwards a
+brand-new company can be created with the same name and the same admin email.
+
+Reads DOMAIN and INTERNAL_API_KEY from the .env next to this script, shows the
+current companies, asks which one to delete, and requires you to retype its exact
+name and then type PURGE before calling
 ``DELETE {DOMAIN}/api/v1/auth/companies/{id}``.
 
 Usage:
@@ -79,11 +82,13 @@ def main():
 
     print(f"\nCompanies on {domain}:\n")
     for i, c in enumerate(companies, 1):
-        flag = "  [ARCHIVED]" if c.get("archived") else ""
+        # Legacy: companies archived before delete became a real purge. Deleting
+        # them for real is how their leftover rows finally go away.
+        flag = "  [ARCHIVED — purge to remove]" if c.get("archived") else ""
         print(f"  [{i}] {c.get('name')}  ({c.get('id')})  admin={c.get('admin_email')}{flag}")
     print()
 
-    choice = prompt("Number (or company id) to archive: ")
+    choice = prompt("Number (or company id) to delete: ")
     target = None
     if choice.isdigit() and 1 <= int(choice) <= len(companies):
         target = companies[int(choice) - 1]
@@ -93,13 +98,18 @@ def main():
         sys.exit("error: no matching company")
 
     name = target["name"]
-    if target.get("archived"):
-        sys.exit(f"'{name}' is already archived.")
-    print(f"\n⚠  This ARCHIVES '{name}': all its logins are disabled and its name + admin "
-          f"email are freed for reuse. Encrypted data is retained.")
-    typed = prompt(f"Retype the company name exactly to confirm: ")
+    print(f"\n⚠  This PERMANENTLY DELETES '{name}' and everything it owns:")
+    print("     • every user account in the company")
+    print("     • every DocVault bucket, document and encrypted file on disk")
+    print("     • every audit engagement, trial balance, entry, requirement and query")
+    print("     • compliance records, assets, sales, KRAs and activity logs")
+    print("   Auditor accounts themselves are kept (they may serve other companies).")
+    print("   This cannot be undone. The name + admin email become free to reuse.")
+    typed = prompt("Retype the company name exactly to confirm: ")
     if typed != name:
         sys.exit("error: name did not match — aborted")
+    if prompt("Type PURGE to delete it for good: ") != "PURGE":
+        sys.exit("aborted")
 
     body, status = curl([
         "-X", "DELETE", f"{domain}/api/v1/auth/companies/{target['id']}",
@@ -107,14 +117,14 @@ def main():
         "-d", json.dumps({"confirm_name": typed}),
     ])
     if status == "204":
-        print(f"\n✓ Archived '{name}'. Logins disabled; name + admin email freed for reuse.")
+        print(f"\n✓ Deleted '{name}' and all of its data. The name + admin email are free to reuse.")
     else:
         detail = body
         try:
             detail = json.loads(body).get("detail", body)
         except (json.JSONDecodeError, AttributeError):
             pass
-        sys.exit(f"error: archive failed (HTTP {status}): {detail}")
+        sys.exit(f"error: delete failed (HTTP {status}): {detail}")
 
 
 if __name__ == "__main__":

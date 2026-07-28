@@ -31,11 +31,15 @@ def prompt(label: str) -> str:
 
 async def run(email: str) -> None:
     async with async_session_factory() as db:
+        # Prefer the live row: only live accounts are unique on email, so previously
+        # soft-deleted rows can share the address.
         user = (
             await db.execute(
-                select(CompanyUser).where(func.lower(CompanyUser.email) == email.lower())
+                select(CompanyUser)
+                .where(func.lower(CompanyUser.email) == email.strip().lower())
+                .order_by(CompanyUser.deleted_at.asc().nulls_first())
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if user is None:
             sys.exit(f"error: no company user with email {email!r}")
 
