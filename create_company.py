@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Create a new company (operator/internal endpoint) via curl.
 
-Reads DOMAIN and INTERNAL_API_KEY from the .env file sitting next to this
-script, prompts for the company name and admin email, calls
-``POST {DOMAIN}/api/v1/auth/companies`` with the internal API key, and prints
-the one-shot activation key (shown exactly once) plus where to use it.
+Reads the API base URL (API_BASE_URL, else DOMAIN) and INTERNAL_API_KEY from the
+.env file sitting next to this script, prompts for the company name and admin
+email, calls ``POST {base}/api/v1/auth/companies`` with the internal API key, and
+prints the one-shot activation key (shown exactly once) plus where to use it.
 
 Usage:
     python3 create_company.py
@@ -36,6 +36,24 @@ def load_env(path):
     return env
 
 
+def api_base(env):
+    """Base URL for the internal API: API_BASE_URL if set, else DOMAIN.
+
+    On a local stack DOMAIN is `localhost`, where Caddy auto-upgrades http to https
+    using its own internal CA — curl then rejects the certificate (error 60). Set
+    API_BASE_URL=http://localhost:8000 to talk to the API's published port and skip
+    TLS entirely. The process environment wins over .env.
+    """
+    base = (os.environ.get("API_BASE_URL") or env.get("API_BASE_URL", "")).rstrip("/")
+    if not base:
+        base = env.get("DOMAIN", "").rstrip("/")
+    if not base:
+        sys.exit("error: neither API_BASE_URL nor DOMAIN is set in .env")
+    if not base.startswith(("http://", "https://")):
+        base = "http://" + base
+    return base
+
+
 def prompt(label):
     try:
         value = input(label).strip()
@@ -49,14 +67,15 @@ def prompt(label):
 def main():
     env = load_env(ENV_PATH)
 
-    domain = env.get("DOMAIN", "").rstrip("/")
+    domain = api_base(env)
+    # Where the admin actually opens the app. Always DOMAIN, never API_BASE_URL:
+    # that may point straight at the API port, which serves no frontend.
+    app_url = env.get("DOMAIN", "").rstrip("/") or domain
+    if not app_url.startswith(("http://", "https://")):
+        app_url = "http://" + app_url
     internal_key = env.get("INTERNAL_API_KEY", "")
-    if not domain:
-        sys.exit("error: DOMAIN is not set in .env")
     if not internal_key:
         sys.exit("error: INTERNAL_API_KEY is not set in .env")
-    if not domain.startswith(("http://", "https://")):
-        domain = "http://" + domain
 
     url = f"{domain}/api/v1/auth/companies"
 
@@ -108,7 +127,7 @@ def main():
     print(f"  ACTIVATION KEY: {data.get('activation_key')}")
     print(f"  Expires at    : {data.get('activation_expires_at')}")
     print("-" * 56)
-    print(f"  Activate here : {domain}/activate")
+    print(f"  Activate here : {app_url}/activate")
     print("  (The admin enters this key + the email above, then sets")
     print("   their own password. The key is shown only once.)")
     print("=" * 56 + "\n")

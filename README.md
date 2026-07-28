@@ -317,3 +317,4 @@ With the backend running:
 - **Port already in use (`5433`, `6379`, `8000`, `80`)** — another process/stack is using it; stop it or change the mapping in `docker-compose.yml`.
 - **Changed dependencies but they're not picked up** — rebuild: `docker compose up -d --build` (containers) or `uv sync` (local).
 - **Migrations didn't run** — check `docker compose logs api` for the `alembic upgrade head` output; run it manually with `docker compose exec api alembic upgrade head`.
+- On localhost: keep API_BASE_URL= to http://localhost:8000 and on deployed servers keep it unset

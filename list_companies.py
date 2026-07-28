@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """List all companies via the internal operator endpoint.
 
-Reads DOMAIN and INTERNAL_API_KEY from the .env next to this script and calls
-``GET {DOMAIN}/api/v1/auth/companies``.
+Reads the API base URL (API_BASE_URL, else DOMAIN) and INTERNAL_API_KEY from the
+.env next to this script and calls ``GET {base}/api/v1/auth/companies``.
 
 Usage:
     python3 list_companies.py
@@ -31,12 +31,21 @@ def load_env(path):
 
 
 def api_base(env):
-    domain = env.get("DOMAIN", "").rstrip("/")
-    if not domain:
-        sys.exit("error: DOMAIN is not set in .env")
-    if not domain.startswith(("http://", "https://")):
-        domain = "http://" + domain
-    return domain
+    """Base URL for the internal API: API_BASE_URL if set, else DOMAIN.
+
+    On a local stack DOMAIN is `localhost`, where Caddy auto-upgrades http to https
+    using its own internal CA — curl then rejects the certificate (error 60). Set
+    API_BASE_URL=http://localhost:8000 to talk to the API's published port and skip
+    TLS entirely. The process environment wins over .env.
+    """
+    base = (os.environ.get("API_BASE_URL") or env.get("API_BASE_URL", "")).rstrip("/")
+    if not base:
+        base = env.get("DOMAIN", "").rstrip("/")
+    if not base:
+        sys.exit("error: neither API_BASE_URL nor DOMAIN is set in .env")
+    if not base.startswith(("http://", "https://")):
+        base = "http://" + base
+    return base
 
 
 def main():
