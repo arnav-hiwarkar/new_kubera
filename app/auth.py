@@ -136,6 +136,27 @@ def require_role(*allowed_roles):
     return checker
 
 
+def require_module(module_id: str):
+    """Dependency factory: 403 unless the user has this module granted.
+
+    `accessible_modules` was historically enforced only in the browser
+    (ModuleGuard.tsx), which made it a UX affordance rather than a boundary.
+    Endpoints that rely on it for authorization must use this. Admins always pass.
+    """
+    from app.models.company import CompanyUser, UserRole
+
+    async def checker(user: CompanyUser = Depends(get_current_company_user)):
+        if user.role == UserRole.admin:
+            return user
+        if module_id not in (user.accessible_modules or []):
+            raise HTTPException(
+                status_code=403, detail=f"No access to the {module_id} module"
+            )
+        return user
+
+    return checker
+
+
 async def get_direct_report_ids(manager_id: uuid.UUID, db: AsyncSession) -> list[uuid.UUID]:
     """Return IDs of all direct reports for a manager."""
     from app.models.company import CompanyUser
@@ -158,3 +179,5 @@ async def get_visible_user_ids(user, db: AsyncSession) -> list[uuid.UUID] | None
 from app.models.company import UserRole
 require_admin = require_role(UserRole.admin)
 require_manager_or_admin = require_role(UserRole.admin, UserRole.manager)
+# Read access to the fixed-asset register and its master data.
+require_assets_module = require_module("assets")
