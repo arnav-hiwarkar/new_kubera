@@ -229,11 +229,23 @@ async def quick_add(body: AssetQuickAddRequest, current_user: Reader, db: Db):
         db,
         current_user.company_id,
         current_user.id,
-        "asset.created",
+        "asset_acquisition.created",
         "asset_acquisition",
         acquisition.id,
         {"quantity": body.quantity, "asset_name": body.asset_name},
     )
+    # Also log per unit, so each asset's own audit trail starts with its creation
+    # rather than beginning mid-story at the first edit.
+    for unit in units:
+        await log_activity(
+            db,
+            current_user.company_id,
+            current_user.id,
+            "asset.created",
+            "asset",
+            unit.id,
+            {"asset_code": unit.asset_code, "acquisition_id": str(acquisition.id)},
+        )
     await db.commit()
 
     return AssetQuickAddResponse(

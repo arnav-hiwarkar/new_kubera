@@ -892,6 +892,15 @@ async def test_lifecycle_transitions_are_written_to_the_activity_log(client: Asy
     entry = next(e for e in resp.json() if e["action"] == "asset.capitalized")
     assert entry["entity_id"] == str(asset_id)
 
+    # Each unit's own trail starts at its creation, so filtering to one asset does
+    # not begin mid-story at the first edit.
+    scoped = await client.get(f"/api/v1/activity-log?entity_id={asset_id}", headers=AH)
+    assert {e["action"] for e in scoped.json()} >= {
+        "asset.created",
+        "asset.submitted",
+        "asset.capitalized",
+    }
+
 
 @pytest.mark.asyncio
 async def test_warranty_expiry_is_derived(client: AsyncClient):

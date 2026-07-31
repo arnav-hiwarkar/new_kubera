@@ -33,3 +33,7 @@ htmlcov/
 # Celery beat runtime state
 celerybeat-schedule
 celerybeat-schedule.*
+
+# Local test/dev vault storage (encrypted upload fixtures)
+.tmp_vault/
+.vault_dev/

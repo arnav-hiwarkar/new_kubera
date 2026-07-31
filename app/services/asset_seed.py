@@ -125,6 +125,115 @@ CATEGORY_TREE = [
 ]
 
 
+def seed_global_asset_reference_data_sync(connection) -> dict:
+    """Same seed, over a plain (sync) Connection, for use from an Alembic migration.
+
+    Kept beside the async version so both read the IT_BLOCKS / CATEGORY_TREE
+    constants above — the data is defined once. Idempotent, so re-running an
+    upgrade after a statutory rate change corrects the rows in place.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import insert, update
+
+    blocks_table = ItAssetBlock.__table__
+    cats_table = AssetCategory.__table__
+
+    existing = connection.execute(
+        select(blocks_table.c.id, blocks_table.c.code).where(blocks_table.c.company_id.is_(None))
+    ).all()
+    block_ids = {code: bid for bid, code in existing}
+
+    for code, name, rate, klass, order in IT_BLOCKS:
+        values = {
+            "name": name,
+            "dep_rate": rate,
+            "block_class": klass.value,
+            "display_order": order,
+            "is_active": True,
+        }
+        if code in block_ids:
+            connection.execute(
+                update(blocks_table).where(blocks_table.c.id == block_ids[code]).values(**values)
+            )
+        else:
+            new_id = _uuid.uuid4()
+            connection.execute(
+                insert(blocks_table).values(id=new_id, company_id=None, code=code, **values)
+            )
+            block_ids[code] = new_id
+
+    rows = connection.execute(
+        select(cats_table.c.id, cats_table.c.name, cats_table.c.parent_id).where(
+            cats_table.c.company_id.is_(None)
+        )
+    ).all()
+    by_id = {r.id: r for r in rows}
+
+    def key_of(row):
+        parent = by_id.get(row.parent_id) if row.parent_id else None
+        return (parent.name if parent else None, row.name)
+
+    cat_ids = {key_of(r): r.id for r in rows}
+
+    parent_order = 0
+    for group in CATEGORY_TREE:
+        parent_order += 10
+        pkey = (None, group["name"])
+        pvalues = {
+            "tag_prefix": group["tag_prefix"],
+            "display_order": parent_order,
+            "is_active": True,
+            "applicable_field_groups": [],
+        }
+        if pkey in cat_ids:
+            connection.execute(
+                update(cats_table).where(cats_table.c.id == cat_ids[pkey]).values(**pvalues)
+            )
+        else:
+            pid = _uuid.uuid4()
+            connection.execute(
+                insert(cats_table).values(
+                    id=pid, company_id=None, parent_id=None, name=group["name"], **pvalues
+                )
+            )
+            cat_ids[pkey] = pid
+        parent_id = cat_ids[pkey]
+
+        child_order = 0
+        for name, life_years, block_code, itc, groups, ref in group["children"]:
+            child_order += 10
+            ckey = (group["name"], name)
+            cvalues = {
+                "parent_id": parent_id,
+                "default_useful_life_months": life_years * 12,
+                "default_dep_method": _SLM.value,
+                "default_residual_pct": _DEFAULT_RESIDUAL_PCT,
+                "default_it_block_id": block_ids[block_code],
+                "default_itc_treatment": itc.value if itc else None,
+                "tag_prefix": group["tag_prefix"],
+                "applicable_field_groups": list(groups),
+                "schedule_ii_reference": ref,
+                "display_order": parent_order + child_order,
+                "is_active": True,
+            }
+            if ckey in cat_ids:
+                connection.execute(
+                    update(cats_table).where(cats_table.c.id == cat_ids[ckey]).values(**cvalues)
+                )
+            else:
+                connection.execute(
+                    insert(cats_table).values(
+                        id=_uuid.uuid4(), company_id=None, name=name, **cvalues
+                    )
+                )
+
+    return {
+        "it_blocks": len(IT_BLOCKS),
+        "categories": sum(1 + len(g["children"]) for g in CATEGORY_TREE),
+    }
+
+
 async def seed_global_asset_reference_data(db: AsyncSession) -> dict:
     """Create or update the global IT blocks and Schedule II category tree.
 

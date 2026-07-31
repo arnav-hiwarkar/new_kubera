@@ -89,12 +89,15 @@ export interface paths {
         post?: never;
         /**
          * Delete Company
-         * @description Archive a company. Internal only.
+         * @description Permanently delete a company and everything it owns. Internal only.
          *
-         *     Encrypted tenant data cannot be meaningfully deleted, so instead of a hard
-         *     cascade we archive: every company login is disabled and the company's name +
-         *     admin email are freed so a fresh company can reuse them. The on-disk encrypted
-         *     files are retained. Requires ``confirm_name`` to match the company name.
+         *     This is a hard delete, not an archive: the `companies` row is deleted and the
+         *     database cascade takes every tenant-owned row with it (users, documents and
+         *     their versions, engagements and audit data, compliance records, activity logs),
+         *     then the company's encrypted files are removed from disk. Afterwards a fresh
+         *     company can be created with the same name and the same admin email.
+         *
+         *     Requires ``confirm_name`` to match the company name. Irreversible.
          */
         delete: operations["delete_company_api_v1_auth_companies__company_id__delete"];
         options?: never;
@@ -482,43 +485,130 @@ export interface paths {
         patch: operations["reactivate_custom_field_api_v1_custom_fields__module___field_id__reactivate_patch"];
         trace?: never;
     };
-    "/api/v1/assets": {
+    "/api/v1/asset-masters/it-blocks": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Assets */
-        get: operations["list_assets_api_v1_assets_get"];
+        /** List It Blocks */
+        get: operations["list_it_blocks_api_v1_asset_masters_it_blocks_get"];
         put?: never;
-        /** Create Asset */
-        post: operations["create_asset_api_v1_assets_post"];
+        /** Create It Block */
+        post: operations["create_it_block_api_v1_asset_masters_it_blocks_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/assets/{asset_id}": {
+    "/api/v1/asset-masters/categories": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Asset */
-        get: operations["get_asset_api_v1_assets__asset_id__get"];
+        /** List Categories */
+        get: operations["list_categories_api_v1_asset_masters_categories_get"];
+        put?: never;
+        /** Create Category */
+        post: operations["create_category_api_v1_asset_masters_categories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-masters/categories/{category_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update Asset */
-        patch: operations["update_asset_api_v1_assets__asset_id__patch"];
+        /** Update Category */
+        patch: operations["update_category_api_v1_asset_masters_categories__category_id__patch"];
         trace?: never;
     };
-    "/api/v1/assets/import/inspect": {
+    "/api/v1/asset-masters/suppliers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Suppliers */
+        get: operations["list_suppliers_api_v1_asset_masters_suppliers_get"];
+        put?: never;
+        /** Create Supplier */
+        post: operations["create_supplier_api_v1_asset_masters_suppliers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-masters/suppliers/{supplier_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Supplier */
+        patch: operations["update_supplier_api_v1_asset_masters_suppliers__supplier_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/asset-masters/lookups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Lookups */
+        get: operations["list_lookups_api_v1_asset_masters_lookups_get"];
+        put?: never;
+        /** Create Lookup */
+        post: operations["create_lookup_api_v1_asset_masters_lookups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-masters/lookups/{lookup_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Lookup */
+        patch: operations["update_lookup_api_v1_asset_masters_lookups__lookup_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/assets/quick-add": {
         parameters: {
             query?: never;
             header?: never;
@@ -528,18 +618,20 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Inspect Asset Import
-         * @description Return the uploaded spreadsheet's sheets/headers/preview so the client can
-         *     build the column-mapping step before calling /import with the same file.
+         * Quick Add
+         * @description Create a draft acquisition and explode it into `quantity` asset units.
+         *
+         *     Six fields in, a saved draft out. Everything else is enrichment on the detail
+         *     page — nothing here blocks on statutory data the user may not have yet.
          */
-        post: operations["inspect_asset_import_api_v1_assets_import_inspect_post"];
+        post: operations["quick_add_api_v1_assets_quick_add_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/assets/import": {
+    "/api/v1/assets/cost-preview": {
         parameters: {
             query?: never;
             header?: never;
@@ -548,8 +640,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Import Assets */
-        post: operations["import_assets_api_v1_assets_import_post"];
+        /**
+         * Cost Preview
+         * @description Server-authoritative costing for the live form, so the numbers the user sees
+         *     while typing are the numbers that will be stored.
+         */
+        post: operations["cost_preview_api_v1_assets_cost_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -565,6 +661,330 @@ export interface paths {
         };
         /** Export Assets */
         get: operations["export_assets_api_v1_assets_export_excel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Assets
+         * @description The register, whole. Scoped by company only — see the module docstring for
+         *     why this is not narrowed by custodian.
+         */
+        get: operations["list_assets_api_v1_assets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Asset
+         * @description Everything the tabbed detail page needs in one round trip, including the
+         *     checklist of what is blocking the next transition.
+         */
+        get: operations["get_asset_api_v1_assets__asset_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Draft Asset
+         * @description Drafts can be deleted outright. A capitalized asset never can — it leaves
+         *     the register through disposal (P2), which is an accounting event with a
+         *     profit-or-loss consequence, not a delete.
+         */
+        delete: operations["delete_draft_asset_api_v1_assets__asset_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Asset */
+        patch: operations["update_asset_api_v1_assets__asset_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/serials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assign Serials
+         * @description Fill per-unit serials (and optionally codes) for an exploded batch in one
+         *     call — the grid step that makes a 50-unit explode practical.
+         */
+        post: operations["assign_serials_api_v1_assets__asset_id__serials_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Asset
+         * @description draft -> ready. Fails with the full checklist rather than the first error.
+         */
+        post: operations["submit_asset_api_v1_assets__asset_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Asset
+         * @description ready -> capitalized. Admin or manager, and never your own asset unless you
+         *     are an admin — an unreviewed capitalized cost enters the depreciation base.
+         */
+        post: operations["approve_asset_api_v1_assets__asset_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Asset
+         * @description ready -> draft, so the submitter can fix it.
+         */
+        post: operations["reject_asset_api_v1_assets__asset_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-acquisitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Acquisitions */
+        get: operations["list_acquisitions_api_v1_asset_acquisitions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-acquisitions/{acq_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Acquisition */
+        get: operations["get_acquisition_api_v1_asset_acquisitions__acq_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Acquisition */
+        patch: operations["update_acquisition_api_v1_asset_acquisitions__acq_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/asset-acquisitions/{acq_id}/units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Acquisition Units */
+        get: operations["list_acquisition_units_api_v1_asset_acquisitions__acq_id__units_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-acquisitions/{acq_id}/explode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explode
+         * @description Re-create missing units for an acquisition (recovery path — normal creation
+         *     explodes automatically in quick-add).
+         */
+        post: operations["explode_api_v1_asset_acquisitions__acq_id__explode_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Asset Documents */
+        get: operations["list_asset_documents_api_v1_assets__asset_id__documents_get"];
+        put?: never;
+        /**
+         * Attach Asset Document
+         * @description Link a document that is already in DocVault.
+         */
+        post: operations["attach_asset_document_api_v1_assets__asset_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/documents/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Asset Document
+         * @description Upload straight from the asset page — no trip through DocVault first.
+         */
+        post: operations["upload_asset_document_api_v1_assets__asset_id__documents_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-acquisitions/{acq_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach Acquisition Document */
+        post: operations["attach_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-acquisitions/{acq_id}/documents/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Acquisition Document */
+        post: operations["upload_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-documents/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Detach Document
+         * @description Unlink from the asset. The underlying DocVault document is left alone — it
+         *     may be referenced elsewhere, and deleting audit evidence is not this endpoint's
+         *     job.
+         */
+        delete: operations["detach_document_api_v1_asset_documents__link_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-documents/{link_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Document
+         * @description Decrypt and stream an attached file so photographs can be displayed.
+         *
+         *     Vault files are AES-256-GCM encrypted with a per-file DEK, so there is no URL
+         *     a browser can load directly; this is the authenticated equivalent.
+         */
+        get: operations["stream_document_api_v1_asset_documents__link_id__thumbnail_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1657,6 +2077,222 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcquisitionResponse */
+        AcquisitionResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Supplier Id */
+            supplier_id: string | null;
+            /** Supplier Name Snapshot */
+            supplier_name_snapshot: string | null;
+            /** Supplier Gstin Snapshot */
+            supplier_gstin_snapshot: string | null;
+            /** Invoice Number */
+            invoice_number: string | null;
+            /** Invoice Date */
+            invoice_date: string | null;
+            /** Po Number */
+            po_number: string | null;
+            /** Purchase Date */
+            purchase_date: string | null;
+            /** Quantity */
+            quantity: number;
+            /** Unit Basic Price */
+            unit_basic_price: string | null;
+            discount_type: components["schemas"]["DiscountType"];
+            /** Discount Value */
+            discount_value: string | null;
+            /** Hsn Sac Code */
+            hsn_sac_code: string | null;
+            /** Gst Rate */
+            gst_rate: string | null;
+            /** Branch Id */
+            branch_id: string | null;
+            /** Place Of Supply State Code */
+            place_of_supply_state_code: string | null;
+            /** Cgst Amount */
+            cgst_amount: string | null;
+            /** Sgst Amount */
+            sgst_amount: string | null;
+            /** Igst Amount */
+            igst_amount: string | null;
+            /** Gst Amounts Overridden */
+            gst_amounts_overridden: boolean;
+            /** Gst Split Basis */
+            gst_split_basis: string | null;
+            itc_treatment: components["schemas"]["ItcTreatment"] | null;
+            /** Itc Eligible Pct */
+            itc_eligible_pct: string | null;
+            /** Freight Cost */
+            freight_cost: string | null;
+            /** Installation Cost */
+            installation_cost: string | null;
+            /** Other Capitalizable Cost */
+            other_capitalizable_cost: string | null;
+            /** Gross Basic Price */
+            gross_basic_price: string | null;
+            /** Discount Amount */
+            discount_amount: string | null;
+            /** Net Basic Price */
+            net_basic_price: string | null;
+            /** Total Gst */
+            total_gst: string | null;
+            /** Recoverable Gst */
+            recoverable_gst: string | null;
+            /** Capitalizable Gst */
+            capitalizable_gst: string | null;
+            /** Landed Cost */
+            landed_cost: string | null;
+            /** Total Acquisition Outlay */
+            total_acquisition_outlay: string | null;
+            /** Per Unit Cost */
+            per_unit_cost: string | null;
+            /** Is Imported */
+            is_imported: boolean;
+            /** Is Leased */
+            is_leased: boolean;
+            /** Grn Number */
+            grn_number: string | null;
+            /** Grn Date */
+            grn_date: string | null;
+            /** Delivery Challan Number */
+            delivery_challan_number: string | null;
+            /** Eway Bill Number */
+            eway_bill_number: string | null;
+            /** Irn */
+            irn: string | null;
+            /** Bill Of Entry Number */
+            bill_of_entry_number: string | null;
+            /** Bill Of Entry Date */
+            bill_of_entry_date: string | null;
+            /** Customs Duty */
+            customs_duty: string | null;
+            /** Foreign Currency */
+            foreign_currency: string | null;
+            /** Foreign Currency Value */
+            foreign_currency_value: string | null;
+            /** Exchange Rate */
+            exchange_rate: string | null;
+            /** Lease Type */
+            lease_type: string | null;
+            /** Lessor Name */
+            lessor_name: string | null;
+            /** Lease Start Date */
+            lease_start_date: string | null;
+            /** Lease End Date */
+            lease_end_date: string | null;
+            /** Lease Rental */
+            lease_rental: string | null;
+            /** Project Budget Reference */
+            project_budget_reference: string | null;
+            /** Remarks */
+            remarks: string | null;
+            /** Created By */
+            created_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** AcquisitionUpdate */
+        AcquisitionUpdate: {
+            /** Supplier Id */
+            supplier_id?: string | null;
+            /** Invoice Number */
+            invoice_number?: string | null;
+            /** Invoice Date */
+            invoice_date?: string | null;
+            /** Po Number */
+            po_number?: string | null;
+            /** Purchase Date */
+            purchase_date?: string | null;
+            /** Quantity */
+            quantity?: number | null;
+            /** Unit Basic Price */
+            unit_basic_price?: number | string | null;
+            discount_type?: components["schemas"]["DiscountType"] | null;
+            /** Discount Value */
+            discount_value?: number | string | null;
+            /** Hsn Sac Code */
+            hsn_sac_code?: string | null;
+            /** Gst Rate */
+            gst_rate?: number | string | null;
+            /** Branch Id */
+            branch_id?: string | null;
+            /** Place Of Supply State Code */
+            place_of_supply_state_code?: string | null;
+            /** Cgst Amount */
+            cgst_amount?: number | string | null;
+            /** Sgst Amount */
+            sgst_amount?: number | string | null;
+            /** Igst Amount */
+            igst_amount?: number | string | null;
+            /** Gst Amounts Overridden */
+            gst_amounts_overridden?: boolean | null;
+            itc_treatment?: components["schemas"]["ItcTreatment"] | null;
+            /** Itc Eligible Pct */
+            itc_eligible_pct?: number | string | null;
+            /** Freight Cost */
+            freight_cost?: number | string | null;
+            /** Installation Cost */
+            installation_cost?: number | string | null;
+            /** Other Capitalizable Cost */
+            other_capitalizable_cost?: number | string | null;
+            /** Is Imported */
+            is_imported?: boolean | null;
+            /** Is Leased */
+            is_leased?: boolean | null;
+            /** Grn Number */
+            grn_number?: string | null;
+            /** Grn Date */
+            grn_date?: string | null;
+            /** Delivery Challan Number */
+            delivery_challan_number?: string | null;
+            /** Eway Bill Number */
+            eway_bill_number?: string | null;
+            /** Irn */
+            irn?: string | null;
+            /** Bill Of Entry Number */
+            bill_of_entry_number?: string | null;
+            /** Bill Of Entry Date */
+            bill_of_entry_date?: string | null;
+            /** Customs Duty */
+            customs_duty?: number | string | null;
+            /** Foreign Currency */
+            foreign_currency?: string | null;
+            /** Foreign Currency Value */
+            foreign_currency_value?: number | string | null;
+            /** Exchange Rate */
+            exchange_rate?: number | string | null;
+            /** Lease Type */
+            lease_type?: string | null;
+            /** Lessor Name */
+            lessor_name?: string | null;
+            /** Lease Start Date */
+            lease_start_date?: string | null;
+            /** Lease End Date */
+            lease_end_date?: string | null;
+            /** Lease Rental */
+            lease_rental?: number | string | null;
+            /** Project Budget Reference */
+            project_budget_reference?: string | null;
+            /** Remarks */
+            remarks?: string | null;
+        };
         /**
          * ActivationRequest
          * @description Admin claims their account with the one-shot key and sets a password.
@@ -1710,39 +2346,311 @@ export interface components {
              */
             created_at: string;
         };
+        /** AssetCategoryCreate */
+        AssetCategoryCreate: {
+            /** Name */
+            name: string;
+            /** Code */
+            code?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Default Useful Life Months */
+            default_useful_life_months?: number | null;
+            default_dep_method?: components["schemas"]["DepreciationMethod"] | null;
+            /** Default Residual Pct */
+            default_residual_pct?: number | null;
+            /** Default It Block Id */
+            default_it_block_id?: string | null;
+            default_itc_treatment?: components["schemas"]["ItcTreatment"] | null;
+            /** Tag Prefix */
+            tag_prefix?: string | null;
+            /** Applicable Field Groups */
+            applicable_field_groups?: string[];
+            /** Schedule Ii Reference */
+            schedule_ii_reference?: string | null;
+            /**
+             * Display Order
+             * @default 0
+             */
+            display_order: number;
+        };
+        /** AssetCategoryResponse */
+        AssetCategoryResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Company Id */
+            company_id: string | null;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Name */
+            name: string;
+            /** Code */
+            code: string | null;
+            /** Default Useful Life Months */
+            default_useful_life_months: number | null;
+            default_dep_method: components["schemas"]["DepreciationMethod"] | null;
+            /** Default Residual Pct */
+            default_residual_pct: number | null;
+            /** Default It Block Id */
+            default_it_block_id: string | null;
+            /** Default It Block Code */
+            default_it_block_code?: string | null;
+            /** Default It Block Rate */
+            default_it_block_rate?: number | null;
+            default_itc_treatment: components["schemas"]["ItcTreatment"] | null;
+            /** Tag Prefix */
+            tag_prefix: string | null;
+            /** Applicable Field Groups */
+            applicable_field_groups?: string[];
+            /** Schedule Ii Reference */
+            schedule_ii_reference: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Display Order */
+            display_order: number;
+        };
+        /** AssetCategoryUpdate */
+        AssetCategoryUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Code */
+            code?: string | null;
+            /** Default Useful Life Months */
+            default_useful_life_months?: number | null;
+            default_dep_method?: components["schemas"]["DepreciationMethod"] | null;
+            /** Default Residual Pct */
+            default_residual_pct?: number | null;
+            /** Default It Block Id */
+            default_it_block_id?: string | null;
+            default_itc_treatment?: components["schemas"]["ItcTreatment"] | null;
+            /** Tag Prefix */
+            tag_prefix?: string | null;
+            /** Applicable Field Groups */
+            applicable_field_groups?: string[] | null;
+            /** Schedule Ii Reference */
+            schedule_ii_reference?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Display Order */
+            display_order?: number | null;
+        };
         /**
-         * AssetCategory
+         * AssetCondition
          * @enum {string}
          */
-        AssetCategory: "hardware" | "software" | "furniture" | "vehicle" | "other";
-        /** AssetCreate */
-        AssetCreate: {
-            /** Asset Name */
-            asset_name: string;
-            /** Serial Number */
-            serial_number?: string | null;
-            category: components["schemas"]["AssetCategory"];
-            /** @default active */
-            status: components["schemas"]["AssetStatus"];
-            /** Purchase Date */
-            purchase_date?: string | null;
-            /** Purchase Cost */
-            purchase_cost?: number | null;
-            /** Depreciation Rate */
-            depreciation_rate?: number | null;
-            /** Custodian Id */
-            custodian_id?: string | null;
-            /** Document Id */
-            document_id?: string | null;
-            /** Custom Fields */
-            custom_fields?: {
-                [key: string]: unknown;
+        AssetCondition: "new" | "good" | "fair" | "poor" | "unusable";
+        /**
+         * AssetDetailResponse
+         * @description What the tabbed detail page loads in one request.
+         */
+        AssetDetailResponse: {
+            asset: components["schemas"]["AssetResponse"];
+            acquisition: components["schemas"]["AcquisitionResponse"] | null;
+            /** Siblings */
+            siblings?: components["schemas"]["AssetSibling"][];
+            /** Documents */
+            documents?: components["schemas"]["AssetDocumentResponse"][];
+            /** Applicable Field Groups */
+            applicable_field_groups?: string[];
+            /** Blocking Issues */
+            blocking_issues?: components["schemas"]["ValidationIssueResponse"][];
+            /** Completeness By Tab */
+            completeness_by_tab?: {
+                [key: string]: number;
             };
         };
-        /** AssetImportInspectResponse */
-        AssetImportInspectResponse: {
-            /** Sheets */
-            sheets: components["schemas"]["AssetSheetInfo"][];
+        /**
+         * AssetDocRole
+         * @description What an attached file is. Invoice/PO/GRN/e-way/approval attach at the
+         *     acquisition level and are shared by every unit; the rest are per unit.
+         * @enum {string}
+         */
+        AssetDocRole: "invoice" | "purchase_order" | "grn" | "eway_bill" | "approval" | "asset_photo" | "serial_photo" | "warranty" | "insurance" | "amc" | "test_certificate" | "manual" | "customs" | "lease" | "other";
+        /** AssetDocumentAttach */
+        AssetDocumentAttach: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            doc_role: components["schemas"]["AssetDocRole"];
+            /** Note */
+            note?: string | null;
+        };
+        /** AssetDocumentResponse */
+        AssetDocumentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Asset Id */
+            asset_id: string | null;
+            /** Acquisition Id */
+            acquisition_id: string | null;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            doc_role: components["schemas"]["AssetDocRole"];
+            /** Note */
+            note: string | null;
+            /** Uploaded By */
+            uploaded_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Title */
+            title?: string | null;
+            /** Original Filename */
+            original_filename?: string | null;
+            /** Mime Type */
+            mime_type?: string | null;
+            /** Size Bytes */
+            size_bytes?: number | null;
+        };
+        /**
+         * AssetLifecycleStatus
+         * @description Drives required-field validation and the depreciation engine.
+         *
+         *     draft       — freely editable, minimal validation, does not depreciate
+         *     ready       — complete and submitted for approval
+         *     capitalized — approved and on the books; cost is locked, depreciation runs
+         *     disposed    — sold / scrapped / written off (P2)
+         * @enum {string}
+         */
+        AssetLifecycleStatus: "draft" | "ready" | "capitalized" | "disposed";
+        /** AssetLookupCreate */
+        AssetLookupCreate: {
+            kind: components["schemas"]["AssetLookupKind"];
+            /** Name */
+            name: string;
+            /** Code */
+            code?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Gstin */
+            gstin?: string | null;
+            /** State */
+            state?: string | null;
+            /**
+             * Display Order
+             * @default 0
+             */
+            display_order: number;
+        };
+        /**
+         * AssetLookupKind
+         * @description Company-defined dimension values. Deliberately excludes condition: that is
+         *     a small closed ordinal scale (AssetCondition) that reports and physical
+         *     verification need to sort on, so it is an enum rather than free-form data.
+         * @enum {string}
+         */
+        AssetLookupKind: "branch" | "cost_centre" | "department" | "location";
+        /** AssetLookupResponse */
+        AssetLookupResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            kind: components["schemas"]["AssetLookupKind"];
+            /** Name */
+            name: string;
+            /** Code */
+            code: string | null;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Gstin */
+            gstin: string | null;
+            /** State Code */
+            state_code: string | null;
+            /** State */
+            state: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Display Order */
+            display_order: number;
+        };
+        /** AssetLookupUpdate */
+        AssetLookupUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Code */
+            code?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Gstin */
+            gstin?: string | null;
+            /** State */
+            state?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Display Order */
+            display_order?: number | null;
+        };
+        /**
+         * AssetOperationalStatus
+         * @description Where the asset is in its working life — orthogonal to lifecycle_status.
+         * @enum {string}
+         */
+        AssetOperationalStatus: "in_use" | "idle" | "under_maintenance" | "in_storage";
+        /**
+         * AssetQuickAddRequest
+         * @description The six-field create form. Everything else is enrichment.
+         *
+         *     quantity > 1 explodes into that many individually tagged asset units sharing
+         *     one acquisition.
+         */
+        AssetQuickAddRequest: {
+            /** Asset Name */
+            asset_name: string;
+            /**
+             * Category Id
+             * Format: uuid
+             */
+            category_id: string;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
+            /** Unit Basic Price */
+            unit_basic_price?: number | string | null;
+            /** Supplier Id */
+            supplier_id?: string | null;
+            /** Purchase Date */
+            purchase_date?: string | null;
+            /** Branch Id */
+            branch_id?: string | null;
+        };
+        /** AssetQuickAddResponse */
+        AssetQuickAddResponse: {
+            /**
+             * Acquisition Id
+             * Format: uuid
+             */
+            acquisition_id: string;
+            /** Asset Ids */
+            asset_ids: string[];
+            /**
+             * First Asset Id
+             * Format: uuid
+             */
+            first_asset_id: string;
+            /** Quantity */
+            quantity: number;
         };
         /** AssetResponse */
         AssetResponse: {
@@ -1756,26 +2664,108 @@ export interface components {
              * Format: uuid
              */
             company_id: string;
+            /** Acquisition Id */
+            acquisition_id: string | null;
+            /** Unit Index */
+            unit_index: number;
+            /** Asset Code */
+            asset_code: string | null;
             /** Asset Name */
             asset_name: string;
-            /** Serial Number */
-            serial_number: string | null;
-            category: components["schemas"]["AssetCategory"];
-            status: components["schemas"]["AssetStatus"];
-            /** Purchase Date */
-            purchase_date: string | null;
-            /** Purchase Cost */
-            purchase_cost: number | null;
-            /** Depreciation Rate */
-            depreciation_rate: number | null;
+            /** Category Id */
+            category_id: string | null;
+            /** Description */
+            description: string | null;
+            /** Manufacturer */
+            manufacturer: string | null;
+            /** Manufacturer Contact */
+            manufacturer_contact: string | null;
+            /** Brand Model */
+            brand_model: string | null;
+            /** Manufacturer Serial Number */
+            manufacturer_serial_number: string | null;
+            lifecycle_status: components["schemas"]["AssetLifecycleStatus"];
+            operational_status: components["schemas"]["AssetOperationalStatus"] | null;
+            condition: components["schemas"]["AssetCondition"] | null;
+            /** Branch Id */
+            branch_id: string | null;
+            /** Cost Centre Id */
+            cost_centre_id: string | null;
+            /** Department Id */
+            department_id: string | null;
+            /** Location Id */
+            location_id: string | null;
             /** Custodian Id */
             custodian_id: string | null;
-            /** Document Id */
-            document_id: string | null;
+            /** Custodian Name */
+            custodian_name: string | null;
+            /** Custodian Employee Code */
+            custodian_employee_code: string | null;
+            /** Available For Use Date */
+            available_for_use_date: string | null;
+            /** Capitalization Date */
+            capitalization_date: string | null;
+            /** Warranty Start Date */
+            warranty_start_date: string | null;
+            /** Warranty Months */
+            warranty_months: number | null;
+            /** Warranty Expiry Date */
+            warranty_expiry_date: string | null;
+            /** Useful Life Months */
+            useful_life_months: number | null;
+            dep_method: components["schemas"]["DepreciationMethod"] | null;
+            /** Residual Pct */
+            residual_pct: string | null;
+            /** Residual Value */
+            residual_value: string | null;
+            /** Useful Life Override Reason */
+            useful_life_override_reason: string | null;
+            /** It Block Id */
+            it_block_id: string | null;
+            /** It Dep Rate */
+            it_dep_rate: string | null;
+            /** It Put To Use Date */
+            it_put_to_use_date: string | null;
+            /** Original Cost */
+            original_cost: string | null;
+            /** Is Pre Cutover */
+            is_pre_cutover: boolean;
+            /** Opening Accumulated Depreciation */
+            opening_accumulated_depreciation: string | null;
+            /** Opening Wdv */
+            opening_wdv: string | null;
+            /** Opening It Wdv */
+            opening_it_wdv: string | null;
+            /** Registration Number */
+            registration_number: string | null;
+            /** Engine Number */
+            engine_number: string | null;
+            /** Chassis Number */
+            chassis_number: string | null;
+            /** Imei */
+            imei: string | null;
+            /** Mac Address */
+            mac_address: string | null;
+            /** Technical Specs */
+            technical_specs: string | null;
+            /** Remarks */
+            remarks: string | null;
+            /** Parent Asset Id */
+            parent_asset_id: string | null;
             /** Custom Fields */
-            custom_fields: {
+            custom_fields?: {
                 [key: string]: unknown;
             };
+            /** Created By */
+            created_by: string | null;
+            /** Submitted By */
+            submitted_by: string | null;
+            /** Submitted At */
+            submitted_at: string | null;
+            /** Approved By */
+            approved_by: string | null;
+            /** Approved At */
+            approved_at: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1787,38 +2777,100 @@ export interface components {
              */
             updated_at: string;
         };
-        /** AssetSheetInfo */
-        AssetSheetInfo: {
-            /** Name */
-            name: string;
-            /** Headers */
-            headers: string[];
-            /** Preview Rows */
-            preview_rows: unknown[][];
+        /** AssetSibling */
+        AssetSibling: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Unit Index */
+            unit_index: number;
+            /** Asset Code */
+            asset_code: string | null;
+            lifecycle_status: components["schemas"]["AssetLifecycleStatus"];
+            /** Manufacturer Serial Number */
+            manufacturer_serial_number: string | null;
         };
-        /**
-         * AssetStatus
-         * @enum {string}
-         */
-        AssetStatus: "active" | "maintenance" | "retired";
         /** AssetUpdate */
         AssetUpdate: {
+            /** Asset Code */
+            asset_code?: string | null;
             /** Asset Name */
             asset_name?: string | null;
-            /** Serial Number */
-            serial_number?: string | null;
-            category?: components["schemas"]["AssetCategory"] | null;
-            status?: components["schemas"]["AssetStatus"] | null;
-            /** Purchase Date */
-            purchase_date?: string | null;
-            /** Purchase Cost */
-            purchase_cost?: number | null;
-            /** Depreciation Rate */
-            depreciation_rate?: number | null;
+            /** Category Id */
+            category_id?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Manufacturer */
+            manufacturer?: string | null;
+            /** Manufacturer Contact */
+            manufacturer_contact?: string | null;
+            /** Brand Model */
+            brand_model?: string | null;
+            /** Manufacturer Serial Number */
+            manufacturer_serial_number?: string | null;
+            operational_status?: components["schemas"]["AssetOperationalStatus"] | null;
+            condition?: components["schemas"]["AssetCondition"] | null;
+            /** Branch Id */
+            branch_id?: string | null;
+            /** Cost Centre Id */
+            cost_centre_id?: string | null;
+            /** Department Id */
+            department_id?: string | null;
+            /** Location Id */
+            location_id?: string | null;
             /** Custodian Id */
             custodian_id?: string | null;
-            /** Document Id */
-            document_id?: string | null;
+            /** Custodian Name */
+            custodian_name?: string | null;
+            /** Custodian Employee Code */
+            custodian_employee_code?: string | null;
+            /** Available For Use Date */
+            available_for_use_date?: string | null;
+            /** Capitalization Date */
+            capitalization_date?: string | null;
+            /** Warranty Start Date */
+            warranty_start_date?: string | null;
+            /** Warranty Months */
+            warranty_months?: number | null;
+            /** Useful Life Months */
+            useful_life_months?: number | null;
+            dep_method?: components["schemas"]["DepreciationMethod"] | null;
+            /** Residual Pct */
+            residual_pct?: number | string | null;
+            /** Useful Life Override Reason */
+            useful_life_override_reason?: string | null;
+            /** It Block Id */
+            it_block_id?: string | null;
+            /** It Dep Rate */
+            it_dep_rate?: number | string | null;
+            /** It Put To Use Date */
+            it_put_to_use_date?: string | null;
+            /** Is Pre Cutover */
+            is_pre_cutover?: boolean | null;
+            /** Opening Accumulated Depreciation */
+            opening_accumulated_depreciation?: number | string | null;
+            /** Opening Wdv */
+            opening_wdv?: number | string | null;
+            /** Opening It Wdv */
+            opening_it_wdv?: number | string | null;
+            /** Registration Number */
+            registration_number?: string | null;
+            /** Engine Number */
+            engine_number?: string | null;
+            /** Chassis Number */
+            chassis_number?: string | null;
+            /** Imei */
+            imei?: string | null;
+            /** Mac Address */
+            mac_address?: string | null;
+            /** Technical Specs */
+            technical_specs?: string | null;
+            /** Remarks */
+            remarks?: string | null;
+            /** Parent Asset Id */
+            parent_asset_id?: string | null;
             /** Custom Fields */
             custom_fields?: {
                 [key: string]: unknown;
@@ -2003,16 +3055,6 @@ export interface components {
             /** File */
             file?: string | null;
         };
-        /** Body_import_assets_api_v1_assets_import_post */
-        Body_import_assets_api_v1_assets_import_post: {
-            /**
-             * File
-             * Format: binary
-             */
-            file: string;
-            /** Mappings */
-            mappings: string;
-        };
         /** Body_import_sales_api_v1_sales_import_post */
         Body_import_sales_api_v1_sales_import_post: {
             /**
@@ -2035,14 +3077,6 @@ export interface components {
             /** Sheet */
             sheet?: string | null;
         };
-        /** Body_inspect_asset_import_api_v1_assets_import_inspect_post */
-        Body_inspect_asset_import_api_v1_assets_import_inspect_post: {
-            /**
-             * File
-             * Format: binary
-             */
-            file: string;
-        };
         /** Body_inspect_sales_import_api_v1_sales_import_inspect_post */
         Body_inspect_sales_import_api_v1_sales_import_inspect_post: {
             /**
@@ -2058,6 +3092,32 @@ export interface components {
              * Format: binary
              */
             file: string;
+        };
+        /** Body_upload_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_upload_post */
+        Body_upload_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_upload_post: {
+            doc_role: components["schemas"]["AssetDocRole"];
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Title */
+            title?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /** Body_upload_asset_document_api_v1_assets__asset_id__documents_upload_post */
+        Body_upload_asset_document_api_v1_assets__asset_id__documents_upload_post: {
+            doc_role: components["schemas"]["AssetDocRole"];
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Title */
+            title?: string | null;
+            /** Note */
+            note?: string | null;
         };
         /** Body_upload_document_api_v1_docvault_documents_post */
         Body_upload_document_api_v1_docvault_documents_post: {
@@ -2160,6 +3220,14 @@ export interface components {
              * Format: uuid
              */
             group_id: string;
+        };
+        /**
+         * BulkSerialRequest
+         * @description Per-unit serials for an exploded batch, filled from a grid.
+         */
+        BulkSerialRequest: {
+            /** Assignments */
+            assignments: components["schemas"]["SerialAssignment"][];
         };
         /**
          * CompanyDeleteRequest
@@ -2384,6 +3452,89 @@ export interface components {
          * @enum {string}
          */
         ComplianceDomain: "secretarial" | "roc";
+        /** CostPreviewRequest */
+        CostPreviewRequest: {
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
+            /**
+             * Unit Basic Price
+             * @default 0
+             */
+            unit_basic_price: number | string;
+            /** @default amount */
+            discount_type: components["schemas"]["DiscountType"];
+            /**
+             * Discount Value
+             * @default 0
+             */
+            discount_value: number | string;
+            /**
+             * Gst Rate
+             * @default 0
+             */
+            gst_rate: number | string;
+            /** Supplier Id */
+            supplier_id?: string | null;
+            /** Branch Id */
+            branch_id?: string | null;
+            /** @default eligible */
+            itc_treatment: components["schemas"]["ItcTreatment"];
+            /** Itc Eligible Pct */
+            itc_eligible_pct?: number | string | null;
+            /**
+             * Freight Cost
+             * @default 0
+             */
+            freight_cost: number | string;
+            /**
+             * Installation Cost
+             * @default 0
+             */
+            installation_cost: number | string;
+            /**
+             * Other Capitalizable Cost
+             * @default 0
+             */
+            other_capitalizable_cost: number | string;
+            /** Cgst Amount Override */
+            cgst_amount_override?: number | string | null;
+            /** Sgst Amount Override */
+            sgst_amount_override?: number | string | null;
+            /** Igst Amount Override */
+            igst_amount_override?: number | string | null;
+        };
+        /** CostPreviewResponse */
+        CostPreviewResponse: {
+            /** Gross Basic Price */
+            gross_basic_price: string;
+            /** Discount Amount */
+            discount_amount: string;
+            /** Net Basic Price */
+            net_basic_price: string;
+            /** Gst Split Basis */
+            gst_split_basis: string;
+            /** Cgst Amount */
+            cgst_amount: string;
+            /** Sgst Amount */
+            sgst_amount: string;
+            /** Igst Amount */
+            igst_amount: string;
+            /** Total Gst */
+            total_gst: string;
+            /** Recoverable Gst */
+            recoverable_gst: string;
+            /** Capitalizable Gst */
+            capitalizable_gst: string;
+            /** Landed Cost */
+            landed_cost: string;
+            /** Total Acquisition Outlay */
+            total_acquisition_outlay: string;
+            /** Per Unit Cost */
+            per_unit_cost: string;
+        };
         /** CustomFieldCreate */
         CustomFieldCreate: {
             /** Field Name */
@@ -2462,6 +3613,16 @@ export interface components {
             /** Display Order */
             display_order?: number | null;
         };
+        /**
+         * DepreciationMethod
+         * @enum {string}
+         */
+        DepreciationMethod: "slm" | "wdv";
+        /**
+         * DiscountType
+         * @enum {string}
+         */
+        DiscountType: "amount" | "percent";
         /** DocumentResponse */
         DocumentResponse: {
             /**
@@ -2626,6 +3787,56 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** ItAssetBlockCreate */
+        ItAssetBlockCreate: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Dep Rate */
+            dep_rate: number;
+            block_class: components["schemas"]["ItBlockClass"];
+            /**
+             * Display Order
+             * @default 0
+             */
+            display_order: number;
+        };
+        /** ItAssetBlockResponse */
+        ItAssetBlockResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Company Id */
+            company_id: string | null;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Dep Rate */
+            dep_rate: number;
+            block_class: components["schemas"]["ItBlockClass"];
+            /** Is Active */
+            is_active: boolean;
+            /** Display Order */
+            display_order: number;
+        };
+        /**
+         * ItBlockClass
+         * @description Appendix I groupings, used to order the block-wise tax summary.
+         * @enum {string}
+         */
+        ItBlockClass: "building" | "furniture" | "plant_machinery" | "intangible";
+        /**
+         * ItcTreatment
+         * @description Input Tax Credit treatment. Drives whether GST is capitalized into the
+         *     depreciation base: eligible GST is recoverable and excluded from cost;
+         *     blocked GST (Sec 17(5)) is capitalized; partial splits by eligible %.
+         * @enum {string}
+         */
+        ItcTreatment: "eligible" | "blocked" | "partial";
         /** KRACreate */
         KRACreate: {
             /** Title */
@@ -3242,6 +4453,120 @@ export interface components {
          * @enum {string}
          */
         SenderType: "company_user" | "auditor";
+        /** SerialAssignment */
+        SerialAssignment: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Manufacturer Serial Number */
+            manufacturer_serial_number?: string | null;
+            /** Asset Code */
+            asset_code?: string | null;
+        };
+        /** SupplierCreate */
+        SupplierCreate: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Gstin */
+            gstin?: string | null;
+            /** State */
+            state?: string | null;
+            /** Pan */
+            pan?: string | null;
+            /** Contact Person */
+            contact_person?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Address Line1 */
+            address_line1?: string | null;
+            /** Address Line2 */
+            address_line2?: string | null;
+            /** City */
+            city?: string | null;
+            /** Pincode */
+            pincode?: string | null;
+        };
+        /** SupplierResponse */
+        SupplierResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Gstin */
+            gstin: string | null;
+            /** State Code */
+            state_code: string | null;
+            /** State */
+            state: string | null;
+            /** Pan */
+            pan: string | null;
+            /** Contact Person */
+            contact_person: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Email */
+            email: string | null;
+            /** Address Line1 */
+            address_line1: string | null;
+            /** Address Line2 */
+            address_line2: string | null;
+            /** City */
+            city: string | null;
+            /** Pincode */
+            pincode: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** SupplierUpdate */
+        SupplierUpdate: {
+            /** Code */
+            code?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Gstin */
+            gstin?: string | null;
+            /** State */
+            state?: string | null;
+            /** Pan */
+            pan?: string | null;
+            /** Contact Person */
+            contact_person?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Address Line1 */
+            address_line1?: string | null;
+            /** Address Line2 */
+            address_line2?: string | null;
+            /** City */
+            city?: string | null;
+            /** Pincode */
+            pincode?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+        };
         /** TBImportResult */
         TBImportResult: {
             /** Imported */
@@ -3290,6 +4615,22 @@ export interface components {
             role?: string | null;
             /** Full Name */
             full_name?: string | null;
+        };
+        /** TransitionRequest */
+        TransitionRequest: {
+            /** Note */
+            note?: string | null;
+            /**
+             * Apply To Siblings
+             * @default false
+             */
+            apply_to_siblings: boolean;
+        };
+        /** TransitionResponse */
+        TransitionResponse: {
+            /** Updated */
+            updated: string[];
+            lifecycle_status: components["schemas"]["AssetLifecycleStatus"];
         };
         /** TrialBalanceAccountResponse */
         TrialBalanceAccountResponse: {
@@ -3443,6 +4784,19 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** ValidationIssueResponse */
+        ValidationIssueResponse: {
+            /** Field */
+            field: string;
+            /** Label */
+            label: string;
+            /** Tab */
+            tab: string;
+            /** Kind */
+            kind: string;
+            /** Message */
+            message?: string | null;
         };
     };
     responses: never;
@@ -4347,11 +5701,455 @@ export interface operations {
             };
         };
     };
+    list_it_blocks_api_v1_asset_masters_it_blocks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItAssetBlockResponse"][];
+                };
+            };
+        };
+    };
+    create_it_block_api_v1_asset_masters_it_blocks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItAssetBlockCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItAssetBlockResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_categories_api_v1_asset_masters_categories_get: {
+        parameters: {
+            query?: {
+                include_inactive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetCategoryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_category_api_v1_asset_masters_categories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetCategoryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetCategoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_category_api_v1_asset_masters_categories__category_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                category_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetCategoryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetCategoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_suppliers_api_v1_asset_masters_suppliers_get: {
+        parameters: {
+            query?: {
+                include_inactive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_supplier_api_v1_asset_masters_suppliers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplierCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_supplier_api_v1_asset_masters_suppliers__supplier_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                supplier_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplierUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_lookups_api_v1_asset_masters_lookups_get: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["AssetLookupKind"] | null;
+                include_inactive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetLookupResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_lookup_api_v1_asset_masters_lookups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetLookupCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetLookupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_lookup_api_v1_asset_masters_lookups__lookup_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lookup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetLookupUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetLookupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    quick_add_api_v1_assets_quick_add_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetQuickAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetQuickAddResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cost_preview_api_v1_assets_cost_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_assets_api_v1_assets_export_excel_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_assets_api_v1_assets_get: {
         parameters: {
             query?: {
-                category?: components["schemas"]["AssetCategory"] | null;
-                status?: components["schemas"]["AssetStatus"] | null;
+                lifecycle_status?: components["schemas"]["AssetLifecycleStatus"] | null;
+                operational_status?: components["schemas"]["AssetOperationalStatus"] | null;
+                condition?: components["schemas"]["AssetCondition"] | null;
+                category_id?: string | null;
+                location_id?: string | null;
+                branch_id?: string | null;
+                custodian_id?: string | null;
+                acquisition_id?: string | null;
+                search?: string | null;
             };
             header?: never;
             path?: never;
@@ -4366,39 +6164,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_asset_api_v1_assets_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AssetCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AssetResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4429,8 +6194,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AssetResponse"];
+                    "application/json": components["schemas"]["AssetDetailResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_draft_asset_api_v1_assets__asset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -4478,16 +6272,18 @@ export interface operations {
             };
         };
     };
-    inspect_asset_import_api_v1_assets_import_inspect_post: {
+    assign_serials_api_v1_assets__asset_id__serials_post: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                asset_id: string;
+            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_inspect_asset_import_api_v1_assets_import_inspect_post"];
+                "application/json": components["schemas"]["BulkSerialRequest"];
             };
         };
         responses: {
@@ -4497,7 +6293,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AssetImportInspectResponse"];
+                    "application/json": components["schemas"]["AssetResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -4511,16 +6307,18 @@ export interface operations {
             };
         };
     };
-    import_assets_api_v1_assets_import_post: {
+    submit_asset_api_v1_assets__asset_id__submit_post: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                asset_id: string;
+            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_import_assets_api_v1_assets_import_post"];
+                "application/json": components["schemas"]["TransitionRequest"];
             };
         };
         responses: {
@@ -4530,7 +6328,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ImportResult"];
+                    "application/json": components["schemas"]["TransitionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4544,9 +6342,81 @@ export interface operations {
             };
         };
     };
-    export_assets_api_v1_assets_export_excel_get: {
+    approve_asset_api_v1_assets__asset_id__approve_post: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_asset_api_v1_assets__asset_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_acquisitions_api_v1_asset_acquisitions_get: {
+        parameters: {
+            query?: {
+                supplier_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4559,7 +6429,375 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["AcquisitionResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_acquisition_api_v1_asset_acquisitions__acq_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                acq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_acquisition_api_v1_asset_acquisitions__acq_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                acq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcquisitionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_acquisition_units_api_v1_asset_acquisitions__acq_id__units_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                acq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explode_api_v1_asset_acquisitions__acq_id__explode_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                acq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_asset_documents_api_v1_assets__asset_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDocumentResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_asset_document_api_v1_assets__asset_id__documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetDocumentAttach"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_asset_document_api_v1_assets__asset_id__documents_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_asset_document_api_v1_assets__asset_id__documents_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                acq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetDocumentAttach"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                acq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detach_document_api_v1_asset_documents__link_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_document_api_v1_asset_documents__link_id__thumbnail_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -1,84 +1,96 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Laptop, Boxes, IndianRupee, Filter } from 'lucide-react'
-import { PageHeader, Button, DataTable, StatusBadge, StatCard, Select, useToast, type Column } from '@/components/ui'
+import { useNavigate } from 'react-router-dom'
+import { Boxes, IndianRupee, Landmark, Laptop, Settings2 } from 'lucide-react'
+import {
+  Button,
+  DataTable,
+  PageHeader,
+  Select,
+  StatCard,
+  StatusBadge,
+  Tabs,
+  useToast,
+  type Column,
+  type TabItem,
+} from '@/components/ui'
 import { useCompanyAuth } from '@/auth/company'
 import { useAssets } from '@/api/hooks/assets'
-import { useCustomFields } from '@/api/hooks/customFields'
+import { useCategoryNames, useLookupNames } from '@/api/hooks/assetMasters'
 import { assetsApi } from '@/api/endpoints/assets'
-import { usersApi } from '@/api/endpoints/users'
-import { docvaultApi } from '@/api/endpoints/docvault'
-import { ASSET_CATEGORY, ASSET_STATUS, humanize } from '@/api/enums'
+import { ASSET_CONDITION, ASSET_OPERATIONAL_STATUS, humanize } from '@/api/enums'
 import { formatMoney } from '@/lib/format'
 import { saveBlob } from '@/lib/download'
 import type { AssetResponse } from '@/api/types'
-import { AssetDrawer } from './AssetDrawer'
-import { ImportAssetsModal } from './ImportAssetsModal'
+import { dateOrDash, num } from './assetFormat'
+import { QuickAddAssetModal } from './QuickAddAssetModal'
+import { AssetColumnPicker } from './AssetColumnPicker'
+import { useColumnPreference } from './useColumnPreference'
+
+/** Preset views. Drafts and pending work are the daily job; capitalized is the
+ *  statutory register. One undifferentiated list serves neither well. */
+const VIEWS: { id: string; label: string; lifecycle?: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'draft', label: 'Drafts', lifecycle: 'draft' },
+  { id: 'ready', label: 'Awaiting approval', lifecycle: 'ready' },
+  { id: 'capitalized', label: 'Capitalized', lifecycle: 'capitalized' },
+  { id: 'disposed', label: 'Disposed', lifecycle: 'disposed' },
+]
 
 export function AssetsPage() {
+  const navigate = useNavigate()
+  const toast = useToast()
   const { profile } = useCompanyAuth()
   const isAdmin = profile?.role === 'admin'
-  const toast = useToast()
 
-  const [category, setCategory] = useState('')
-  const [status, setStatus] = useState('')
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [selected, setSelected] = useState<AssetResponse | null>(null)
-  const [importOpen, setImportOpen] = useState(false)
+  const [view, setView] = useState('all')
+  const [operational, setOperational] = useState('')
+  const [condition, setCondition] = useState('')
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const { visible, setVisible } = useColumnPreference()
 
+  const lifecycle = VIEWS.find((v) => v.id === view)?.lifecycle
   const filters = {
-    ...(category ? { category } : {}),
-    ...(status ? { status } : {}),
+    ...(lifecycle ? { lifecycle_status: lifecycle } : {}),
+    ...(operational ? { operational_status: operational } : {}),
+    ...(condition ? { condition } : {}),
   }
   const { data: assets = [], isLoading } = useAssets(filters)
+  // Unfiltered copy, so the stat cards and the view counts describe the whole
+  // register rather than whatever is currently filtered on screen.
+  const { data: allAssets = [] } = useAssets()
 
-  // Admins can resolve custodian names + pick users/documents; non-admins cannot.
-  const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => usersApi.list(), enabled: !!isAdmin })
-  const docsQuery = useQuery({
-    queryKey: ['docvault', 'documents'],
-    queryFn: () => docvaultApi.listDocuments(),
-    enabled: !!isAdmin,
-  })
-  const { data: activeFields = [] } = useCustomFields('asset_management', false)
+  const categoryNames = useCategoryNames()
+  const lookupNames = useLookupNames()
 
-  const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data])
-  const documents = docsQuery.data ?? []
-  const nameById = useMemo(() => {
-    const m: Record<string, string> = {}
-    for (const u of users) m[u.id] = u.full_name
-    if (profile) m[profile.id] = profile.full_name
-    return m
-  }, [users, profile])
+  // Gross block is what makes this a register rather than a list, so it counts
+  // capitalized assets only — a draft is not on the books and including it would
+  // overstate the balance sheet.
+  const stats = useMemo(() => {
+    const capitalized = allAssets.filter((a) => a.lifecycle_status === 'capitalized')
+    return {
+      total: allAssets.length,
+      capitalized: capitalized.length,
+      grossBlock: capitalized.reduce((sum, a) => sum + (num(a.original_cost) ?? 0), 0),
+      pending: allAssets.filter((a) => a.lifecycle_status === 'ready').length,
+      drafts: allAssets.filter((a) => a.lifecycle_status === 'draft').length,
+      disposed: allAssets.filter((a) => a.lifecycle_status === 'disposed').length,
+    }
+  }, [allAssets])
 
-  const totalCost = useMemo(
-    () => assets.reduce((sum, a) => sum + (a.purchase_cost ?? 0), 0),
-    [assets],
-  )
-  const filterActive = !!category || !!status
-  const filterLabel = [category && humanize(category), status && humanize(status)]
-    .filter(Boolean)
-    .join(' · ')
-
-  const custodianLabel = (id: string | null | undefined) => {
-    if (!id) return 'Unassigned'
-    return nameById[id] ?? (id === profile?.id ? profile.full_name : '—')
-  }
-
-  const openCreate = () => {
-    setSelected(null)
-    setDrawerOpen(true)
-  }
-  const openAsset = (a: AssetResponse) => {
-    setSelected(a)
-    setDrawerOpen(true)
+  const counts: Record<string, number> = {
+    all: stats.total,
+    draft: stats.drafts,
+    ready: stats.pending,
+    capitalized: stats.capitalized,
+    disposed: stats.disposed,
   }
 
   const handleExport = async () => {
     setExporting(true)
     try {
-      const blob = await assetsApi.exportExcel()
-      saveBlob(blob, 'assets.xlsx')
+      saveBlob(await assetsApi.exportExcel(), 'fixed_assets.xlsx')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Export failed')
     } finally {
@@ -86,80 +98,203 @@ export function AssetsPage() {
     }
   }
 
-  const columns: Column<AssetResponse>[] = [
-    {
+  const allColumns: Record<string, Column<AssetResponse>> = {
+    asset_code: {
+      key: 'asset_code',
+      header: 'Tag',
+      sortValue: (a) => a.asset_code ?? '',
+      cell: (a) => <span className="font-mono text-xs">{a.asset_code ?? '—'}</span>,
+    },
+    asset_name: {
       key: 'asset_name',
       header: 'Asset',
       sortValue: (a) => a.asset_name.toLowerCase(),
       cell: (a) => (
         <div>
           <div className="font-medium text-text-primary">{a.asset_name}</div>
-          {a.serial_number && <div className="text-xs text-text-muted">{a.serial_number}</div>}
+          {a.manufacturer_serial_number && (
+            <div className="text-xs text-text-muted">{a.manufacturer_serial_number}</div>
+          )}
         </div>
       ),
     },
-    { key: 'category', header: 'Category', sortValue: (a) => a.category, cell: (a) => <StatusBadge status={a.category} /> },
-    { key: 'status', header: 'Status', sortValue: (a) => a.status, cell: (a) => <StatusBadge status={a.status} /> },
-    {
-      key: 'purchase_cost',
-      header: 'Purchase cost',
-      align: 'right',
-      sortValue: (a) => a.purchase_cost ?? 0,
-      cell: (a) => (a.purchase_cost != null ? formatMoney(a.purchase_cost) : '—'),
+    category: {
+      key: 'category',
+      header: 'Category',
+      sortValue: (a) => categoryNames[a.category_id ?? ''] ?? '',
+      cell: (a) => categoryNames[a.category_id ?? ''] ?? '—',
     },
-    { key: 'custodian', header: 'Custodian', cell: (a) => custodianLabel(a.custodian_id) },
-  ]
+    lifecycle_status: {
+      key: 'lifecycle_status',
+      header: 'Stage',
+      sortValue: (a) => a.lifecycle_status,
+      cell: (a) => <StatusBadge status={a.lifecycle_status} />,
+    },
+    operational_status: {
+      key: 'operational_status',
+      header: 'Status',
+      sortValue: (a) => a.operational_status ?? '',
+      cell: (a) => (a.operational_status ? <StatusBadge status={a.operational_status} /> : '—'),
+    },
+    condition: {
+      key: 'condition',
+      header: 'Condition',
+      sortValue: (a) => a.condition ?? '',
+      cell: (a) => (a.condition ? <StatusBadge status={a.condition} /> : '—'),
+    },
+    original_cost: {
+      key: 'original_cost',
+      header: 'Cost',
+      align: 'right',
+      sortValue: (a) => num(a.original_cost) ?? 0,
+      cell: (a) => {
+        const n = num(a.original_cost)
+        return n === null ? '—' : formatMoney(n)
+      },
+    },
+    location: {
+      key: 'location',
+      header: 'Location',
+      sortValue: (a) => lookupNames[a.location_id ?? ''] ?? '',
+      cell: (a) => lookupNames[a.location_id ?? ''] ?? '—',
+    },
+    branch: {
+      key: 'branch',
+      header: 'Branch',
+      sortValue: (a) => lookupNames[a.branch_id ?? ''] ?? '',
+      cell: (a) => lookupNames[a.branch_id ?? ''] ?? '—',
+    },
+    department: {
+      key: 'department',
+      header: 'Department',
+      sortValue: (a) => lookupNames[a.department_id ?? ''] ?? '',
+      cell: (a) => lookupNames[a.department_id ?? ''] ?? '—',
+    },
+    cost_centre: {
+      key: 'cost_centre',
+      header: 'Cost centre',
+      sortValue: (a) => lookupNames[a.cost_centre_id ?? ''] ?? '',
+      cell: (a) => lookupNames[a.cost_centre_id ?? ''] ?? '—',
+    },
+    custodian: {
+      key: 'custodian',
+      header: 'Custodian',
+      cell: (a) => a.custodian_name || (a.custodian_id ? 'Assigned user' : 'Unassigned'),
+    },
+    capitalization_date: {
+      key: 'capitalization_date',
+      header: 'Capitalized',
+      sortValue: (a) => a.capitalization_date ?? '',
+      cell: (a) => dateOrDash(a.capitalization_date),
+    },
+    useful_life_months: {
+      key: 'useful_life_months',
+      header: 'Life',
+      align: 'right',
+      sortValue: (a) => a.useful_life_months ?? 0,
+      cell: (a) => (a.useful_life_months ? `${a.useful_life_months} mo` : '—'),
+    },
+    dep_method: {
+      key: 'dep_method',
+      header: 'Method',
+      sortValue: (a) => a.dep_method ?? '',
+      cell: (a) => (a.dep_method ? a.dep_method.toUpperCase() : '—'),
+    },
+    warranty_expiry_date: {
+      key: 'warranty_expiry_date',
+      header: 'Warranty ends',
+      sortValue: (a) => a.warranty_expiry_date ?? '',
+      cell: (a) => dateOrDash(a.warranty_expiry_date),
+    },
+  }
+
+  const columns = visible.map((key) => allColumns[key]).filter(Boolean)
+  const tabs: TabItem[] = VIEWS.map((v) => ({ id: v.id, label: v.label, count: counts[v.id] }))
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="OPERATIONS"
         icon={<Laptop />}
-        title="Assets"
-        description="Company asset register"
+        title="Fixed assets"
+        description="Statutory fixed asset register — Companies Act and Income Tax"
         actions={
-          isAdmin ? (
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setImportOpen(true)}>Import</Button>
-              <Button variant="secondary" onClick={handleExport} loading={exporting}>Export</Button>
-              <Button onClick={openCreate}>New asset</Button>
-            </div>
-          ) : undefined
+          <div className="flex gap-2">
+            {isAdmin && (
+              <Button variant="secondary" onClick={() => navigate('/app/assets/masters')}>
+                Masters
+              </Button>
+            )}
+            <Button variant="secondary" onClick={handleExport} loading={exporting}>
+              Export
+            </Button>
+            <Button onClick={() => setQuickAddOpen(true)}>New asset</Button>
+          </div>
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Total assets" value={assets.length} icon={<Boxes />} tone="accent" loading={isLoading} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Total purchase cost"
-          value={totalCost}
+          label="Assets in register"
+          value={stats.total}
+          icon={<Boxes />}
+          tone="accent"
+          loading={isLoading}
+        />
+        <StatCard
+          label="Gross block"
+          value={stats.grossBlock}
           prefix="₹"
           decimals={2}
           icon={<IndianRupee />}
           tone="gold"
           loading={isLoading}
+          sub="Capitalized assets only"
         />
         <StatCard
-          label="In view"
-          value={assets.length}
-          icon={<Filter />}
+          label="Capitalized"
+          value={stats.capitalized}
+          icon={<Landmark />}
           tone="info"
           loading={isLoading}
-          sub={filterActive ? `Filtered · ${filterLabel}` : 'No filters applied'}
+          sub={`${stats.drafts} draft${stats.drafts === 1 ? '' : 's'} not yet on the books`}
+        />
+        <StatCard
+          label="Awaiting approval"
+          value={stats.pending}
+          icon={<Settings2 />}
+          tone={stats.pending > 0 ? 'warning' : 'neutral'}
+          loading={isLoading}
         />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Select value={category} onChange={(e) => setCategory(e.target.value)} className="h-8 max-w-[180px]">
-          <option value="">All categories</option>
-          {ASSET_CATEGORY.map((c) => (
-            <option key={c} value={c}>{humanize(c)}</option>
+      <Tabs tabs={tabs} value={view} onChange={setView} layoutGroup="asset-views" />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={operational}
+          onChange={(e) => setOperational(e.target.value)}
+          className="h-8 max-w-[180px]"
+          aria-label="Filter by asset status"
+        >
+          <option value="">All statuses</option>
+          {ASSET_OPERATIONAL_STATUS.map((s) => (
+            <option key={s} value={s}>
+              {humanize(s)}
+            </option>
           ))}
         </Select>
-        <Select value={status} onChange={(e) => setStatus(e.target.value)} className="h-8 max-w-[180px]">
-          <option value="">All statuses</option>
-          {ASSET_STATUS.map((s) => (
-            <option key={s} value={s}>{humanize(s)}</option>
+        <Select
+          value={condition}
+          onChange={(e) => setCondition(e.target.value)}
+          className="h-8 max-w-[180px]"
+          aria-label="Filter by condition"
+        >
+          <option value="">All conditions</option>
+          {ASSET_CONDITION.map((c) => (
+            <option key={c} value={c}>
+              {humanize(c)}
+            </option>
           ))}
         </Select>
       </div>
@@ -169,25 +304,29 @@ export function AssetsPage() {
         data={assets}
         rowKey={(a) => a.id}
         loading={isLoading}
-        onRowClick={openAsset}
-        searchAccessors={(a) => `${a.asset_name} ${a.serial_number ?? ''}`}
-        searchPlaceholder="Search assets…"
+        pageSize={25}
+        onRowClick={(a) => navigate(`/app/assets/${a.id}`)}
+        searchAccessors={(a) =>
+          `${a.asset_name} ${a.asset_code ?? ''} ${a.manufacturer_serial_number ?? ''} ${a.manufacturer ?? ''}`
+        }
+        searchPlaceholder="Search by name, tag or serial…"
         emptyTitle="No assets"
-        emptyDescription={isAdmin ? 'Create or import assets to get started.' : 'No assets assigned to you.'}
+        emptyDescription="Create an asset to start building the register."
+        toolbar={
+          <Button variant="secondary" size="sm" onClick={() => setPickerOpen(true)}>
+            Columns
+          </Button>
+        }
       />
 
-      <AssetDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        asset={selected}
-        isAdmin={!!isAdmin}
-        users={users}
-        documents={documents}
-        activeFields={activeFields}
+      <QuickAddAssetModal open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+      <AssetColumnPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        options={Object.entries(allColumns).map(([key, col]) => ({ key, label: col.header }))}
+        visible={visible}
+        onChange={setVisible}
       />
-      {isAdmin && (
-        <ImportAssetsModal open={importOpen} onClose={() => setImportOpen(false)} activeFields={activeFields} />
-      )}
     </div>
   )
 }

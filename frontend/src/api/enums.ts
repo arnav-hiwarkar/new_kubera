@@ -8,8 +8,30 @@ type S = components['schemas']
  * option sources. The `satisfies` checks fail the build if the backend enum and
  * this list ever drift.
  */
-export const ASSET_CATEGORY = ['hardware', 'software', 'furniture', 'vehicle', 'other'] as const
-export const ASSET_STATUS = ['active', 'maintenance', 'retired'] as const
+export const ASSET_LIFECYCLE_STATUS = ['draft', 'ready', 'capitalized', 'disposed'] as const
+export const ASSET_OPERATIONAL_STATUS = ['in_use', 'idle', 'under_maintenance', 'in_storage'] as const
+export const ASSET_CONDITION = ['new', 'good', 'fair', 'poor', 'unusable'] as const
+export const ASSET_LOOKUP_KIND = ['branch', 'cost_centre', 'department', 'location'] as const
+export const DEPRECIATION_METHOD = ['slm', 'wdv'] as const
+export const ITC_TREATMENT = ['eligible', 'blocked', 'partial'] as const
+export const DISCOUNT_TYPE = ['amount', 'percent'] as const
+export const ASSET_DOC_ROLE = [
+  'invoice',
+  'purchase_order',
+  'grn',
+  'eway_bill',
+  'approval',
+  'asset_photo',
+  'serial_photo',
+  'warranty',
+  'insurance',
+  'amc',
+  'test_certificate',
+  'manual',
+  'customs',
+  'lease',
+  'other',
+] as const
 export const AUDIT_ENTRY_STATUS = ['proposed', 'approved', 'rejected'] as const
 export const COMPLIANCE_DOMAIN = ['secretarial', 'roc'] as const
 export const CUSTOM_FIELD_MODULE = ['asset_management', 'sales_tracking'] as const
@@ -42,8 +64,14 @@ export const USER_ROLE = ['admin', 'manager', 'employee'] as const
 
 // Compile-time guard: these arrays must stay assignable to the generated enum types.
 const _guards = {
-  a: ASSET_CATEGORY satisfies readonly S['AssetCategory'][],
-  b: ASSET_STATUS satisfies readonly S['AssetStatus'][],
+  a: ASSET_LIFECYCLE_STATUS satisfies readonly S['AssetLifecycleStatus'][],
+  b: ASSET_OPERATIONAL_STATUS satisfies readonly S['AssetOperationalStatus'][],
+  b1: ASSET_CONDITION satisfies readonly S['AssetCondition'][],
+  b2: ASSET_LOOKUP_KIND satisfies readonly S['AssetLookupKind'][],
+  b3: DEPRECIATION_METHOD satisfies readonly S['DepreciationMethod'][],
+  b4: ITC_TREATMENT satisfies readonly S['ItcTreatment'][],
+  b5: DISCOUNT_TYPE satisfies readonly S['DiscountType'][],
+  b6: ASSET_DOC_ROLE satisfies readonly S['AssetDocRole'][],
   c: AUDIT_ENTRY_STATUS satisfies readonly S['AuditEntryStatus'][],
   d: COMPLIANCE_DOMAIN satisfies readonly S['ComplianceDomain'][],
   e: CUSTOM_FIELD_MODULE satisfies readonly S['CustomFieldModule'][],
@@ -96,7 +124,21 @@ export const STATUS_TONE: Record<string, BadgeTone> = {
   negotiation: 'warning',
   won: 'success',
   lost: 'danger',
-  // AssetStatus (active/retired already covered; add maintenance)
+  // AssetLifecycleStatus — draft/approved covered above; the register adds these.
+  ready: 'warning',
+  capitalized: 'success',
+  disposed: 'neutral',
+  // AssetOperationalStatus
+  in_use: 'success',
+  idle: 'neutral',
+  under_maintenance: 'warning',
+  in_storage: 'info',
+  // AssetCondition
+  new: 'success',
+  good: 'success',
+  fair: 'warning',
+  poor: 'danger',
+  unusable: 'danger',
   maintenance: 'warning',
   // QueryStatus/RequestStatus: open/closed covered; add fulfilled
   fulfilled: 'success',

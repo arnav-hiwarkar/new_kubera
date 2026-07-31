@@ -1,0 +1,278 @@
+import { useState } from 'react'
+import { Lock, Plus } from 'lucide-react'
+import {
+  Button,
+  Card,
+  Field,
+  Input,
+  Modal,
+  Select,
+  Spinner,
+  useToast,
+} from '@/components/ui'
+import { ApiError } from '@/api/http'
+import {
+  useCategoryTree,
+  useCreateCategory,
+  useItBlocks,
+} from '@/api/hooks/assetMasters'
+import { DEPRECIATION_METHOD, ITC_TREATMENT, humanize } from '@/api/enums'
+import { months } from '../assetFormat'
+
+export function CategoriesTab() {
+  const { tree, isLoading } = useCategoryTree()
+  const { data: blocks = [] } = useItBlocks()
+  const create = useCreateCategory()
+  const toast = useToast()
+
+  const [open, setOpen] = useState(false)
+  const [parentId, setParentId] = useState('')
+  const [name, setName] = useState('')
+  const [life, setLife] = useState('')
+  const [method, setMethod] = useState('slm')
+  const [residual, setResidual] = useState('5')
+  const [blockId, setBlockId] = useState('')
+  const [itc, setItc] = useState('')
+  const [prefix, setPrefix] = useState('')
+  const [error, setError] = useState('')
+
+  const reset = () => {
+    setParentId('')
+    setName('')
+    setLife('')
+    setMethod('slm')
+    setResidual('5')
+    setBlockId('')
+    setItc('')
+    setPrefix('')
+    setError('')
+  }
+
+  const handleCreate = async () => {
+    if (!name.trim()) {
+      setError('Name is required')
+      return
+    }
+    try {
+      await create.mutateAsync({
+        name: name.trim(),
+        parent_id: parentId || null,
+        default_useful_life_months: life ? Number(life) : null,
+        default_dep_method: parentId ? (method as 'slm' | 'wdv') : null,
+        default_residual_pct: parentId && residual ? Number(residual) : null,
+        default_it_block_id: blockId || null,
+        default_itc_treatment: (itc || null) as 'eligible' | 'blocked' | 'partial' | null,
+        tag_prefix: prefix.trim() || null,
+        applicable_field_groups: [],
+        display_order: 0,
+      })
+      toast.success('Category created')
+      setOpen(false)
+      reset()
+    } catch (e) {
+      if (e instanceof ApiError && typeof e.detail === 'string') {
+        setError(e.detail)
+        return
+      }
+      setError(e instanceof Error ? e.message : 'Could not create the category')
+    }
+  }
+
+  if (isLoading) return <Spinner />
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="max-w-2xl text-sm text-text-muted">
+            Categories carry the defaults that keep the asset form short — Schedule II
+            useful life, SLM/WDV, residual value, the income-tax block and the tag prefix.
+            The rows marked with a lock are the shipped Schedule II set, shared by every
+            company; add your own instead of editing them.
+          </p>
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            New category
+          </Button>
+        </div>
+      </Card>
+
+      <div className="flex flex-col gap-3">
+        {tree.map((group) => (
+          <Card key={group.parent.id} className="p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="text-md font-semibold text-text-primary">{group.parent.name}</h3>
+              {group.parent.company_id === null && (
+                <Lock className="h-3.5 w-3.5 text-text-muted" aria-label="Seeded, read-only" />
+              )}
+              {group.parent.tag_prefix && (
+                <span className="rounded-pill bg-bg-raised px-2 py-0.5 font-mono text-xs text-text-muted">
+                  {group.parent.tag_prefix}
+                </span>
+              )}
+            </div>
+            {group.children.length === 0 ? (
+              <p className="text-sm text-text-muted">No subcategories.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-text-muted">
+                    <th className="py-1.5 font-medium">Subcategory</th>
+                    <th className="py-1.5 font-medium">Useful life</th>
+                    <th className="py-1.5 font-medium">Method</th>
+                    <th className="py-1.5 font-medium">Residual</th>
+                    <th className="py-1.5 font-medium">Tax block</th>
+                    <th className="py-1.5 font-medium">ITC</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.children.map((c) => (
+                    <tr key={c.id} className="border-b border-border/50 last:border-0">
+                      <td className="py-1.5 pr-3">
+                        <span className="text-text-primary">{c.name}</span>
+                        {c.schedule_ii_reference && (
+                          <span
+                            className="ml-1.5 cursor-help text-xs text-text-muted"
+                            title={c.schedule_ii_reference}
+                          >
+                            ⓘ
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-3 text-text-secondary">
+                        {months(c.default_useful_life_months)}
+                      </td>
+                      <td className="py-1.5 pr-3 text-text-secondary">
+                        {c.default_dep_method?.toUpperCase() ?? '—'}
+                      </td>
+                      <td className="py-1.5 pr-3 text-text-secondary">
+                        {c.default_residual_pct != null ? `${c.default_residual_pct}%` : '—'}
+                      </td>
+                      <td className="py-1.5 pr-3 text-text-secondary">
+                        {c.default_it_block_code
+                          ? `${c.default_it_block_code} · ${c.default_it_block_rate}%`
+                          : '—'}
+                      </td>
+                      <td className="py-1.5 text-text-secondary">
+                        {c.default_itc_treatment ? humanize(c.default_itc_treatment) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </Card>
+        ))}
+      </div>
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="New category"
+        size="lg"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} loading={create.isPending}>
+              Create
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          {error && <p className="text-sm text-status-action">{error}</p>}
+
+          <Field
+            label="Parent category"
+            hint="Leave blank to create a top-level category. The tree is two levels deep."
+          >
+            <Select value={parentId} onChange={(e) => setParentId(e.target.value)} aria-label="Parent category">
+              <option value="">None — this is a top-level category</option>
+              {tree.map((g) => (
+                <option key={g.parent.id} value={g.parent.id}>
+                  {g.parent.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="Name" required>
+            <Input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" />
+          </Field>
+
+          <Field label="Tag prefix" hint="Used to generate asset codes, e.g. COMP-000137">
+            <Input
+              value={prefix}
+              maxLength={12}
+              onChange={(e) => setPrefix(e.target.value.toUpperCase())}
+              aria-label="Tag prefix"
+            />
+          </Field>
+
+          {parentId && (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Field label="Useful life (months)">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={life}
+                    onChange={(e) => setLife(e.target.value)}
+                    aria-label="Useful life (months)"
+                  />
+                </Field>
+                <Field label="Method">
+                  <Select value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Method">
+                    {DEPRECIATION_METHOD.map((m) => (
+                      <option key={m} value={m}>
+                        {m.toUpperCase()}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Residual %">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.01"
+                    value={residual}
+                    onChange={(e) => setResidual(e.target.value)}
+                    aria-label="Residual %"
+                  />
+                </Field>
+              </div>
+
+              <Field label="Income-tax block">
+                <Select value={blockId} onChange={(e) => setBlockId(e.target.value)} aria-label="Income-tax block">
+                  <option value="">Not set</option>
+                  {blocks.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.code} — {b.name} ({b.dep_rate}%)
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field
+                label="Default ITC treatment"
+                hint="Set to Blocked for assets whose GST credit is disallowed, e.g. motor cars."
+              >
+                <Select value={itc} onChange={(e) => setItc(e.target.value)} aria-label="Default ITC treatment">
+                  <option value="">Not set</option>
+                  {ITC_TREATMENT.map((t) => (
+                    <option key={t} value={t}>
+                      {humanize(t)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </>
+          )}
+        </div>
+      </Modal>
+    </div>
+  )
+}

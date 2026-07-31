@@ -13,6 +13,8 @@ import { UsersDirectory } from '@/pages/company/UsersDirectory'
 import { DocVaultPage } from '@/pages/company/docvault/DocVaultPage'
 import { KraPage } from '@/pages/company/kra/KraPage'
 import { AssetsPage } from '@/pages/company/assets/AssetsPage'
+import { AssetDetailPage } from '@/pages/company/assets/AssetDetailPage'
+import { AssetMastersPage } from '@/pages/company/assets/masters/AssetMastersPage'
 import { SalesPage } from '@/pages/company/sales/SalesPage'
 import { CustomFieldsPage } from '@/pages/company/customfields/CustomFieldsPage'
 import { EngagementsPage } from '@/pages/company/auditease/EngagementsPage'
@@ -56,7 +58,16 @@ export const companyRoutes: RouteObject = {
                 { index: true, element: <ModuleGuard moduleId="dashboard"><Dashboard /></ModuleGuard> },
                 { path: 'users', element: <UsersDirectory /> },
                 { path: 'kra', element: <ModuleGuard moduleId="kra"><KraPage /></ModuleGuard> },
-                { path: 'assets', element: <ModuleGuard moduleId="assets"><AssetsPage /></ModuleGuard> },
+                {
+                  path: 'assets',
+                  element: <ModuleGuard moduleId="assets"><Outlet /></ModuleGuard>,
+                  children: [
+                    { index: true, element: <AssetsPage /> },
+                    // Literal path first: ':assetId' would otherwise swallow 'masters'.
+                    { path: 'masters', element: <AssetMastersPage /> },
+                    { path: ':assetId', element: <AssetDetailPage /> },
+                  ],
+                },
                 { path: 'sales', element: <ModuleGuard moduleId="sales"><SalesPage /></ModuleGuard> },
                 { path: 'custom-fields', element: <CustomFieldsPage /> },
                 { path: 'docvault', element: <ModuleGuard moduleId="docvault"><DocVaultPage /></ModuleGuard> },

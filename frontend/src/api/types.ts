@@ -25,14 +25,46 @@ export type CustomFieldResponse = S['CustomFieldResponse']
 export type CustomFieldCreate = S['CustomFieldCreate']
 export type CustomFieldUpdate = S['CustomFieldUpdate']
 
-// Assets
+// Assets — fixed asset register
 export type AssetResponse = S['AssetResponse']
-export type AssetCreate = S['AssetCreate']
-
-
 export type AssetUpdate = S['AssetUpdate']
-export type AssetImportInspectResponse = S['AssetImportInspectResponse']
-export type AssetSheetInfo = S['AssetSheetInfo']
+export type AssetDetailResponse = S['AssetDetailResponse']
+export type AssetSibling = S['AssetSibling']
+export type AssetQuickAddRequest = S['AssetQuickAddRequest']
+export type AssetQuickAddResponse = S['AssetQuickAddResponse']
+export type AssetLifecycleStatus = S['AssetLifecycleStatus']
+export type AssetOperationalStatus = S['AssetOperationalStatus']
+export type AssetCondition = S['AssetCondition']
+export type AssetDocRole = S['AssetDocRole']
+export type AssetDocumentResponse = S['AssetDocumentResponse']
+export type AssetDocumentAttach = S['AssetDocumentAttach']
+export type ValidationIssueResponse = S['ValidationIssueResponse']
+export type TransitionRequest = S['TransitionRequest']
+export type TransitionResponse = S['TransitionResponse']
+export type BulkSerialRequest = S['BulkSerialRequest']
+export type SerialAssignment = S['SerialAssignment']
+
+// Acquisitions (invoice lines)
+export type AcquisitionResponse = S['AcquisitionResponse']
+export type AcquisitionUpdate = S['AcquisitionUpdate']
+export type CostPreviewRequest = S['CostPreviewRequest']
+export type CostPreviewResponse = S['CostPreviewResponse']
+export type DiscountType = S['DiscountType']
+export type ItcTreatment = S['ItcTreatment']
+
+// Asset master data
+export type AssetCategoryResponse = S['AssetCategoryResponse']
+export type AssetCategoryCreate = S['AssetCategoryCreate']
+export type AssetCategoryUpdate = S['AssetCategoryUpdate']
+export type SupplierResponse = S['SupplierResponse']
+export type SupplierCreate = S['SupplierCreate']
+export type SupplierUpdate = S['SupplierUpdate']
+export type AssetLookupResponse = S['AssetLookupResponse']
+export type AssetLookupCreate = S['AssetLookupCreate']
+export type AssetLookupUpdate = S['AssetLookupUpdate']
+export type AssetLookupKind = S['AssetLookupKind']
+export type ItAssetBlockResponse = S['ItAssetBlockResponse']
+export type DepreciationMethod = S['DepreciationMethod']
 
 // Sales
 export type SalesRecordResponse = S['SalesRecordResponse']
