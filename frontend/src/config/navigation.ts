@@ -1,9 +1,7 @@
 import {
   LayoutDashboard,
   Users,
-  Target,
   Laptop,
-  TrendingUp,
   SlidersHorizontal,
   Archive,
   ClipboardCheck,
@@ -38,11 +36,9 @@ export const companyNav: NavSection[] = [
     title: 'Operations',
     items: [
       { label: 'Assets', to: '/app/assets', icon: Laptop, moduleId: 'assets' },
-      { label: 'Sales', to: '/app/sales', icon: TrendingUp, moduleId: 'sales' },
       { label: 'Custom Fields', to: '/app/custom-fields', icon: SlidersHorizontal },
       { label: 'ROC Compliance', to: '/app/compliance/roc', icon: ClipboardCheck, moduleId: 'compliance' },
       { label: 'SecretarialEase', to: '/app/compliance/secretarial', icon: ScrollText, moduleId: 'compliance' },
-      { label: 'KRA & Appraisals', to: '/app/kra', icon: Target, moduleId: 'kra' },
     ],
   },
   {

@@ -32,6 +32,14 @@ function installFetchMock() {
         ? json({ id: 'a1', email: 'andy@audit.test', name: 'Andy Auditor' })
         : json({ detail: 'Not authenticated' }, 401)
     }
+    if (url.endsWith('/api/v1/company/profile')) {
+      return json({
+        id: 'company-1',
+        name: 'Acme Corp',
+        profile_completed: true,
+        has_logo: false,
+      })
+    }
     if (url.endsWith('/refresh')) return json({ detail: 'invalid' }, 401)
     // Any other authenticated data call (dashboard widgets, lists).
     return json([])
