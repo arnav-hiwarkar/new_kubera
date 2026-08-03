@@ -10,12 +10,12 @@ const num = (v: number) => <span className="tabular-nums">{formatMoney(v)}</span
  * under the given top-level groups with per-section subtotals. */
 function StatementSection({
   title,
-  groups,
-  lines,
+  rows,
+  subtotal,
 }: {
   title: string
-  groups: string[]
-  lines: ReportLine[]
+  rows: ReportLine[]
+  subtotal: number
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-bg-surface">
@@ -29,19 +29,11 @@ function StatementSection({
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {groups.map((group) => {
-            const rows = lines.filter((l) => l.top_group === group)
-            if (rows.length === 0) return null
-            const subtotal = rows.reduce((s, r) => s + r.final, 0)
-            return (
-              <ReportGroupBlock key={group} group={group} rows={rows} subtotal={subtotal} />
-            )
-          })}
+          {rows.length > 0 && <ReportGroupBlock group={title} rows={rows} subtotal={subtotal} />}
         </tbody>
       </table>
       <div className="border-t border-border px-4 py-2 text-right text-sm font-semibold text-text-primary">
-        {title} total{' '}
-        {num(lines.filter((l) => groups.includes(l.top_group ?? '')).reduce((s, r) => s + r.final, 0))}
+        {title} total {num(subtotal)}
       </div>
     </div>
   )
@@ -67,19 +59,19 @@ function ReportGroupBlock({
       {rows.map((r) => {
         const subPath = (r.group_path ?? []).slice(1).join(' › ')
         return (
-          <tr key={r.ledger_id} className="hover:bg-bg-inset/30">
+          <tr key={r.ledger_id ?? `synthetic-${r.ledger_name}`} className={cn('hover:bg-bg-inset/30', r.is_synthetic && 'bg-bg-inset/30 italic')}>
             <td className="px-4 py-2 pl-8">
               <div className="font-medium text-text-primary">{r.ledger_name}</div>
               {subPath && <div className="text-xs text-text-muted">{subPath}</div>}
             </td>
-            <td className="px-4 py-2 text-right">{num(r.closing)}</td>
+            <td className="px-4 py-2 text-right">{r.is_synthetic ? '—' : num(r.closing)}</td>
             <td
               className={cn(
                 'px-4 py-2 text-right',
                 r.adjustment !== 0 && 'font-medium text-status-submitted',
               )}
             >
-              {r.adjustment !== 0 ? num(r.adjustment) : '—'}
+              {!r.is_synthetic && r.adjustment !== 0 ? num(r.adjustment) : '—'}
             </td>
             <td className="px-4 py-2 text-right font-medium text-text-primary">{num(r.final)}</td>
           </tr>
@@ -92,6 +84,21 @@ function ReportGroupBlock({
 function ReportBody({ report }: { report: ReportPreviewResponse }) {
   const { totals, balance_check: bc, net_profit } = report
   const profitLabel = net_profit >= 0 ? 'Net Profit' : 'Net Loss'
+  const equityNames = new Set([
+    'share capital', 'reserves & surplus', 'reserves and surplus',
+    'money received against share warrants', 'share application money pending allotment',
+  ])
+  const assetRows = report.lines.filter((line) => line.top_group === 'Assets')
+  const incomeRows = report.lines.filter((line) => line.top_group === 'Income')
+  const expenseRows = report.lines.filter((line) => line.top_group === 'Expenditure')
+  const equityRows = report.lines.filter((line) =>
+    line.top_group === 'Liabilities'
+    && !!line.group_path?.[1]
+    && equityNames.has(line.group_path[1].toLowerCase()),
+  )
+  const liabilityRows = report.lines.filter((line) =>
+    line.top_group === 'Liabilities' && !equityRows.includes(line),
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -105,7 +112,11 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
               : 'text-status-action badge-bg-action',
           )}
         >
-          {bc.balanced ? '● Balanced' : `● Not balanced — difference ${formatMoney(bc.difference)}`}
+          {!bc.statement_ready
+            ? '● Needs mapping or sign review'
+            : bc.balanced
+              ? '● Balanced'
+              : `● Not balanced — difference ${formatMoney(bc.difference)}`}
         </span>
         {report.unmapped_count > 0 && (
           <span className="rounded-md bg-status-pending/10 px-3 py-1 text-sm text-status-pending">
@@ -114,13 +125,22 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
           </span>
         )}
       </div>
+      {report.warnings.length > 0 && (
+        <div className="rounded-card border border-status-pending/30 bg-status-pending/5 px-4 py-3 text-sm text-status-pending">
+          <ul className="list-disc space-y-1 pl-5">
+            {report.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
+        </div>
+      )}
 
       {/* Balance Sheet */}
       <div>
         <h4 className="mb-2 text-base font-semibold text-text-primary">Balance Sheet</h4>
-        <StatementSection title="Assets" groups={['Assets']} lines={report.lines} />
+        <StatementSection title="Assets" rows={assetRows} subtotal={totals.assets} />
         <div className="h-3" />
-        <StatementSection title="Liabilities" groups={['Liabilities']} lines={report.lines} />
+        <StatementSection title="Other Liabilities" rows={liabilityRows} subtotal={totals.other_liabilities} />
+        <div className="h-3" />
+        <StatementSection title="Equity" rows={equityRows} subtotal={totals.equity} />
         <div className="mt-3 flex flex-wrap justify-end gap-x-8 gap-y-1 text-sm">
           <span className="text-text-secondary">
             Total Assets <span className="font-semibold text-text-primary">{num(totals.assets)}</span>
@@ -139,9 +159,9 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
          * Liabilities above). Combining them produced a section total that summed
          * their absolute balances — a meaningless figure users mistook for the net.
          * The real bottom line is the Net Profit / Loss difference shown below. */}
-        <StatementSection title="Income" groups={['Income']} lines={report.lines} />
+        <StatementSection title="Income" rows={incomeRows} subtotal={totals.income} />
         <div className="h-3" />
-        <StatementSection title="Expenditure" groups={['Expenditure']} lines={report.lines} />
+        <StatementSection title="Expenditure" rows={expenseRows} subtotal={totals.expenditure} />
         <div className="mt-3 flex flex-wrap justify-end gap-x-8 gap-y-1 text-sm">
           <span className="text-text-secondary">
             Total Income <span className="font-semibold text-text-primary">{num(totals.income)}</span>

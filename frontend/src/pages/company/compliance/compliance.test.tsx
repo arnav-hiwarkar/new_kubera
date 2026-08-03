@@ -114,10 +114,13 @@ describe('DocumentTypesTab', () => {
 
 describe('RecordsTab', () => {
   it('renders records, filters by this month, and toggles views', async () => {
+    const now = new Date()
+    const currentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-05`
+    const currentMonth = now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
     vi.mocked(rocApi.listDocumentTypes).mockResolvedValue([docType({ id: 'dt1', name: 'Board Minutes' })])
     vi.mocked(rocApi.listMeetingRecords).mockResolvedValue([
-      record({ id: 'r1', record_date: '2026-07-05' }),
-      record({ id: 'r2', record_date: '2026-03-05' }),
+      record({ id: 'r1', record_date: currentDate }),
+      record({ id: 'r2', record_date: '2025-03-05' }),
     ])
     const u = userEvent.setup()
     wrap(<RecordsTab domain="roc" />)
@@ -127,12 +130,12 @@ describe('RecordsTab', () => {
 
     // Switch to By month → two month headings.
     await u.click(screen.getByRole('button', { name: 'By month' }))
-    expect(await screen.findByText(/July 2026/)).toBeInTheDocument()
-    expect(screen.getByText(/March 2026/)).toBeInTheDocument()
+    expect(await screen.findByText(new RegExp(currentMonth))).toBeInTheDocument()
+    expect(screen.getByText(/March 2025/)).toBeInTheDocument()
 
     // This month filter → only the July record remains.
     await u.click(screen.getByRole('button', { name: 'This month' }))
-    await waitFor(() => expect(screen.queryByText(/March 2026/)).not.toBeInTheDocument())
-    expect(screen.getByText(/July 2026/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText(/March 2025/)).not.toBeInTheDocument())
+    expect(screen.getByText(new RegExp(currentMonth))).toBeInTheDocument()
   })
 })

@@ -4,7 +4,7 @@ import { Button, Input, Spinner, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import type { TrialBalanceAccountResponse } from '@/api/types'
 import {
-  useCompanyTrialBalance,
+  useCompanyTrialBalanceAccounts,
   useLedgerGroups,
   useMapLedger,
   useBulkMapLedgers,
@@ -16,7 +16,7 @@ import { ImportMappingModal } from './ImportMappingModal'
 
 export function MappingTab({ engagementId }: { engagementId: string }) {
   const toast = useToast()
-  const { data: accounts = [], isLoading } = useCompanyTrialBalance(engagementId)
+  const { data: accounts = [], isLoading } = useCompanyTrialBalanceAccounts(engagementId)
   const { data: groups = [] } = useLedgerGroups()
   const mapLedger = useMapLedger()
   const bulkMap = useBulkMapLedgers()

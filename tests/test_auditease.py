@@ -29,16 +29,46 @@ async def make_engagement(client, headers, label="FY24"):
     return resp.json()["id"]
 
 
-async def import_tb(client, eng_id, headers, csv=TB_CSV, cmap=TB_MAP, sheet=None):
+async def import_tb(client, eng_id, headers, csv=TB_CSV, cmap=TB_MAP, sheet=None,
+                    convention=None, header_row=None, confirm=None):
     data = {"column_map": json.dumps(cmap)}
     if sheet is not None:
         data["sheet"] = sheet
+    if convention is not None:
+        data["sign_convention"] = convention
+    if header_row is not None:
+        data["header_row"] = str(header_row)
+    if confirm is not None:
+        data["confirm"] = "true" if confirm else "false"
     return await client.post(
         f"/api/v1/auditease/engagements/{eng_id}/trial-balance/import",
         data=data,
         files={"file": ("tb.csv", csv, "text/csv")},
         headers=headers,
     )
+
+
+async def preview_tb(client, eng_id, headers, csv=TB_CSV, cmap=TB_MAP,
+                     convention=None, header_row=None):
+    data = {"column_map": json.dumps(cmap)}
+    if convention is not None:
+        data["sign_convention"] = convention
+    if header_row is not None:
+        data["header_row"] = str(header_row)
+    return await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/trial-balance/preview",
+        data=data,
+        files={"file": ("tb.csv", csv, "text/csv")},
+        headers=headers,
+    )
+
+
+async def get_tb(client, eng_id, headers):
+    """GET /trial-balance now returns {accounts, totals, ...} rather than a bare array."""
+    resp = await client.get(
+        f"/api/v1/auditease/engagements/{eng_id}/trial-balance", headers=headers
+    )
+    return resp
 
 
 # --- Tests ---------------------------------------------------------------------
@@ -68,14 +98,25 @@ async def test_trial_balance_import_flow(client: AsyncClient):
     body = resp.json()
     assert body["imported"] == 2
     assert body["skipped"] == 0
-    assert body["balanced"] is True  # debit 50 == credit 50
+    # `balanced` now means "the trial balance sums to zero", the same definition the
+    # grid and the report use -- not "total debit column == total credit column".
+    assert body["balanced"] is True
+    # Closings are 150 / -150, so the signed convention is provable from the file.
+    assert body["sign_convention"] == "signed"
+    assert body["diagnostics"]["convention_confidence"] == "proven"
+    assert body["diagnostics"]["closing_sums_to_zero"] is True
+    assert [a["closing_net_debit"] for a in body["accounts"]] == [150.0, -150.0]
 
     # View the per-engagement TB
-    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/trial-balance", headers=headers)
+    resp = await get_tb(client, eng_id, headers)
     assert resp.status_code == 200
-    accounts = resp.json()
+    view = resp.json()
+    accounts = view["accounts"]
     assert len(accounts) == 2
     assert all(a["engagement_id"] == eng_id for a in accounts)
+    assert view["totals"]["balanced"] is True
+    assert view["totals"]["difference"] == 0.0
+    assert view["sign_convention"] == "signed"
 
 
 @pytest.mark.asyncio
@@ -87,15 +128,76 @@ async def test_tb_import_skips_bad_rows(client: AsyncClient):
     csv = (
         b"Code,Name,Opening,Debit,Credit,Closing\n"
         b"A1,Cash,100,50,0,150\n"
-        b"B2,Bad,100,notanumber,0,150\n"   # non-numeric debit -> skipped
-        b",,,,,\n"                          # fully blank -> ignored
+        b"B2,Bad,100,notanumber,0,150\n"   # non-numeric debit -> still a row error
+        b"C3,Blanks,100,50,,150\n"          # blank credit -> now imports as zero
+        b",,,,,\n"                          # fully blank -> dropped, not an error
     )
     resp = await import_tb(client, eng_id, headers, csv=csv)
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["imported"] == 1
-    assert body["skipped"] == 1
-    assert body["errors"][0]["row"] == 2
+    # Two good rows: the blank-credit row is no longer discarded.
+    assert body["imported"] == 2
+    assert body["diagnostics"]["rows_error"] == 1
+    assert body["errors"][0]["row"] == 3
+    assert body["diagnostics"]["rows_dropped_blank"] == 1
+    blanks = next(a for a in body["accounts"] if a["ledger_name"] == "Blanks")
+    assert blanks["credit"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_tb_import_flexible_layouts_and_preview_is_read_only(client: AsyncClient):
+    await create_test_company(client, email="layouts@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='layouts@a.com', password='pass1234')}"}
+    eng_id = await make_engagement(client, headers)
+
+    movements = b"Name,Debit,Credit\nCash,100,\nSales,,100\n"
+    movement_map = {"ledger_name": "Name", "debit": "Debit", "credit": "Credit"}
+    preview = await preview_tb(client, eng_id, headers, csv=movements, cmap=movement_map)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["diagnostics"]["detected_convention"] == "derived"
+    assert (await get_tb(client, eng_id, headers)).json()["accounts"] == []
+
+    imported = await import_tb(client, eng_id, headers, csv=movements, cmap=movement_map)
+    assert imported.status_code == 200, imported.text
+    assert sorted(a["closing_net_debit"] for a in imported.json()["accounts"]) == [-100.0, 100.0]
+
+    eng2 = await make_engagement(client, headers, "FY25")
+    single = b"Name,Closing\nCash,100\nSales,-100\n"
+    single_map = {"ledger_name": "Name", "closing_balance": "Closing"}
+    imported = await import_tb(client, eng2, headers, csv=single, cmap=single_map)
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["sign_convention"] == "signed"
+
+
+@pytest.mark.asyncio
+async def test_tb_import_header_total_suffix_indian_and_oversized_diagnostics(client: AsyncClient):
+    await create_test_company(client, email="formats@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='formats@a.com', password='pass1234')}"}
+    eng_id = await make_engagement(client, headers)
+    csv = (
+        b"Example Private Limited,,,\n"
+        b"Trial Balance as at 31 March 2026,,,\n"
+        b"Name,Debit,Credit,Closing\n"
+        b"Cash,1,23,456 Dr,,123456 Dr\n"
+    )
+    # CSV commas must be quoted when they are part of the number.
+    csv = csv.replace(b"Cash,1,23,456 Dr,,123456 Dr", b'Cash,"1,23,456 Dr",,123456 Dr')
+    cmap = {"ledger_name": "Name", "debit": "Debit", "credit": "Credit", "closing_balance": "Closing"}
+    inspected = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/trial-balance/inspect",
+        files={"file": ("tb.csv", csv, "text/csv")}, headers=headers,
+    )
+    assert inspected.status_code == 200, inspected.text
+    assert inspected.json()["sheets"][0]["header_row"] == 3
+
+    too_large = b"Name,Closing\nHuge,10000000000000\n"
+    preview = await preview_tb(
+        client, eng_id, headers, csv=too_large,
+        cmap={"ledger_name": "Name", "closing_balance": "Closing"},
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["diagnostics"]["rows_error"] == 1
+    assert preview.json()["would_import"] == 0
 
 
 @pytest.mark.asyncio
@@ -105,9 +207,39 @@ async def test_tb_reimport_replaces(client: AsyncClient):
     eng_id = await make_engagement(client, headers)
 
     await import_tb(client, eng_id, headers)
-    await import_tb(client, eng_id, headers)  # second import replaces, not appends
-    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/trial-balance", headers=headers)
-    assert len(resp.json()) == 2
+    await import_tb(client, eng_id, headers)  # second import updates in place, not appends
+    resp = await get_tb(client, eng_id, headers)
+    assert len(resp.json()["accounts"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_tb_reimport_preserves_mappings_and_ids(client: AsyncClient):
+    """Re-import upserts. The old code deleted every row and reinserted, throwing away
+    all of the user's mapping work (and cascade-deleting audit entry lines)."""
+    await create_test_company(client, email="upsert@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='upsert@a.com', password='pass1234')}"}
+    eng_id = await make_engagement(client, headers)
+
+    resp = await import_tb(client, eng_id, headers)
+    cash = next(a for a in resp.json()["accounts"] if a["ledger_name"] == "Cash")
+
+    groups = (await client.get("/api/v1/auditease/ledger-groups", headers=headers)).json()
+    leaf = next(g for g in groups if g["name"] == "Cash and Cash Equivalents")
+    await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/ledgers/{cash['id']}/map",
+        json={"group_id": leaf["id"]}, headers=headers,
+    )
+
+    # Re-import the same file with a changed figure.
+    changed = TB_CSV.replace(b"A1,Cash,100,50,0,150", b"A1,Cash,100,75,0,175")
+    resp = await import_tb(client, eng_id, headers, csv=changed)
+    assert resp.status_code == 200, resp.text
+
+    view = (await get_tb(client, eng_id, headers)).json()
+    cash_after = next(a for a in view["accounts"] if a["ledger_name"] == "Cash")
+    assert cash_after["id"] == cash["id"]                       # identity preserved
+    assert cash_after["mapped_group_id"] == leaf["id"]          # mapping survived
+    assert cash_after["closing_net_debit"] == 175.0             # figures updated
 
 
 @pytest.mark.asyncio
@@ -207,18 +339,21 @@ async def test_pending_invite_autoconverts_on_registration(client: AsyncClient):
     assert resp.json()[0]["id"] == eng_id
 
 
-@pytest.mark.asyncio
-async def test_reimport_blocked_after_entries(client: AsyncClient):
-    await create_test_company(client, email="lock@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='lock@a.com', password='pass1234')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "lockaud@a.com", "password": "pass1234", "name": "A"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "lockaud@a.com", "password": "pass1234"})
+async def _engagement_with_entry(client, slug, approve=False):
+    """An engagement with an imported TB and one adjusting entry, for re-import tests."""
+    await create_test_company(client, email=f"{slug}@a.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email=f'{slug}@a.com', password='pass1234')}"}
+    await client.post("/api/v1/auth/auditor/register",
+                      json={"email": f"{slug}aud@a.com", "password": "pass1234", "name": "A"})
+    resp = await client.post("/api/v1/auth/auditor/login",
+                             json={"email": f"{slug}aud@a.com", "password": "pass1234"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
     resp = await import_tb(client, eng_id, co_headers)
     ledgers = resp.json()["accounts"]
-    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "lockaud@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor",
+                      json={"email": f"{slug}aud@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
 
     entry = {
@@ -228,12 +363,79 @@ async def test_reimport_blocked_after_entries(client: AsyncClient):
             {"ledger_id": ledgers[1]["id"], "side": "credit", "amount": 100},
         ],
     }
-    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/entries", json=entry, headers=aud_headers)
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/entries",
+                             json=entry, headers=aud_headers)
     assert resp.status_code == 201, resp.text
+    entry_id = resp.json()["id"]
+    if approve:
+        resp = await client.patch(
+            f"/api/v1/auditease/entries/{entry_id}/approve",
+            json={"status": "approved"}, headers=co_headers,
+        )
+        assert resp.status_code == 200, resp.text
+    return eng_id, co_headers, aud_headers, entry_id, ledgers
 
-    # Re-import now blocked
+
+@pytest.mark.asyncio
+async def test_reimport_allowed_with_only_proposed_entries(client: AsyncClient):
+    """A merely *proposed* entry must not lock the trial balance.
+
+    The old guard counted any AuditEntry, so one rejected or pending proposal made
+    the TB permanently un-reimportable.
+    """
+    eng_id, co_headers, _, _, _ = await _engagement_with_entry(client, "propose")
+    resp = await import_tb(client, eng_id, co_headers)
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reimport_requires_confirmation_after_approved_entries(client: AsyncClient):
+    """Confirm instead of refuse -- and never destroy the approved entry's lines.
+
+    `audit_entry_lines.ledger_id` is ON DELETE CASCADE, so the old delete-then-insert
+    import would have silently deleted these lines. That is the regression this pins.
+    """
+    eng_id, co_headers, _, entry_id, _ = await _engagement_with_entry(client, "approve", approve=True)
+
     resp = await import_tb(client, eng_id, co_headers)
     assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert detail["reimport_impact"]["approved_entry_count"] == 1
+    assert detail["reimport_impact"]["requires_confirmation"] is True
+
+    resp = await import_tb(client, eng_id, co_headers, confirm=True)
+    assert resp.status_code == 200, resp.text
+
+    # The approved entry and both of its lines must still exist.
+    entries = (await client.get(
+        f"/api/v1/auditease/engagements/{eng_id}/entries", headers=co_headers
+    )).json()
+    kept = next(e for e in entries if e["id"] == entry_id)
+    assert kept["status"] == "approved"
+    assert len(kept["lines"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_reimport_retains_ledger_referenced_by_entry(client: AsyncClient):
+    """A ledger missing from the new file but referenced by an entry line is retained.
+    Deleting it would cascade away the adjustment."""
+    eng_id, co_headers, _, _, ledgers = await _engagement_with_entry(client, "retain", approve=True)
+
+    # A file that no longer contains "Loan".
+    partial = (
+        b"Code,Name,Opening,Debit,Credit,Closing\n"
+        b"A1,Cash,100,50,0,150\n"
+    )
+    resp = await preview_tb(client, eng_id, co_headers, csv=partial, convention="signed")
+    assert resp.status_code == 200, resp.text
+    assert "Loan" in resp.json()["reimport_impact"]["retained_referenced"]
+
+    resp = await import_tb(
+        client, eng_id, co_headers, csv=partial, convention="signed", confirm=True
+    )
+    assert resp.status_code == 200, resp.text
+    names = [a["ledger_name"] for a in (await get_tb(client, eng_id, co_headers)).json()["accounts"]]
+    assert "Loan" in names
 
 
 async def get_groups(client, headers):
@@ -343,14 +545,14 @@ async def test_ledger_mapping(client: AsyncClient):
 
     # company TB reflects the mapping path
     tb = await client.get(f"/api/v1/auditease/engagements/{eng_id}/trial-balance", headers=co_headers)
-    cash_row = next(a for a in tb.json() if a["id"] == cash)
+    cash_row = next(a for a in tb.json()["accounts"] if a["id"] == cash)
     assert cash_row["mapped_group_path"] == ["Assets", "Current Assets"]
 
     # auditor sees the mapping too
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "mapaud@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
     tb = await client.get(f"/api/v1/auditor/engagements/{eng_id}/trial-balance", headers=aud_headers)
-    cash_row = next(a for a in tb.json() if a["id"] == cash)
+    cash_row = next(a for a in tb.json()["accounts"] if a["id"] == cash)
     assert cash_row["mapped_group_path"] == ["Assets", "Current Assets"]
 
     # bulk map then unmap
@@ -359,7 +561,7 @@ async def test_ledger_mapping(client: AsyncClient):
     resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/ledgers/unmap", json={"ledger_ids": [cash, loan]}, headers=co_headers)
     assert resp.json()["updated"] == 2
     tb = await client.get(f"/api/v1/auditease/engagements/{eng_id}/trial-balance", headers=co_headers)
-    assert all(a["mapped_group_path"] is None for a in tb.json())
+    assert all(a["mapped_group_path"] is None for a in tb.json()["accounts"])
 
 
 @pytest.mark.asyncio
@@ -415,16 +617,13 @@ async def test_import_mapping_from_another_engagement(client: AsyncClient):
 
     # Duplicate exact identities map one-to-one only. AMB is indistinguishable
     # but points at two groups and therefore must remain unresolved.
-    source_groups = [
-        asset_leaf["id"],
-        asset_leaf["id"],
-        asset_leaf["id"],
-        asset_leaf["id"],
-        asset_leaf["id"],
-        liability_leaf["id"],
-        asset_leaf["id"],
-    ]
-    for account, group_id in zip(source_accounts, source_groups):
+    ambiguous_seen = 0
+    for account in source_accounts:
+        group_id = asset_leaf["id"]
+        if account["ledger_code"] == "AMB":
+            ambiguous_seen += 1
+            if ambiguous_seen == 2:
+                group_id = liability_leaf["id"]
         response = await client.post(
             f"/api/v1/auditease/engagements/{source_id}/ledgers/{account['id']}/map",
             json={"group_id": group_id},
@@ -434,7 +633,8 @@ async def test_import_mapping_from_another_engagement(client: AsyncClient):
 
     # An incorrect existing target mapping should be overwritten by default.
     response = await client.post(
-        f"/api/v1/auditease/engagements/{target_id}/ledgers/{target_accounts[0]['id']}/map",
+        f"/api/v1/auditease/engagements/{target_id}/ledgers/"
+        f"{next(a for a in target_accounts if a['ledger_code'] == '100')['id']}/map",
         json={"group_id": liability_leaf["id"]},
         headers=headers,
     )
@@ -461,7 +661,12 @@ async def test_import_mapping_from_another_engagement(client: AsyncClient):
         headers=headers,
     )
     assert response.status_code == 200, response.text
-    assert response.json() == {
+    body = response.json()
+    assert {key: body[key] for key in (
+        "total_target_ledgers", "source_mapped_count", "assigned_count",
+        "updated_count", "already_correct_count", "preserved_existing_count",
+        "unused_source_count", "unresolved_count",
+    )} == {
         "total_target_ledgers": 8,
         "source_mapped_count": 7,
         "assigned_count": 4,
@@ -470,33 +675,16 @@ async def test_import_mapping_from_another_engagement(client: AsyncClient):
         "preserved_existing_count": 0,
         "unused_source_count": 3,
         "unresolved_count": 4,
-        "issues": [
-            {
-                "target_ledger_id": target_accounts[1]["id"],
-                "ledger_code": "200",
-                "ledger_name": "Renamed Bank",
-                "reason": "identity_disagreement",
-            },
-            {
-                "target_ledger_id": target_accounts[4]["id"],
-                "ledger_code": "DUP",
-                "ledger_name": "Duplicate",
-                "reason": "source_exhausted",
-            },
-            {
-                "target_ledger_id": target_accounts[5]["id"],
-                "ledger_code": "AMB",
-                "ledger_name": "Ambiguous",
-                "reason": "ambiguous_source_mapping",
-            },
-            {
-                "target_ledger_id": target_accounts[7]["id"],
-                "ledger_code": "NO",
-                "ledger_name": "No Match",
-                "reason": "unmatched",
-            },
-        ],
     }
+    assert sorted(
+        (item["ledger_code"], item["ledger_name"], item["reason"])
+        for item in body["issues"]
+    ) == sorted([
+        ("200", "Renamed Bank", "identity_disagreement"),
+        ("DUP", "Duplicate", "source_exhausted"),
+        ("AMB", "Ambiguous", "ambiguous_source_mapping"),
+        ("NO", "No Match", "unmatched"),
+    ])
 
     # A repeated overwrite identifies already-correct mappings.
     response = await client.post(
@@ -527,7 +715,7 @@ async def test_import_mapping_from_another_engagement(client: AsyncClient):
             f"/api/v1/auditease/engagements/{target_id}/trial-balance",
             headers=headers,
         )
-    ).json()
+    ).json()["accounts"]
     duplicate_targets = [account for account in target_tb if account["ledger_code"] == "DUP"]
     assert sum(account["mapped_group_id"] == asset_leaf["id"] for account in duplicate_targets) == 2
     assert next(account for account in target_tb if account["ledger_code"] == "100")["mapped_group_id"] == asset_leaf["id"]
@@ -885,7 +1073,10 @@ async def test_report_preview_signed_trial_balance(client: AsyncClient):
     assert resp.status_code == 200, resp.text
     p = resp.json()
     # Totals are reported as positive natural-side magnitudes despite the negative source.
-    assert p["totals"] == {"assets": 1000.0, "liabilities": 600.0, "income": 500.0, "expenditure": 100.0}
+    assert {k: p["totals"][k] for k in ("assets", "liabilities", "income", "expenditure")} == {
+        "assets": 1000.0, "liabilities": 600.0,
+        "income": 500.0, "expenditure": 100.0,
+    }
     # The net is the difference (500 - 100 = 400 profit) — NOT the -600 sum-of-magnitudes.
     assert p["net_profit"] == 400.0
     # And the balance sheet reconciles (Liabilities is also normalized to a magnitude).
@@ -911,6 +1102,87 @@ async def test_report_preview_signed_net_loss(client: AsyncClient):
     assert p["totals"]["expenditure"] == 500.0
     # Income 100 - Expenditure 500 = -400 (a real loss), not +600 or -600.
     assert p["net_profit"] == -400.0
+
+
+@pytest.mark.asyncio
+async def test_report_contra_balances_reduce_credit_nature_groups(client: AsyncClient):
+    await create_test_company(client, email="contra@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='contra@a.com', password='pass1234')}"}
+    eng_id = await make_engagement(client, headers)
+    csv = (
+        b"Code,Name,Opening,Debit,Credit,Closing\n"
+        b"A1,Cash,0,0,0,1000\n"
+        b"L1,Loan,0,0,0,-600\n"
+        b"R1,Accumulated Deficit,0,0,0,250\n"
+        b"I1,Sales,0,0,0,-850\n"
+        b"I2,Sales Returns,0,0,0,100\n"
+        b"E1,Rent,0,0,0,100\n"
+    )
+    response = await import_tb(client, eng_id, headers, csv=csv, convention="signed")
+    assert response.status_code == 200, response.text
+    ledgers = {a["ledger_name"]: a for a in response.json()["accounts"]}
+    groups = await get_groups(client, headers)
+    destinations = {
+        "Cash": "Cash and Cash Equivalents",
+        "Loan": "Trade Payables",
+        "Accumulated Deficit": "Reserves & Surplus",
+        "Sales": "Revenue from Operations",
+        "Sales Returns": "Revenue from Operations",
+        "Rent": "Other Expenses",
+    }
+    for ledger_name, group_name in destinations.items():
+        result = await client.post(
+            f"/api/v1/auditease/engagements/{eng_id}/ledgers/{ledgers[ledger_name]['id']}/map",
+            json={"group_id": find_group(groups, group_name)["id"]}, headers=headers,
+        )
+        assert result.status_code == 200, result.text
+
+    report = (await client.get(
+        f"/api/v1/auditease/engagements/{eng_id}/reports/preview", headers=headers
+    )).json()
+    assert report["totals"]["liabilities"] == 350.0
+    assert report["totals"]["income"] == 750.0
+    assert report["net_profit"] == 650.0
+    assert report["balance_check"]["balanced"] is True
+    assert report["balance_check"]["statement_ready"] is True
+
+
+@pytest.mark.asyncio
+async def test_tb_sign_convention_repair_with_approved_entry(client: AsyncClient):
+    await create_test_company(client, email="repair@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='repair@a.com', password='pass1234')}"}
+    eng_id = await make_engagement(client, headers)
+    csv = b"Code,Name,Closing\nA1,Cash,100\nL1,Loan,100\n"
+    cmap = {"ledger_code": "Code", "ledger_name": "Name", "closing_balance": "Closing"}
+    imported = await import_tb(client, eng_id, headers, csv=csv, cmap=cmap, convention="signed")
+    ledgers = {a["ledger_name"]: a for a in imported.json()["accounts"]}
+    groups = await get_groups(client, headers)
+    for name, destination in (("Cash", "Cash and Cash Equivalents"), ("Loan", "Trade Payables")):
+        await client.post(
+            f"/api/v1/auditease/engagements/{eng_id}/ledgers/{ledgers[name]['id']}/map",
+            json={"group_id": find_group(groups, destination)["id"]}, headers=headers,
+        )
+    assert (await get_tb(client, eng_id, headers)).json()["totals"]["balanced"] is False
+
+    auditor_headers = await _accept_auditor(client, headers, eng_id, "repairaud@a.com")
+    entry = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/entries",
+        json={"description": "Keep me", "lines": [
+            {"ledger_id": ledgers["Cash"]["id"], "side": "debit", "amount": 10},
+            {"ledger_id": ledgers["Loan"]["id"], "side": "credit", "amount": 10},
+        ]}, headers=auditor_headers,
+    )
+    await client.patch(
+        f"/api/v1/auditease/entries/{entry.json()['id']}/approve",
+        json={"status": "approved"}, headers=headers,
+    )
+    repaired = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/trial-balance/sign-convention",
+        json={"convention": "magnitude"}, headers=headers,
+    )
+    assert repaired.status_code == 200, repaired.text
+    assert repaired.json()["totals"]["balanced"] is True
+    assert repaired.json()["sign_convention"] == "magnitude"
 
 
 @pytest.mark.asyncio
@@ -942,7 +1214,10 @@ async def test_report_preview(client: AsyncClient):
     resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/reports/preview", headers=co_headers)
     assert resp.status_code == 200, resp.text
     p = resp.json()
-    assert p["totals"] == {"assets": 1000.0, "liabilities": 600.0, "income": 500.0, "expenditure": 100.0}
+    assert {k: p["totals"][k] for k in ("assets", "liabilities", "income", "expenditure")} == {
+        "assets": 1000.0, "liabilities": 600.0,
+        "income": 500.0, "expenditure": 100.0,
+    }
     assert p["net_profit"] == 400.0
     assert p["balance_check"]["liabilities_plus_equity"] == 1000.0
     assert p["balance_check"]["balanced"] is True
@@ -982,6 +1257,15 @@ async def test_report_preview(client: AsyncClient):
     assert p["balance_check"]["balanced"] is True  # double-entry keeps it balanced
     assert p["entries"]["approved_count"] == 1
     assert p["entries"]["proposed_count"] == 1
+
+    tb_view = (await get_tb(client, eng_id, co_headers)).json()
+    assert tb_view["totals"]["difference"] == p["balance_check"]["difference"]
+    assert tb_view["totals"]["balanced"] == p["balance_check"]["balanced"]
+    assert tb_view["totals"]["assets"] == p["totals"]["assets"]
+    assert tb_view["totals"]["income"] == p["totals"]["income"]
+    cash_view = next(a for a in tb_view["accounts"] if a["ledger_name"] == "Cash")
+    assert cash_view["adjustment_net_debit"] == 200.0
+    assert cash_view["final_net_debit"] == 1200.0
 
     cash_line = next(l for l in p["lines"] if l["ledger_name"] == "Cash")
     assert cash_line["adjustment"] == 200.0

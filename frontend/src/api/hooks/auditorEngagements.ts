@@ -29,6 +29,15 @@ export function useAuditorTrialBalance(engagementId: string) {
   })
 }
 
+export function useAuditorTrialBalanceAccounts(engagementId: string) {
+  return useQuery({
+    queryKey: auditorKeys.trialBalance(engagementId),
+    queryFn: () => auditorEngagementsApi.getTrialBalance(engagementId),
+    select: (view) => view.accounts,
+    enabled: !!engagementId,
+  })
+}
+
 // --- Entries ---
 
 export function useAuditorListEntries(engagementId: string) {

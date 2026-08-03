@@ -10,8 +10,6 @@ import {
   MessagesSquare,
   FileBarChart,
   Users,
-  Layers,
-  Scale,
   ScrollText,
 } from 'lucide-react'
 import {
@@ -26,9 +24,9 @@ import {
   useToast,
 } from '@/components/ui'
 import { ApiError } from '@/api/http'
-import { formatMoney } from '@/lib/format'
-import { useEngagement, useCompanyTrialBalance, useCloseEngagement } from '@/api/hooks/auditease'
+import { useEngagement, useCompanyTrialBalance, useCloseEngagement, useSetSignConvention } from '@/api/hooks/auditease'
 import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable'
+import { BalanceStatCards } from '@/components/auditease/BalanceStatCards'
 import { ImportTrialBalanceModal } from './ImportTrialBalanceModal'
 import { InviteAuditorModal } from './InviteAuditorModal'
 import { MappingTab } from './MappingTab'
@@ -46,8 +44,10 @@ export function EngagementWorkspace() {
   const toast = useToast()
 
   const { data: eng, isLoading } = useEngagement(engagementId)
-  const { data: accounts = [], isLoading: tbLoading } = useCompanyTrialBalance(engagementId)
+  const { data: tbView, isLoading: tbLoading } = useCompanyTrialBalance(engagementId)
+  const accounts = tbView?.accounts ?? []
   const closeEng = useCloseEngagement()
+  const setConvention = useSetSignConvention()
 
   const { data: reqs = [] } = useListRequirements(engagementId)
   const { data: queries = [] } = useListQueries(engagementId)
@@ -64,9 +64,6 @@ export function EngagementWorkspace() {
       <EmptyState title="Engagement not found" description="It may have been deleted or closed." />
     )
 
-  const totalDebit = accounts.reduce((s, a) => s + a.debit, 0)
-  const totalCredit = accounts.reduce((s, a) => s + a.credit, 0)
-  const balanced = Math.round((totalDebit - totalCredit) * 100) === 0
   const closed = eng.status === 'closed'
 
   const doClose = async () => {
@@ -78,9 +75,6 @@ export function EngagementWorkspace() {
       toast.error(e instanceof ApiError ? e.message : 'Could not close')
     }
   }
-
-  const mappedCount = accounts.filter((a) => a.mapped_group_id).length
-  const mappedRatio = accounts.length > 0 ? Math.round((mappedCount / accounts.length) * 100) : 0
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: <ClipboardCheck /> },
@@ -154,39 +148,7 @@ export function EngagementWorkspace() {
             <div className="mt-3"><StatusBadge status={eng.status} /></div>
             <p className="mt-1 truncate text-sm text-text-muted">{eng.auditor_email ?? 'No auditor invited'}</p>
           </Card>
-          <StatCard label="Ledgers" value={accounts.length} icon={<Layers />} tone="info" loading={tbLoading} />
-          <StatCard
-            label="Mapped"
-            value={mappedRatio}
-            suffix="%"
-            icon={<Network />}
-            tone="accent"
-            loading={tbLoading}
-            sub={`${mappedCount} of ${accounts.length} ledgers`}
-          />
-          <StatCard
-            label="Balanced"
-            display={
-              <span
-                className={
-                  accounts.length === 0
-                    ? 'text-text-muted'
-                    : balanced
-                      ? 'text-status-verified'
-                      : 'text-status-pending'
-                }
-              >
-                {accounts.length === 0 ? '—' : balanced ? 'Yes' : 'No'}
-              </span>
-            }
-            icon={<Scale />}
-            tone={accounts.length === 0 ? 'neutral' : balanced ? 'accent' : 'warning'}
-            sub={
-              accounts.length > 0 && !balanced
-                ? `Dr ${formatMoney(totalDebit)} / Cr ${formatMoney(totalCredit)}`
-                : undefined
-            }
-          />
+          <BalanceStatCards totals={tbView?.totals} loading={tbLoading} />
           <StatCard
             label="Open requirements"
             value={reqs.filter((r) => r.status === 'open').length}
@@ -218,6 +180,15 @@ export function EngagementWorkspace() {
       {/* Trial Balance */}
       {tab === 'trial-balance' && (
         <div className="flex flex-col gap-4">
+          {tbView && accounts.length > 0 && (!tbView.sign_convention || tbView.sign_unresolved_count > 0) && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-status-pending/40 bg-status-pending/5 px-4 py-3 text-sm">
+              <span className="text-status-pending">Confirm whether the source stores credit balances as negative or positive values.</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" loading={setConvention.isPending} onClick={() => setConvention.mutate({ engagementId, body: { convention: 'signed' } })}>Credits negative</Button>
+                <Button size="sm" variant="secondary" loading={setConvention.isPending} onClick={() => setConvention.mutate({ engagementId, body: { convention: 'magnitude' } })}>All positive</Button>
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <p className="text-sm text-text-secondary">
               {accounts.length > 0
@@ -230,7 +201,7 @@ export function EngagementWorkspace() {
               </Button>
             )}
           </div>
-          <TrialBalanceTable accounts={accounts} loading={tbLoading} />
+          <TrialBalanceTable view={tbView} loading={tbLoading} />
         </div>
       )}
 

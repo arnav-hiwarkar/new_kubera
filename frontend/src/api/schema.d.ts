@@ -1356,9 +1356,33 @@ export interface paths {
         put?: never;
         /**
          * Inspect Trial Balance
-         * @description Step 1: return every sheet's headers + preview rows so the client can map columns.
+         * @description Step 1: every sheet's headers, preview rows, detected header row and suggested map.
          */
         post: operations["inspect_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/trial-balance/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Trial Balance
+         * @description Step 3: report what WOULD happen. Writes nothing.
+         *
+         *     Only a structurally unusable mapping is a 400 -- every other finding (dropped
+         *     rows, inconsistent rows, an out-of-balance file) comes back as data, so the
+         *     review screen is non-blocking by construction.
+         */
+        post: operations["preview_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1376,7 +1400,13 @@ export interface paths {
         put?: never;
         /**
          * Import Trial Balance
-         * @description Step 2: parse `sheet` with `column_map` (JSON) and replace this engagement's TB.
+         * @description Step 4: parse `sheet` with `column_map` and upsert this engagement's TB.
+         *
+         *     Upsert, not delete-and-reinsert: matching rows keep their `id`, so both the
+         *     user's `mapped_group_id` work and every `audit_entry_lines.ledger_id` foreign key
+         *     survive a re-import. A ledger that vanished from the file but is still referenced
+         *     by an entry line is retained, because `ledger_id` is ON DELETE CASCADE and
+         *     dropping it would take an approved adjustment with it.
          */
         post: operations["import_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_import_post"];
         delete?: never;
@@ -1392,10 +1422,43 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Trial Balance */
+        /**
+         * Get Trial Balance
+         * @description Accounts PLUS server-computed totals.
+         *
+         *     The totals travel with the accounts deliberately: when this returned a bare
+         *     array, both workspace pages re-derived their own debit/credit/balanced figures in
+         *     TypeScript and drifted from the report's answer. There is now exactly one
+         *     implementation, in trial_balance.summarize.
+         */
         get: operations["get_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/trial-balance/sign-convention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Sign Convention
+         * @description Correct a mis-detected sign convention without re-importing.
+         *
+         *     Deliberately allowed even when audit entries exist: it rewrites only the
+         *     canonical figures derived from the stored source columns, never row identity, so
+         *     every `audit_entry_lines.ledger_id` stays valid. This is the escape hatch that
+         *     makes an ambiguous detection recoverable instead of permanent.
+         */
+        post: operations["set_sign_convention_api_v1_auditease_engagements__engagement_id__trial_balance_sign_convention_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1558,7 +1621,11 @@ export interface paths {
         get: operations["get_engagement_api_v1_auditease_engagements__engagement_id__get"];
         put?: never;
         post?: never;
-        /** Delete Engagement */
+        /**
+         * Delete Engagement
+         * @description Hard-delete an engagement and everything under it (cascade). Allowed only
+         *     while draft/invited (before real audit work), or closed (cleanup).
+         */
         delete: operations["delete_engagement_api_v1_auditease_engagements__engagement_id__delete"];
         options?: never;
         head?: never;
@@ -1781,7 +1848,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Trial Balance */
+        /**
+         * Get Trial Balance
+         * @description Same envelope as the company endpoint, and the same totals implementation.
+         *
+         *     Read-only for the auditor: correcting a sign convention is a company action.
+         */
         get: operations["get_trial_balance_api_v1_auditor_engagements__engagement_id__trial_balance_get"];
         put?: never;
         post?: never;
@@ -3032,6 +3104,15 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * BalanceNature
+         * @description The natural side of a *ledger group*. Deliberately a separate enum from
+         *     EntryLineSide despite the identical member names: one describes a movement on
+         *     an adjusting entry, the other describes where a group's balance normally sits.
+         *     Do not merge them.
+         * @enum {string}
+         */
+        BalanceNature: "debit" | "credit";
         /** Body_add_query_message_api_v1_auditease_engagements__engagement_id__queries__query_id__messages_post */
         Body_add_query_message_api_v1_auditease_engagements__engagement_id__queries__query_id__messages_post: {
             /** Text */
@@ -3076,6 +3157,15 @@ export interface components {
             column_map: string;
             /** Sheet */
             sheet?: string | null;
+            /** Header Row */
+            header_row?: number | null;
+            /** Sign Convention */
+            sign_convention?: string | null;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
         };
         /** Body_inspect_sales_import_api_v1_sales_import_inspect_post */
         Body_inspect_sales_import_api_v1_sales_import_inspect_post: {
@@ -3092,6 +3182,22 @@ export interface components {
              * Format: binary
              */
             file: string;
+        };
+        /** Body_preview_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_preview_post */
+        Body_preview_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_preview_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Column Map */
+            column_map: string;
+            /** Sheet */
+            sheet?: string | null;
+            /** Header Row */
+            header_row?: number | null;
+            /** Sign Convention */
+            sign_convention?: string | null;
         };
         /** Body_upload_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_upload_post */
         Body_upload_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_upload_post: {
@@ -3768,6 +3874,7 @@ export interface components {
         };
         /**
          * EntryLineSide
+         * @description Which side of a *journal entry* line an amount sits on.
          * @enum {string}
          */
         EntryLineSide: "debit" | "credit";
@@ -3965,6 +4072,7 @@ export interface components {
             level: number;
             /** Has Children */
             has_children: boolean;
+            nature?: components["schemas"]["BalanceNature"] | null;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -4220,6 +4328,21 @@ export interface components {
             difference: number;
             /** Balanced */
             balanced: boolean;
+            /**
+             * Statement Ready
+             * @default false
+             */
+            statement_ready: boolean;
+            /**
+             * Unmapped Net Debit
+             * @default 0
+             */
+            unmapped_net_debit: number;
+            /**
+             * Difference Including Unmapped
+             * @default 0
+             */
+            difference_including_unmapped: number;
         };
         /** ReportEntriesBlock */
         ReportEntriesBlock: {
@@ -4249,13 +4372,14 @@ export interface components {
         /**
          * ReportLine
          * @description One ledger's contribution to the statements, with audit adjustments applied.
+         *
+         *     `closing`/`adjustment`/`final` are PRESENTED figures -- already oriented onto the
+         *     group's natural side -- so `closing + adjustment == final` holds on every row,
+         *     including unmapped ones. `net_debit` is the underlying canonical value.
          */
         ReportLine: {
-            /**
-             * Ledger Id
-             * Format: uuid
-             */
-            ledger_id: string;
+            /** Ledger Id */
+            ledger_id?: string | null;
             /** Ledger Name */
             ledger_name: string;
             /** Ledger Code */
@@ -4264,12 +4388,28 @@ export interface components {
             top_group?: string | null;
             /** Group Path */
             group_path?: string[] | null;
+            nature?: components["schemas"]["BalanceNature"] | null;
             /** Closing */
             closing: number;
             /** Adjustment */
             adjustment: number;
             /** Final */
             final: number;
+            /**
+             * Net Debit
+             * @default 0
+             */
+            net_debit: number;
+            /**
+             * Sign Unresolved
+             * @default false
+             */
+            sign_unresolved: boolean;
+            /**
+             * Is Synthetic
+             * @default false
+             */
+            is_synthetic: boolean;
         };
         /** ReportPreviewResponse */
         ReportPreviewResponse: {
@@ -4284,6 +4424,17 @@ export interface components {
             entries: components["schemas"]["ReportEntriesBlock"];
             /** Unmapped Count */
             unmapped_count: number;
+            /**
+             * Unresolved Nature Count
+             * @default 0
+             */
+            unresolved_nature_count: number;
+            sign_convention?: components["schemas"]["TBSignConvention"] | null;
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: string[];
         };
         /** ReportTotals */
         ReportTotals: {
@@ -4295,6 +4446,21 @@ export interface components {
             income: number;
             /** Expenditure */
             expenditure: number;
+            /**
+             * Equity
+             * @default 0
+             */
+            equity: number;
+            /**
+             * Other Liabilities
+             * @default 0
+             */
+            other_liabilities: number;
+            /**
+             * Groups
+             * @default []
+             */
+            groups: components["schemas"]["TBGroupSubtotalResponse"][];
         };
         /**
          * RequestStatus
@@ -4465,6 +4631,10 @@ export interface components {
             /** Asset Code */
             asset_code?: string | null;
         };
+        /** SetSignConventionRequest */
+        SetSignConventionRequest: {
+            convention: components["schemas"]["TBSignConvention"];
+        };
         /** SupplierCreate */
         SupplierCreate: {
             /** Code */
@@ -4567,6 +4737,194 @@ export interface components {
             /** Is Active */
             is_active?: boolean | null;
         };
+        /**
+         * TBDiagnostics
+         * @description Everything we learned about the source file. Reported, never blocking.
+         */
+        TBDiagnostics: {
+            /** Header Row */
+            header_row: number;
+            /** Rows Scanned */
+            rows_scanned: number;
+            /** Rows Imported */
+            rows_imported: number;
+            /**
+             * Rows Dropped Blank
+             * @default 0
+             */
+            rows_dropped_blank: number;
+            /**
+             * Rows Dropped Total
+             * @default 0
+             */
+            rows_dropped_total: number;
+            /**
+             * Rows Dropped Repeated Header
+             * @default 0
+             */
+            rows_dropped_repeated_header: number;
+            /**
+             * Rows Section
+             * @default 0
+             */
+            rows_section: number;
+            /**
+             * Rows Error
+             * @default 0
+             */
+            rows_error: number;
+            detected_convention: components["schemas"]["TBSignConvention"];
+            /** Convention Confidence */
+            convention_confidence: string;
+            /**
+             * Convention Evidence
+             * @default []
+             */
+            convention_evidence: string[];
+            /**
+             * Negative Closing Count
+             * @default 0
+             */
+            negative_closing_count: number;
+            /**
+             * Explicit Marker Count
+             * @default 0
+             */
+            explicit_marker_count: number;
+            /**
+             * Derived Fields
+             * @default []
+             */
+            derived_fields: string[];
+            /**
+             * Total Debit
+             * @default 0
+             */
+            total_debit: number;
+            /**
+             * Total Credit
+             * @default 0
+             */
+            total_credit: number;
+            /**
+             * Debit Credit Difference
+             * @default 0
+             */
+            debit_credit_difference: number;
+            /**
+             * Movement Balanced
+             * @default true
+             */
+            movement_balanced: boolean;
+            /**
+             * Closing Sum
+             * @default 0
+             */
+            closing_sum: number;
+            /**
+             * Closing Sums To Zero
+             * @default true
+             */
+            closing_sums_to_zero: boolean;
+            /**
+             * Opening Sum
+             * @default 0
+             */
+            opening_sum: number;
+            /**
+             * Opening Sums To Zero
+             * @default true
+             */
+            opening_sums_to_zero: boolean;
+            /**
+             * Row Consistency Mismatches
+             * @default 0
+             */
+            row_consistency_mismatches: number;
+            /**
+             * Inconsistent Rows
+             * @default []
+             */
+            inconsistent_rows: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Sign Unresolved Count
+             * @default 0
+             */
+            sign_unresolved_count: number;
+            /** Sheet Stated Total Debit */
+            sheet_stated_total_debit?: number | null;
+            /** Sheet Stated Total Credit */
+            sheet_stated_total_credit?: number | null;
+            /**
+             * Issues
+             * @default []
+             */
+            issues: components["schemas"]["TBRowIssue"][];
+        };
+        /** TBGroupSubtotalResponse */
+        TBGroupSubtotalResponse: {
+            /** Key */
+            key: string;
+            nature?: components["schemas"]["BalanceNature"] | null;
+            /**
+             * Opening Net Debit
+             * @default 0
+             */
+            opening_net_debit: number;
+            /**
+             * Presented Opening
+             * @default 0
+             */
+            presented_opening: number;
+            /**
+             * Debit
+             * @default 0
+             */
+            debit: number;
+            /**
+             * Credit
+             * @default 0
+             */
+            credit: number;
+            /**
+             * Closing Net Debit
+             * @default 0
+             */
+            closing_net_debit: number;
+            /**
+             * Presented Closing
+             * @default 0
+             */
+            presented_closing: number;
+            /**
+             * Adjustment Net Debit
+             * @default 0
+             */
+            adjustment_net_debit: number;
+            /**
+             * Presented Adjustment
+             * @default 0
+             */
+            presented_adjustment: number;
+            /**
+             * Final Net Debit
+             * @default 0
+             */
+            final_net_debit: number;
+            /**
+             * Presented Final
+             * @default 0
+             */
+            presented_final: number;
+            /** Net Debit */
+            net_debit: number;
+            /** Presented */
+            presented: number;
+            /** Ledger Count */
+            ledger_count: number;
+        };
         /** TBImportResult */
         TBImportResult: {
             /** Imported */
@@ -4585,11 +4943,108 @@ export interface components {
             balanced: boolean;
             /** Accounts */
             accounts: components["schemas"]["TrialBalanceAccountResponse"][];
+            diagnostics?: components["schemas"]["TBDiagnostics"] | null;
+            sign_convention?: components["schemas"]["TBSignConvention"] | null;
+            totals?: components["schemas"]["TBTotalsResponse"] | null;
         };
         /** TBInspectResponse */
         TBInspectResponse: {
             /** Sheets */
             sheets: components["schemas"]["TBSheetInfo"][];
+        };
+        /** TBParsedRow */
+        TBParsedRow: {
+            /** Row */
+            row: number;
+            /** Ledger Name */
+            ledger_name: string;
+            /** Opening Balance */
+            opening_balance: number;
+            /** Debit */
+            debit: number;
+            /** Credit */
+            credit: number;
+            /** Closing Balance */
+            closing_balance: number;
+            /** Closing Net Debit */
+            closing_net_debit: number;
+            /**
+             * Derived
+             * @default []
+             */
+            derived: string[];
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
+        };
+        /** TBPreviewResponse */
+        TBPreviewResponse: {
+            diagnostics: components["schemas"]["TBDiagnostics"];
+            /** Sample Rows */
+            sample_rows: components["schemas"]["TBParsedRow"][];
+            reimport_impact?: components["schemas"]["TBReimportImpact"] | null;
+            /** Would Import */
+            would_import: number;
+            /** Would Skip */
+            would_skip: number;
+        };
+        /**
+         * TBReimportImpact
+         * @description What a re-import would do, so the user confirms instead of being refused.
+         */
+        TBReimportImpact: {
+            /** Existing Ledger Count */
+            existing_ledger_count: number;
+            /** Approved Entry Count */
+            approved_entry_count: number;
+            /** Proposed Entry Count */
+            proposed_entry_count: number;
+            /** Mapped Ledger Count */
+            mapped_ledger_count: number;
+            /** Matched By Code */
+            matched_by_code: number;
+            /** Matched By Name */
+            matched_by_name: number;
+            /** New Ledger Count */
+            new_ledger_count: number;
+            /**
+             * Will Lose Mapping
+             * @default []
+             */
+            will_lose_mapping: string[];
+            /**
+             * Retained Referenced
+             * @default []
+             */
+            retained_referenced: string[];
+            /**
+             * Ambiguous Matches
+             * @default []
+             */
+            ambiguous_matches: string[];
+            /**
+             * Requires Confirmation
+             * @default false
+             */
+            requires_confirmation: boolean;
+        };
+        /** TBRowIssue */
+        TBRowIssue: {
+            /** Row */
+            row: number;
+            /** Ledger Name */
+            ledger_name?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "error" | "dropped" | "warning";
+            /** Reason */
+            reason: string;
+            /** Raw */
+            raw?: string[] | null;
         };
         /** TBSheetInfo */
         TBSheetInfo: {
@@ -4599,6 +5054,95 @@ export interface components {
             headers: string[];
             /** Preview Rows */
             preview_rows: unknown[][];
+            /**
+             * Header Row
+             * @default 1
+             */
+            header_row: number;
+            /**
+             * First Data Row
+             * @default 2
+             */
+            first_data_row: number;
+            /**
+             * Skipped Leading Rows
+             * @default []
+             */
+            skipped_leading_rows: string[][];
+            /**
+             * Suggested Map
+             * @default {}
+             */
+            suggested_map: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * TBSignConvention
+         * @description How the source trial balance encoded the sign of a balance.
+         *
+         *     signed    - credit-natured balances are stored NEGATIVE (the column sums to 0)
+         *     magnitude - every balance is stored POSITIVE; the side comes from the mapping
+         *     explicit  - the source carries a Dr/Cr marker (or a Dr+Cr column pair)
+         *     derived   - no closing column at all; closing = opening + debit - credit
+         * @enum {string}
+         */
+        TBSignConvention: "signed" | "magnitude" | "explicit" | "derived";
+        /**
+         * TBTotalsResponse
+         * @description The single authoritative totals shape.
+         *
+         *     Computed server-side by trial_balance.summarize and consumed verbatim by the
+         *     trial-balance grid, the balance card and the reports tab, so those three can
+         *     never disagree. `difference` is the one and only definition of "balanced":
+         *     the sum of every mapped ledger's signed net debit.
+         */
+        TBTotalsResponse: {
+            /**
+             * Groups
+             * @default []
+             */
+            groups: components["schemas"]["TBGroupSubtotalResponse"][];
+            /** Assets */
+            assets: number;
+            /** Liabilities */
+            liabilities: number;
+            /** Income */
+            income: number;
+            /** Expenditure */
+            expenditure: number;
+            /** Equity */
+            equity: number;
+            /** Net Profit */
+            net_profit: number;
+            /** Liabilities Plus Equity */
+            liabilities_plus_equity: number;
+            /** Difference */
+            difference: number;
+            /** Difference Including Unmapped */
+            difference_including_unmapped: number;
+            /** Balanced */
+            balanced: boolean;
+            /** Unmapped Net Debit */
+            unmapped_net_debit: number;
+            /** Unmapped Count */
+            unmapped_count: number;
+            /** Unresolved Nature Count */
+            unresolved_nature_count: number;
+            /** Sign Unresolved Count */
+            sign_unresolved_count: number;
+            /** Ledger Count */
+            ledger_count: number;
+            /** Mapped Count */
+            mapped_count: number;
+            /** Statement Ready */
+            statement_ready: boolean;
+            /** Total Debit */
+            total_debit: number;
+            /** Total Credit */
+            total_credit: number;
+            /** Movement Balanced */
+            movement_balanced: boolean;
         };
         /** TokenResponse */
         TokenResponse: {
@@ -4684,6 +5228,54 @@ export interface components {
             /** Mapped Group Path */
             mapped_group_path?: string[] | null;
             /**
+             * Opening Net Debit
+             * @default 0
+             */
+            opening_net_debit: number;
+            /**
+             * Closing Net Debit
+             * @default 0
+             */
+            closing_net_debit: number;
+            /**
+             * Adjustment Net Debit
+             * @default 0
+             */
+            adjustment_net_debit: number;
+            /**
+             * Final Net Debit
+             * @default 0
+             */
+            final_net_debit: number;
+            /**
+             * Presented Opening
+             * @default 0
+             */
+            presented_opening: number;
+            /**
+             * Presented Closing
+             * @default 0
+             */
+            presented_closing: number;
+            /**
+             * Presented Adjustment
+             * @default 0
+             */
+            presented_adjustment: number;
+            /**
+             * Presented Final
+             * @default 0
+             */
+            presented_final: number;
+            nature?: components["schemas"]["BalanceNature"] | null;
+            /**
+             * Sign Unresolved
+             * @default false
+             */
+            sign_unresolved: boolean;
+            /** Source Row Consistent */
+            source_row_consistent?: boolean | null;
+            /**
              * Created At
              * Format: date-time
              */
@@ -4693,6 +5285,28 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** TrialBalanceViewResponse */
+        TrialBalanceViewResponse: {
+            /** Accounts */
+            accounts: components["schemas"]["TrialBalanceAccountResponse"][];
+            totals: components["schemas"]["TBTotalsResponse"];
+            sign_convention?: components["schemas"]["TBSignConvention"] | null;
+            /**
+             * Sign Unresolved Count
+             * @default 0
+             */
+            sign_unresolved_count: number;
+            /**
+             * Inconsistent Row Count
+             * @default 0
+             */
+            inconsistent_row_count: number;
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: string[];
         };
         /** UnmapRequest */
         UnmapRequest: {
@@ -7700,6 +8314,41 @@ export interface operations {
             };
         };
     };
+    preview_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_preview_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_preview_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TBPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_trial_balance_api_v1_auditease_engagements__engagement_id__trial_balance_import_post: {
         parameters: {
             query?: never;
@@ -7752,7 +8401,42 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TrialBalanceAccountResponse"][];
+                    "application/json": components["schemas"]["TrialBalanceViewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_sign_convention_api_v1_auditease_engagements__engagement_id__trial_balance_sign_convention_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetSignConventionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrialBalanceViewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8151,13 +8835,11 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -8566,7 +9248,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TrialBalanceAccountResponse"][];
+                    "application/json": components["schemas"]["TrialBalanceViewResponse"];
                 };
             };
             /** @description Validation Error */

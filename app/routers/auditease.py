@@ -15,7 +15,8 @@ from app.models.auditor import Auditor
 from app.models.auditease import (
     TrialBalanceAccount, LedgerGroup, AuditEngagement, AuditorEngagementGrant,
     PendingAuditorInvite, AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage,
-    EngagementStatus, GrantStatus, AuditEntryStatus, EntryLineSide, RequestStatus, QueryStatus, SenderType
+    EngagementStatus, GrantStatus, AuditEntryStatus, EntryLineSide, RequestStatus, QueryStatus,
+    SenderType, BalanceNature, TBSignConvention,
 )
 from app.schemas.auditease import (
     TrialBalanceAccountResponse, LedgerGroupResponse, LedgerGroupCreate, LedgerGroupRename,
@@ -23,7 +24,9 @@ from app.schemas.auditease import (
     MappingImportRequest, MappingImportResult, MappingImportIssue, AuditEngagementCreate,
     AuditEngagementResponse, AuditEntryResponse, RequirementRequestResponse,
     QueryResponse, QueryMessageResponse, QueryMessageCreate,
-    TBColumnMap, TBInspectResponse, TBImportResult,
+    TBColumnMap, TBInspectResponse, TBImportResult, TBDiagnostics, TBRowIssue,
+    TBParsedRow, TBPreviewResponse, TBReimportImpact, TrialBalanceViewResponse,
+    SetSignConventionRequest,
     ReportLine, ReportTotals, ReportBalanceCheck, ReportEntrySummary,
     ReportEntriesBlock, ReportPreviewResponse,
 )
@@ -31,6 +34,9 @@ from app.config import get_settings
 from app.services import import_service
 from app.services import ledger_groups as lg
 from app.services import mapping_import
+from app.services import tb_reimport
+from app.services import trial_balance as tb
+from app.services import trial_balance_query as tbq
 
 router = APIRouter(prefix="/api/v1/auditease", tags=["auditease-company"])
 
@@ -79,6 +85,13 @@ async def _hydrate_auditor_info(db: AsyncSession, eng: AuditEngagement) -> Audit
 
 
 # --- Trial Balance (per engagement, server-side file import) ---
+#
+# Flow: inspect (headers + suggested map) -> map -> preview (diagnostics, writes
+# nothing) -> import. All accounting lives in app.services.trial_balance; these
+# handlers only do HTTP and persistence.
+
+MAX_REPORTED_ISSUES = 200
+
 
 @router.post("/engagements/{engagement_id}/trial-balance/inspect", response_model=TBInspectResponse)
 async def inspect_trial_balance(
@@ -87,14 +100,184 @@ async def inspect_trial_balance(
     db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
 ):
-    """Step 1: return every sheet's headers + preview rows so the client can map columns."""
+    """Step 1: every sheet's headers, preview rows, detected header row and suggested map."""
     await _get_owned_engagement(db, current_user.company_id, engagement_id)
     content = await file.read()
     try:
-        sheets = import_service.inspect_spreadsheet(file.filename or "", content)
+        sheets = import_service.inspect_spreadsheet(
+            file.filename or "", content, preview=8, detect_header=True
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"sheets": sheets}
+
+
+def _parse_column_map(column_map: str) -> TBColumnMap:
+    try:
+        return TBColumnMap.model_validate_json(column_map)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=f"Invalid column_map: {e.errors()}")
+
+
+def _build_diagnostics(
+    parsed: import_service.ParsedTrialBalance,
+    stated_dr: float | None,
+    stated_cr: float | None,
+) -> TBDiagnostics:
+    v = parsed.validation
+    c = parsed.convention
+    dropped_by_kind: dict[str, int] = {}
+    for d in parsed.dropped:
+        dropped_by_kind[d["kind"]] = dropped_by_kind.get(d["kind"], 0) + 1
+
+    issues: list[TBRowIssue] = []
+    for e in parsed.errors:
+        issues.append(TBRowIssue(
+            row=e["row"], kind="error", reason="; ".join(e["errors"]),
+        ))
+    for d in parsed.dropped:
+        if d["kind"] == "blank":
+            continue  # blank rows are noise, not something to show a user
+        issues.append(TBRowIssue(
+            row=d["row"], kind="dropped", reason=d["reason"], raw=d.get("raw") or None,
+        ))
+    for m in v.inconsistent_rows:
+        issues.append(TBRowIssue(
+            row=m["row"], ledger_name=m.get("ledger_name"), kind="warning",
+            reason=(f"opening + debit - credit = {m['expected']:,.2f} but the file's "
+                    f"closing balance is {m['found']:,.2f}"),
+        ))
+    issues.sort(key=lambda i: i.row)
+
+    return TBDiagnostics(
+        header_row=parsed.header_row + 1,
+        rows_scanned=len(parsed.rows) + len(parsed.errors) + len(parsed.dropped),
+        rows_imported=len(parsed.rows),
+        rows_dropped_blank=dropped_by_kind.get("blank", 0),
+        rows_dropped_total=dropped_by_kind.get("total", 0),
+        rows_dropped_repeated_header=dropped_by_kind.get("repeated_header", 0),
+        rows_section=parsed.section_count,
+        rows_error=len(parsed.errors),
+        detected_convention=c.convention,
+        convention_confidence=c.confidence,
+        convention_evidence=list(c.evidence),
+        negative_closing_count=c.negative_count,
+        explicit_marker_count=c.explicit_marker_count,
+        derived_fields=list(v.derived_fields),
+        total_debit=float(v.total_debit_movement),
+        total_credit=float(v.total_credit_movement),
+        debit_credit_difference=float(v.total_debit_movement - v.total_credit_movement),
+        movement_balanced=v.movement_balanced,
+        closing_sum=float(v.sum_net_debit),
+        closing_sums_to_zero=v.balanced,
+        opening_sum=float(v.sum_opening_net_debit),
+        opening_sums_to_zero=v.opening_balanced,
+        row_consistency_mismatches=v.inconsistent_count,
+        inconsistent_rows=v.inconsistent_rows,
+        sign_unresolved_count=v.sign_unresolved_count,
+        sheet_stated_total_debit=stated_dr,
+        sheet_stated_total_credit=stated_cr,
+        issues=issues[:MAX_REPORTED_ISSUES],
+    )
+
+
+async def _reimport_impact(
+    db: AsyncSession, engagement_id: uuid.UUID, parsed_rows: list[dict]
+) -> tuple[TBReimportImpact | None, tb_reimport.ReimportPlan | None, list[TrialBalanceAccount]]:
+    """What a re-import would do to the stored trial balance, if one already exists."""
+    res = await db.execute(
+        select(TrialBalanceAccount).where(TrialBalanceAccount.engagement_id == engagement_id)
+    )
+    existing = list(res.scalars().all())
+    if not existing:
+        return None, None, existing
+
+    status_res = await db.execute(
+        select(AuditEntry.status).where(AuditEntry.engagement_id == engagement_id)
+    )
+    statuses = list(status_res.scalars().all())
+    approved_count = sum(1 for s in statuses if s == AuditEntryStatus.approved)
+    proposed_count = sum(1 for s in statuses if s == AuditEntryStatus.proposed)
+
+    ref_res = await db.execute(
+        select(AuditEntryLine.ledger_id)
+        .join(AuditEntry, AuditEntry.id == AuditEntryLine.entry_id)
+        .where(AuditEntry.engagement_id == engagement_id)
+    )
+    referenced = set(ref_res.scalars().all())
+
+    plan = tb_reimport.plan_reimport(existing, parsed_rows, referenced)
+    impact = TBReimportImpact(
+        existing_ledger_count=len(existing),
+        approved_entry_count=approved_count,
+        proposed_entry_count=proposed_count,
+        mapped_ledger_count=sum(1 for a in existing if a.mapped_group_id),
+        matched_by_code=plan.matched_by_code,
+        matched_by_name=plan.matched_by_name,
+        new_ledger_count=len(plan.to_insert),
+        will_lose_mapping=plan.will_lose_mapping,
+        retained_referenced=plan.retained_referenced,
+        ambiguous_matches=plan.ambiguous_matches,
+        # Only an APPROVED entry means the trial balance is being relied upon. The old
+        # guard counted any entry, so a single rejected proposal locked the TB forever.
+        requires_confirmation=bool(
+            approved_count or plan.will_lose_mapping or plan.ambiguous_matches
+        ),
+    )
+    return impact, plan, existing
+
+
+@router.post("/engagements/{engagement_id}/trial-balance/preview", response_model=TBPreviewResponse)
+async def preview_trial_balance(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: UploadFile = File(...),
+    column_map: str = Form(...),
+    sheet: Optional[str] = Form(None),
+    header_row: Optional[int] = Form(None),
+    sign_convention: Optional[str] = Form(None),
+):
+    """Step 3: report what WOULD happen. Writes nothing.
+
+    Only a structurally unusable mapping is a 400 -- every other finding (dropped
+    rows, inconsistent rows, an out-of-balance file) comes back as data, so the
+    review screen is non-blocking by construction.
+    """
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    cmap = _parse_column_map(column_map)
+    content = await file.read()
+    convention = _coerce_convention(sign_convention)
+    hr = None if header_row is None else max(0, header_row - 1)
+
+    try:
+        parsed = import_service.parse_trial_balance(
+            file.filename or "", content, sheet, cmap.model_dump(),
+            convention=convention, header_row=hr,
+        )
+        stated_dr, stated_cr = import_service.stated_totals(
+            file.filename or "", content, sheet, cmap.model_dump(), hr
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    impact, _, _ = await _reimport_impact(db, engagement_id, parsed.rows)
+    return TBPreviewResponse(
+        diagnostics=_build_diagnostics(parsed, stated_dr, stated_cr),
+        sample_rows=[TBParsedRow(**r) for r in parsed.sample_rows],
+        reimport_impact=impact,
+        would_import=len(parsed.rows),
+        would_skip=len(parsed.errors) + len(parsed.dropped),
+    )
+
+
+def _coerce_convention(value: Optional[str]) -> TBSignConvention | None:
+    if not value:
+        return None
+    try:
+        return TBSignConvention(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Unknown sign_convention: {value!r}")
 
 
 @router.post("/engagements/{engagement_id}/trial-balance/import", response_model=TBImportResult)
@@ -105,83 +288,177 @@ async def import_trial_balance(
     file: UploadFile = File(...),
     column_map: str = Form(...),
     sheet: Optional[str] = Form(None),
+    header_row: Optional[int] = Form(None),
+    sign_convention: Optional[str] = Form(None),
+    confirm: bool = Form(False),
 ):
-    """Step 2: parse `sheet` with `column_map` (JSON) and replace this engagement's TB."""
-    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    """Step 4: parse `sheet` with `column_map` and upsert this engagement's TB.
 
-    # Guard: re-import is blocked once audit entries reference this TB.
-    entry_count = await db.execute(
-        select(func.count()).select_from(AuditEntry).where(AuditEntry.engagement_id == engagement_id)
-    )
-    if entry_count.scalar_one() > 0:
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot re-import: audit entries already exist for this engagement.",
-        )
-
-    try:
-        cmap = TBColumnMap.model_validate_json(column_map)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=f"Invalid column_map: {e.errors()}")
-
+    Upsert, not delete-and-reinsert: matching rows keep their `id`, so both the
+    user's `mapped_group_id` work and every `audit_entry_lines.ledger_id` foreign key
+    survive a re-import. A ledger that vanished from the file but is still referenced
+    by an entry line is retained, because `ledger_id` is ON DELETE CASCADE and
+    dropping it would take an approved adjustment with it.
+    """
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    cmap = _parse_column_map(column_map)
     content = await file.read()
+    convention = _coerce_convention(sign_convention)
+    hr = None if header_row is None else max(0, header_row - 1)
+
     try:
-        valid, errors = import_service.parse_trial_balance(
-            file.filename or "", content, sheet, cmap.model_dump()
+        parsed = import_service.parse_trial_balance(
+            file.filename or "", content, sheet, cmap.model_dump(),
+            convention=convention, header_row=hr,
+        )
+        stated_dr, stated_cr = import_service.stated_totals(
+            file.filename or "", content, sheet, cmap.model_dump(), hr
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Replace-on-reimport: wipe existing rows for this engagement, insert fresh.
-    await db.execute(
-        delete(TrialBalanceAccount).where(TrialBalanceAccount.engagement_id == engagement_id)
-    )
-
-    accounts: List[TrialBalanceAccount] = []
-    for rec in valid:
-        acc = TrialBalanceAccount(
-            company_id=current_user.company_id,
-            engagement_id=engagement_id,
-            **rec,
+    impact, plan, existing = await _reimport_impact(db, engagement_id, parsed.rows)
+    if (
+        impact
+        and impact.retained_referenced
+        and eng.tb_sign_convention is not None
+        and eng.tb_sign_convention != parsed.convention.convention
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "The new file uses a different sign convention but omits ledgers "
+                    "referenced by audit entries. Include those ledgers or keep the "
+                    "existing convention; mixing conventions is unsafe."
+                ),
+                "reimport_impact": impact.model_dump(),
+            },
         )
-        db.add(acc)
-        accounts.append(acc)
-    await db.flush()
-    await db.commit()
-    for acc in accounts:
-        await db.refresh(acc)
+    if impact and impact.requires_confirmation and not confirm:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": ("This engagement already has a trial balance that audit "
+                            "entries rely on. Re-importing will update it in place. "
+                            "Re-send with confirm=true to proceed."),
+                "reimport_impact": impact.model_dump(),
+            },
+        )
 
-    total_debit = float(sum(float(a.debit) for a in accounts))
-    total_credit = float(sum(float(a.credit) for a in accounts))
-    # Set mapped_group_path on each account for serialization (freshly imported = no mapping)
-    for acc in accounts:
-        acc.mapped_group_path = None  # type: ignore[attr-defined]
+    by_id = {a.id: a for a in existing}
+    accounts: List[TrialBalanceAccount] = []
+
+    if plan is None:
+        for rec in parsed.rows:
+            acc = TrialBalanceAccount(
+                company_id=current_user.company_id, engagement_id=engagement_id, **rec
+            )
+            db.add(acc)
+            accounts.append(acc)
+    else:
+        for acc_id, rec in plan.to_update:
+            acc = by_id[acc_id]
+            for key, value in rec.items():
+                setattr(acc, key, value)
+            accounts.append(acc)
+        for rec in plan.to_insert:
+            acc = TrialBalanceAccount(
+                company_id=current_user.company_id, engagement_id=engagement_id, **rec
+            )
+            db.add(acc)
+            accounts.append(acc)
+        for acc_id in plan.to_retain:
+            accounts.append(by_id[acc_id])
+        if plan.to_delete:
+            await db.execute(
+                delete(TrialBalanceAccount).where(TrialBalanceAccount.id.in_(plan.to_delete))
+            )
+
+    eng.tb_sign_convention = parsed.convention.convention
+    await db.flush()
+    # A magnitude-convention file takes its sign from the mapped group's nature, so
+    # any mapping that survived the upsert has to be re-applied to the canonical value.
+    await tbq.recanonicalize(
+        db, engagement_id, current_user.company_id,
+        convention=parsed.convention.convention,
+    )
+    await db.commit()
+
+    figures = await tbq.load_engagement_figures(db, current_user.company_id, engagement_id)
+    diagnostics = _build_diagnostics(parsed, stated_dr, stated_cr)
+    totals = tbq.totals_response(figures.summary)
     return TBImportResult(
-        imported=len(accounts),
-        skipped=len(errors),
-        errors=errors,
-        total_debit=total_debit,
-        total_credit=total_credit,
-        balanced=(round(total_debit, 2) == round(total_credit, 2)),
-        accounts=[TrialBalanceAccountResponse.model_validate(a) for a in accounts],
+        imported=len(parsed.rows),
+        skipped=len(parsed.errors) + len(parsed.dropped),
+        errors=parsed.errors,
+        total_debit=diagnostics.total_debit,
+        total_credit=diagnostics.total_credit,
+        # The authoritative answer: does the trial balance sum to zero?
+        balanced=totals.balanced,
+        accounts=[TrialBalanceAccountResponse.model_validate(a) for a in figures.accounts],
+        diagnostics=diagnostics,
+        sign_convention=parsed.convention.convention,
+        totals=totals,
     )
 
 
-@router.get("/engagements/{engagement_id}/trial-balance", response_model=List[TrialBalanceAccountResponse])
+@router.get("/engagements/{engagement_id}/trial-balance", response_model=TrialBalanceViewResponse)
 async def get_trial_balance(
     engagement_id: uuid.UUID,
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    await _get_owned_engagement(db, current_user.company_id, engagement_id)
-    result = await db.execute(
-        select(TrialBalanceAccount)
-        .where(TrialBalanceAccount.engagement_id == engagement_id)
-        .order_by(TrialBalanceAccount.ledger_name)
+    """Accounts PLUS server-computed totals.
+
+    The totals travel with the accounts deliberately: when this returned a bare
+    array, both workspace pages re-derived their own debit/credit/balanced figures in
+    TypeScript and drifted from the report's answer. There is now exactly one
+    implementation, in trial_balance.summarize.
+    """
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    return await _trial_balance_view(db, current_user.company_id, eng)
+
+
+async def _trial_balance_view(
+    db: AsyncSession, company_id: uuid.UUID, eng: AuditEngagement
+) -> TrialBalanceViewResponse:
+    figures = await tbq.load_engagement_figures(db, company_id, eng.id)
+    return TrialBalanceViewResponse(
+        accounts=[TrialBalanceAccountResponse.model_validate(a) for a in figures.accounts],
+        totals=tbq.totals_response(figures.summary),
+        sign_convention=eng.tb_sign_convention,
+        sign_unresolved_count=figures.summary.sign_unresolved_count,
+        inconsistent_row_count=sum(
+            1 for a in figures.accounts if a.source_row_consistent is False
+        ),
+        warnings=tbq.view_warnings(
+            figures.figures, figures.summary, eng.tb_sign_convention
+        ),
     )
-    accounts = list(result.scalars().all())
-    path_map = await lg.resolve_group_paths(db, current_user.company_id)
-    return lg.attach_group_paths(accounts, path_map)
+
+
+@router.post(
+    "/engagements/{engagement_id}/trial-balance/sign-convention",
+    response_model=TrialBalanceViewResponse,
+)
+async def set_sign_convention(
+    engagement_id: uuid.UUID,
+    payload: SetSignConventionRequest,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Correct a mis-detected sign convention without re-importing.
+
+    Deliberately allowed even when audit entries exist: it rewrites only the
+    canonical figures derived from the stored source columns, never row identity, so
+    every `audit_entry_lines.ledger_id` stays valid. This is the escape hatch that
+    makes an ambiguous detection recoverable instead of permanent.
+    """
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    await tbq.apply_sign_convention(db, eng, payload.convention)
+    await db.commit()
+    return await _trial_balance_view(db, current_user.company_id, eng)
 
 
 # --- Chart of accounts (ledger groups) ---
@@ -232,6 +509,7 @@ async def list_ledger_groups(
     await db.commit()
     groups = await lg.load_visible_groups(db, current_user.company_id)
     parent_ids = {g.parent_id for g in groups if g.parent_id}
+    natures = lg.build_nature_map(groups)
     return [
         LedgerGroupResponse(
             id=g.id,
@@ -240,6 +518,7 @@ async def list_ledger_groups(
             name=g.name,
             level=g.level,
             has_children=g.id in parent_ids,
+            nature=natures.get(g.id),
         )
         for g in groups
     ]
@@ -284,10 +563,12 @@ async def create_ledger_group(
     db.add(group)
     await db.commit()
     await db.refresh(group)
+    index = await lg.resolve_group_index(db, current_user.company_id)
     # A freshly created group is always a leaf.
     return LedgerGroupResponse(
         id=group.id, company_id=group.company_id, parent_id=group.parent_id,
         name=group.name, level=group.level, has_children=False,
+        nature=index.natures.get(group.id),
     )
 
 
@@ -306,9 +587,11 @@ async def rename_ledger_group(
     await db.commit()
     await db.refresh(group)
     has_children = await _has_children(db, current_user.company_id, group.id)
+    index = await lg.resolve_group_index(db, current_user.company_id)
     return LedgerGroupResponse(
         id=group.id, company_id=group.company_id, parent_id=group.parent_id,
         name=group.name, level=group.level, has_children=has_children,
+        nature=index.natures.get(group.id),
     )
 
 
@@ -371,10 +654,11 @@ async def map_ledger(
         raise HTTPException(status_code=404, detail="Ledger not found")
 
     ledger.mapped_group_id = group.id
+    await db.flush()
+    await tbq.recanonicalize(db, engagement_id, current_user.company_id, ledger_ids=[ledger.id])
     await db.commit()
-    await db.refresh(ledger)
-    path_map = await lg.resolve_group_paths(db, current_user.company_id)
-    return lg.attach_group_paths([ledger], path_map)[0]
+    refreshed = await tbq.load_engagement_figures(db, current_user.company_id, engagement_id)
+    return next(a for a in refreshed.accounts if a.id == ledger.id)
 
 
 @router.post("/engagements/{engagement_id}/ledgers/bulk-map")
@@ -397,6 +681,10 @@ async def bulk_map_ledgers(
             )
         )
         .values(mapped_group_id=group.id)
+    )
+    await db.flush()
+    await tbq.recanonicalize(
+        db, engagement_id, current_user.company_id, ledger_ids=payload.ledger_ids
     )
     await db.commit()
     return {"updated": result.rowcount}
@@ -421,6 +709,10 @@ async def unmap_ledgers(
             )
         )
         .values(mapped_group_id=None)
+    )
+    await db.flush()
+    await tbq.recanonicalize(
+        db, engagement_id, current_user.company_id, ledger_ids=payload.ledger_ids
     )
     await db.commit()
     return {"updated": result.rowcount}
@@ -577,6 +869,10 @@ async def import_mappings(
             reason=issue.reason,
         ))
 
+    await db.flush()
+    # This is a mapping write path too, so the canonical figures of a
+    # magnitude-convention trial balance have to be re-derived here as well.
+    await tbq.recanonicalize(db, engagement_id, current_user.company_id)
     await db.commit()
     return MappingImportResult(
         total_target_ledgers=len(targets),
@@ -686,54 +982,6 @@ async def delete_engagement(
     await db.delete(eng)
     await db.commit()
     return None
-
-
-@router.delete("/engagements/{engagement_id}")
-async def delete_engagement(
-    engagement_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
-):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can delete engagements")
-
-    result = await db.execute(select(AuditEngagement).where(and_(AuditEngagement.id == engagement_id, AuditEngagement.company_id == current_user.company_id)))
-    eng = result.scalar_one_or_none()
-    if not eng:
-        raise HTTPException(status_code=404, detail="Engagement not found")
-        
-    # Check for approved entries
-    entries_res = await db.execute(
-        select(AuditEntry).where(and_(AuditEntry.engagement_id == engagement_id, AuditEntry.status == AuditEntryStatus.approved))
-    )
-    if entries_res.scalars().first():
-        raise HTTPException(status_code=400, detail="Cannot delete engagement with approved entries")
-
-    # Hard delete engagement
-    # Manually delete related records since ondelete="CASCADE" is missing on some tables
-    await db.execute(delete(AuditorEngagementGrant).where(AuditorEngagementGrant.engagement_id == engagement_id))
-    
-    # Delete related requirement requests
-    await db.execute(delete(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id))
-    
-    # Delete queries and query messages (query messages have ondelete="CASCADE" but let's be safe)
-    queries_res = await db.execute(select(Query.id).where(Query.engagement_id == engagement_id))
-    query_ids = queries_res.scalars().all()
-    if query_ids:
-        await db.execute(delete(QueryMessage).where(QueryMessage.query_id.in_(query_ids)))
-        await db.execute(delete(Query).where(Query.engagement_id == engagement_id))
-        
-    # Delete audit entries and their lines (lines have ondelete="CASCADE")
-    entries_res = await db.execute(select(AuditEntry.id).where(AuditEntry.engagement_id == engagement_id))
-    entry_ids = entries_res.scalars().all()
-    if entry_ids:
-        await db.execute(delete(AuditEntryLine).where(AuditEntryLine.entry_id.in_(entry_ids)))
-        await db.execute(delete(AuditEntry).where(AuditEntry.engagement_id == engagement_id))
-        
-    await db.delete(eng)
-    await db.commit()
-    
-    return {"message": "Engagement deleted"}
 
 
 class AuditorInvite(BaseModel):
@@ -991,83 +1239,43 @@ def _round2(v: float) -> float:
 
 
 async def _compute_report(db: AsyncSession, company_id: uuid.UUID, eng: AuditEngagement) -> ReportPreviewResponse:
-    """Build the Balance Sheet + P&L + entries summary for an engagement, applying
-    approved audit-entry adjustments. Shared by the preview and generate endpoints so
-    the accounting lives in exactly one place."""
-    res_acc = await db.execute(
-        select(TrialBalanceAccount)
-        .where(TrialBalanceAccount.engagement_id == eng.id)
-        .order_by(TrialBalanceAccount.ledger_name)
-    )
-    accounts = list(res_acc.scalars().all())
-    path_map = await lg.resolve_group_paths(db, company_id)
-    lg.attach_group_paths(accounts, path_map)
+    """Build the Balance Sheet + P&L + entries summary for an engagement.
 
-    # Approved entries drive the adjustments; proposed ones are only counted.
-    res_ent = await db.execute(
-        select(AuditEntry)
-        .options(selectinload(AuditEntry.lines))
-        .where(and_(AuditEntry.engagement_id == eng.id, AuditEntry.status == AuditEntryStatus.approved))
-        .order_by(AuditEntry.created_at.asc())
-    )
-    approved_entries = list(res_ent.scalars().all())
-    proposed_res = await db.execute(
-        select(func.count()).select_from(AuditEntry).where(
-            and_(AuditEntry.engagement_id == eng.id, AuditEntry.status == AuditEntryStatus.proposed)
+    All the accounting is `trial_balance.summarize`, shared with the trial-balance
+    endpoint, so the report and the grid cannot report different totals. There is no
+    abs() and no branching on group names here: nature comes from the persisted
+    `LedgerGroup.nature`, and a contra balance simply arrives with the opposite sign
+    and subtracts.
+    """
+    figures = await tbq.load_engagement_figures(db, company_id, eng.id)
+    summary = figures.summary
+    equity_before_profit = summary.equity - summary.net_profit
+    other_liabilities = summary.liabilities - equity_before_profit
+
+    # The Balance Sheet's balancing figure, as a real renderable row. Without it the
+    # Liabilities section total is `liabilities` while the footer says
+    # `liabilities + net_profit`, so the statement visibly does not balance.
+    rendered = [*figures.figures, tb.make_profit_figure(summary.net_profit)]
+
+    lines = [
+        ReportLine(
+            ledger_id=f.ledger_id,
+            ledger_name=f.ledger_name,
+            ledger_code=f.ledger_code,
+            top_group=f.top_group,
+            group_path=f.group_path,
+            nature=f.nature,
+            # Presented figures, so closing + adjustment == final on EVERY row --
+            # including unmapped ones, whose adjustment used to be silently dropped.
+            closing=_round2(f.presented_closing),
+            adjustment=_round2(tb.present(f.adjustment, f.nature)),
+            final=_round2(f.presented_final),
+            net_debit=_round2(f.net_debit),
+            sign_unresolved=f.sign_unresolved,
+            is_synthetic=f.is_synthetic,
         )
-    )
-    proposed_count = int(proposed_res.scalar() or 0)
-
-    # Net-debit adjustment per ledger.
-    adjustments: dict[uuid.UUID, float] = {}
-    for entry in approved_entries:
-        for line in entry.lines:
-            delta = float(line.amount) if line.side == EntryLineSide.debit else -float(line.amount)
-            adjustments[line.ledger_id] = adjustments.get(line.ledger_id, 0.0) + delta
-
-    lines: list[ReportLine] = []
-    totals = {"Assets": 0.0, "Liabilities": 0.0, "Income": 0.0, "Expenditure": 0.0}
-    unmapped_count = 0
-    for acc in accounts:
-        top = acc.mapped_group_path[0] if acc.mapped_group_path else None
-        adj = adjustments.get(acc.id, 0.0)
-        raw_closing = float(acc.closing_balance)
-        # Statement totals need each balance as a POSITIVE magnitude on its group's
-        # natural side; nature comes from the mapped group, not the stored sign.
-        # Debit-natured groups grow with a net debit; credit-natured shrink.
-        if top in ("Assets", "Expenditure"):
-            # Debit-natured: positive under both the signed and the magnitude source
-            # conventions, so use the stored value as-is (preserves any contra sign).
-            base = raw_closing
-            final = base + adj
-        elif top in ("Liabilities", "Income"):
-            # Credit-natured: source trial balances commonly store these NEGATIVE
-            # (standard signed convention). Normalize to the positive natural-side
-            # magnitude so a negative Income can't flip `Income - Expenditure` into an
-            # addition. abs() is correct for both conventions: -500 -> 500, 500 -> 500.
-            base = abs(raw_closing)
-            final = base - adj
-        else:
-            base = raw_closing  # unmapped — shown raw, excluded from statement totals
-            final = raw_closing
-        if top is None:
-            unmapped_count += 1
-        else:
-            totals[top] += final
-        lines.append(ReportLine(
-            ledger_id=acc.id,
-            ledger_name=acc.ledger_name,
-            ledger_code=acc.ledger_code,
-            top_group=top,
-            group_path=acc.mapped_group_path,
-            closing=_round2(base),
-            adjustment=_round2(adj),
-            final=_round2(final),
-        ))
-
-    net_profit = totals["Income"] - totals["Expenditure"]
-    liab_plus_equity = totals["Liabilities"] + net_profit
-    difference = totals["Assets"] - liab_plus_equity
+        for f in rendered
+    ]
 
     entry_summaries = [
         ReportEntrySummary(
@@ -1077,31 +1285,57 @@ async def _compute_report(db: AsyncSession, company_id: uuid.UUID, eng: AuditEng
             total=_round2(sum(float(l.amount) for l in e.lines if l.side == EntryLineSide.debit)),
             line_count=len(e.lines),
         )
-        for e in approved_entries
+        for e in figures.approved_entries
     ]
+
+    warnings = tbq.view_warnings(figures.figures, summary, eng.tb_sign_convention)
+    # An approved double entry with one leg on an unmapped ledger contributes only its
+    # mapped leg to the totals, which breaks the balance check for a reason no generic
+    # "some ledgers are unmapped" banner explains. Name it.
+    unmapped_ids = {f.ledger_id for f in figures.figures if f.top_group is None}
+    for entry in figures.approved_entries:
+        touched = sorted({
+            f.ledger_name for f in figures.figures
+            if f.ledger_id in unmapped_ids
+            and any(l.ledger_id == f.ledger_id for l in entry.lines)
+        })
+        for name in touched:
+            warnings.append(
+                f"Approved entry {entry.code or entry.description} adjusts unmapped "
+                f"ledger '{name}' — the statements cannot balance until it is mapped."
+            )
 
     return ReportPreviewResponse(
         period_label=eng.period_label,
         lines=lines,
         totals=ReportTotals(
-            assets=_round2(totals["Assets"]),
-            liabilities=_round2(totals["Liabilities"]),
-            income=_round2(totals["Income"]),
-            expenditure=_round2(totals["Expenditure"]),
+            assets=_round2(summary.assets),
+            liabilities=_round2(summary.liabilities),
+            income=_round2(summary.income),
+            expenditure=_round2(summary.expenditure),
+            equity=_round2(summary.equity),
+            other_liabilities=_round2(other_liabilities),
+            groups=tbq.totals_response(summary).groups,
         ),
-        net_profit=_round2(net_profit),
+        net_profit=_round2(summary.net_profit),
         balance_check=ReportBalanceCheck(
-            assets=_round2(totals["Assets"]),
-            liabilities_plus_equity=_round2(liab_plus_equity),
-            difference=_round2(difference),
-            balanced=abs(difference) < 0.01,
+            assets=_round2(summary.assets),
+            liabilities_plus_equity=_round2(summary.liabilities_plus_equity),
+            difference=_round2(summary.difference),
+            balanced=summary.balanced,
+            statement_ready=summary.statement_ready,
+            unmapped_net_debit=_round2(summary.unmapped_net_debit),
+            difference_including_unmapped=_round2(summary.difference_including_unmapped),
         ),
         entries=ReportEntriesBlock(
             approved=entry_summaries,
-            approved_count=len(approved_entries),
-            proposed_count=proposed_count,
+            approved_count=len(figures.approved_entries),
+            proposed_count=figures.proposed_count,
         ),
-        unmapped_count=unmapped_count,
+        unmapped_count=summary.unmapped_count,
+        unresolved_nature_count=summary.unresolved_nature_count,
+        sign_convention=eng.tb_sign_convention,
+        warnings=warnings,
     )
 
 
@@ -1110,16 +1344,27 @@ def _report_to_html(report: ReportPreviewResponse) -> str:
     def money(v: float) -> str:
         return f"{v:,.2f}"
 
-    def section(title: str, groups: list[str]) -> str:
+    def is_equity_line(line: ReportLine) -> bool:
+        return bool(
+            line.top_group == "Liabilities"
+            and line.group_path
+            and len(line.group_path) > 1
+            and tb._norm(line.group_path[1]) in tb.EQUITY_SUBGROUPS
+        )
+
+    def section(title: str, predicate, subtotal: float) -> str:
         rows = ""
         for line in report.lines:
-            if line.top_group not in groups:
+            if not predicate(line):
                 continue
             path = " › ".join(line.group_path) if line.group_path else (line.top_group or "Unmapped")
+            cls = " class='synthetic'" if line.is_synthetic else ""
+            adjustment = "—" if line.is_synthetic else money(line.adjustment)
+            closing = "—" if line.is_synthetic else money(line.closing)
             rows += (
-                f"<tr><td>{line.ledger_name}</td><td>{path}</td>"
-                f"<td class='num'>{money(line.closing)}</td>"
-                f"<td class='num'>{money(line.adjustment)}</td>"
+                f"<tr{cls}><td>{line.ledger_name}</td><td>{path}</td>"
+                f"<td class='num'>{closing}</td>"
+                f"<td class='num'>{adjustment}</td>"
                 f"<td class='num'>{money(line.final)}</td></tr>"
             )
         return (
@@ -1127,7 +1372,9 @@ def _report_to_html(report: ReportPreviewResponse) -> str:
             "<table><thead><tr><th>Ledger</th><th>Group</th>"
             "<th class='num'>Closing</th><th class='num'>Adjustment</th>"
             "<th class='num'>Final</th></tr></thead>"
-            f"<tbody>{rows}</tbody></table>"
+            f"<tbody>{rows}</tbody>"
+            f"<tfoot><tr class='total'><td colspan='4'>{title} total</td>"
+            f"<td class='num'>{money(subtotal)}</td></tr></tfoot></table>"
         )
 
     t = report.totals
@@ -1138,9 +1385,8 @@ def _report_to_html(report: ReportPreviewResponse) -> str:
         for e in report.entries.approved
     ) or "<tr><td colspan='4'>No approved adjusting entries.</td></tr>"
 
-    unmapped_note = (
-        f"<p class='warn'>{report.unmapped_count} ledger(s) are unmapped and excluded "
-        "from these statements.</p>" if report.unmapped_count else ""
+    unmapped_note = "".join(
+        f"<p class='warn'>{w}</p>" for w in report.warnings
     )
     balance_note = (
         "Balanced" if bc.balanced
@@ -1155,19 +1401,27 @@ def _report_to_html(report: ReportPreviewResponse) -> str:
         "th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}"
         ".num{text-align:right;font-variant-numeric:tabular-nums}"
         ".warn{color:#b45309}.total{font-weight:bold}"
+        ".synthetic{font-style:italic;background:#f8fafc}"
         "</style></head><body>"
         f"<h1>Financial Statements — {report.period_label}</h1>"
         f"{unmapped_note}"
-        f"{section('Balance Sheet', ['Assets', 'Liabilities'])}"
+        # Assets and Liabilities stay in SEPARATE sections so each gets its own
+        # meaningful subtotal. The Liabilities section includes the synthetic
+        # "Profit for the period" row, which is what makes the rendered Liabilities
+        # subtotal equal Total Assets instead of only matching a footer scalar.
+        "<h2>Balance Sheet</h2>"
+        f"{section('Assets', lambda line: line.top_group == 'Assets', t.assets)}"
+        f"{section('Other Liabilities', lambda line: line.top_group == 'Liabilities' and not is_equity_line(line), t.other_liabilities)}"
+        f"{section('Equity', is_equity_line, t.equity)}"
         f"<p class='total'>Total Assets: {money(t.assets)} &nbsp;|&nbsp; "
         f"Total Liabilities: {money(t.liabilities)} &nbsp;|&nbsp; "
-        f"Liabilities + Equity: {money(bc.liabilities_plus_equity)} &nbsp;|&nbsp; {balance_note}</p>"
+        f"Total Liabilities and Equity: {money(bc.liabilities_plus_equity)} &nbsp;|&nbsp; {balance_note}</p>"
         # P&L: keep Income and Expenditure in SEPARATE sections. They have opposite
         # accounting natures, so lumping them into one block invites a meaningless
         # abs(Income)+abs(Expenditure) "total"; the net is the explicit difference below.
         f"<h2>Profit &amp; Loss</h2>"
-        f"{section('Income', ['Income'])}"
-        f"{section('Expenditure', ['Expenditure'])}"
+        f"{section('Income', lambda line: line.top_group == 'Income', t.income)}"
+        f"{section('Expenditure', lambda line: line.top_group == 'Expenditure', t.expenditure)}"
         f"<p class='total'>Total Income: {money(t.income)} &nbsp;|&nbsp; "
         f"Total Expenditure: {money(t.expenditure)} &nbsp;|&nbsp; "
         f"Net {'Profit' if report.net_profit >= 0 else 'Loss'}: {money(abs(report.net_profit))}</p>"

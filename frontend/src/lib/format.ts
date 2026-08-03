@@ -35,13 +35,53 @@ export function formatRelative(iso: string): string {
   return formatDate(iso)
 }
 
-/** Accounting-style amount, e.g. 1,234.50 or (1,234.50) for negatives. */
-export function formatMoney(value: number | string | null | undefined): string {
+function numeric(value: number | string | null | undefined): number | null {
   const n = typeof value === 'string' ? Number(value) : (value ?? 0)
-  if (Number.isNaN(n)) return '—'
-  const abs = Math.abs(n).toLocaleString(undefined, {
+  return Number.isNaN(n) ? null : n
+}
+
+function magnitude(value: number): string {
+  return Math.abs(value).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
-  return n < 0 ? `(${abs})` : abs
+}
+
+export function formatSigned(value: number | string | null | undefined): string {
+  const n = numeric(value)
+  if (n === null) return '—'
+  return n < 0 ? `-${magnitude(n)}` : magnitude(n)
+}
+
+export function formatAccounting(value: number | string | null | undefined): string {
+  const n = numeric(value)
+  if (n === null) return '—'
+  return n < 0 ? `(${magnitude(n)})` : magnitude(n)
+}
+
+export function formatDrCr(value: number | string | null | undefined): {
+  amount: string
+  side: 'Dr' | 'Cr'
+} {
+  const n = numeric(value) ?? 0
+  return { amount: magnitude(n), side: n < 0 ? 'Cr' : 'Dr' }
+}
+
+export type AmountStyle = 'drcr' | 'signed' | 'accounting'
+
+export function formatAmount(
+  value: number | string | null | undefined,
+  { style = 'signed' }: { style?: AmountStyle } = {},
+): string {
+  if (style === 'accounting') return formatAccounting(value)
+  if (style === 'drcr') {
+    const result = formatDrCr(value)
+    return `${result.amount} ${result.side}`
+  }
+  return formatSigned(value)
+}
+
+/** General money formatting is plain signed; accounting parentheses are opt-in. */
+export function formatMoney(value: number | string | null | undefined): string {
+  return formatSigned(value)
 }

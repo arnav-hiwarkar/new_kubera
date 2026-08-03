@@ -9,6 +9,7 @@ import type {
   UnmapRequest,
   MappingImportRequest,
   EntryApproval,
+  SetSignConventionRequest,
 } from '@/api/types'
 
 export const auditeaseKeys = {
@@ -88,10 +89,45 @@ export function useCompanyTrialBalance(engagementId: string) {
   })
 }
 
+export function useCompanyTrialBalanceAccounts(engagementId: string) {
+  return useQuery({
+    queryKey: auditeaseKeys.trialBalance(engagementId),
+    queryFn: () => auditeaseCompanyApi.getTrialBalance(engagementId),
+    select: (view) => view.accounts,
+    enabled: !!engagementId,
+  })
+}
+
+export function useCompanyTrialBalanceTotals(engagementId: string) {
+  return useQuery({
+    queryKey: auditeaseKeys.trialBalance(engagementId),
+    queryFn: () => auditeaseCompanyApi.getTrialBalance(engagementId),
+    select: (view) => view.totals,
+    enabled: !!engagementId,
+  })
+}
+
 export function useInspectTrialBalance() {
   return useMutation({
     mutationFn: ({ engagementId, formData }: { engagementId: string; formData: FormData }) =>
       auditeaseCompanyApi.inspectTrialBalance(engagementId, formData),
+  })
+}
+
+export function usePreviewTrialBalance() {
+  return useMutation({
+    mutationFn: ({ engagementId, formData }: { engagementId: string; formData: FormData }) =>
+      auditeaseCompanyApi.previewTrialBalance(engagementId, formData),
+  })
+}
+
+export function useSetSignConvention() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, body }: { engagementId: string; body: SetSignConventionRequest }) =>
+      auditeaseCompanyApi.setSignConvention(engagementId, body),
+    onSuccess: (view, { engagementId }) =>
+      qc.setQueryData(auditeaseKeys.trialBalance(engagementId), view),
   })
 }
 

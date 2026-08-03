@@ -119,15 +119,28 @@ export type MappingImportResult = S['MappingImportResult']
 export type TBInspectResponse = S['TBInspectResponse']
 export type TBSheetInfo = S['TBSheetInfo']
 export type TBImportResult = S['TBImportResult']
+export type TBPreviewResponse = S['TBPreviewResponse']
+export type TBDiagnostics = S['TBDiagnostics']
+export type TrialBalanceViewResponse = S['TrialBalanceViewResponse']
+export type TBTotalsResponse = S['TBTotalsResponse']
+export type TBGroupSubtotalResponse = S['TBGroupSubtotalResponse']
+export type TBSignConvention = S['TBSignConvention']
+export type SetSignConventionRequest = S['SetSignConventionRequest']
 /** Column map sent (as JSON string) with the TB import multipart request.
  * Values are source-column header names; `ledger_code` is optional. */
 export interface TBColumnMap {
   ledger_code?: string | null
   ledger_name: string
-  opening_balance: string
-  debit: string
-  credit: string
-  closing_balance: string
+  opening_balance?: string | null
+  opening_debit?: string | null
+  opening_credit?: string | null
+  debit?: string | null
+  credit?: string | null
+  closing_balance?: string | null
+  closing_debit?: string | null
+  closing_credit?: string | null
+  decimal_style?: 'auto' | 'dot' | 'comma'
+  credit_sign?: 'auto' | 'negative' | 'positive'
 }
 export type RequirementRequestResponse = S['RequirementRequestResponse']
 export type RequirementRequestCreate = S['RequirementRequestCreate']

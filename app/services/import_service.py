@@ -1,8 +1,9 @@
 import io
 import csv
+from decimal import Decimal
 from uuid import UUID
 from typing import List, Dict, Callable, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fastapi import UploadFile
 import openpyxl
 
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, ValidationError
 
 from app.models.custom_fields import CustomFieldDefinition
+from app.services import trial_balance as tb
 from app.services.custom_field_validator import validate_custom_fields
 
 @dataclass
@@ -95,40 +97,29 @@ async def parse_and_import(
 
 
 # ---------------------------------------------------------------------------
-# Trial-balance import (server-side, two-call: inspect -> map -> import)
+# Trial-balance import (server-side: inspect -> map -> preview -> import)
+#
+# This module owns only file/sheet I/O and cell extraction. Every decision about
+# what a number means -- its sign, its side, whether the row is consistent -- lives
+# in app.services.trial_balance, which is pure and unit-tested there.
 # ---------------------------------------------------------------------------
 
-TB_NUMERIC_FIELDS = ["opening_balance", "debit", "credit", "closing_balance"]
+TB_TEXT_FIELDS = ("ledger_code", "ledger_name")
+TB_NUMERIC_FIELDS = tb.NUMERIC_MAP_FIELDS
 
 
 def _to_number(raw: Any) -> float:
-    """Parse a spreadsheet cell into a float. Handles blanks (error), commas,
-    currency symbols, and accounting-style parentheses for negatives."""
-    if raw is None:
-        raise ValueError("empty")
-    s = str(raw).strip()
-    if s == "":
-        raise ValueError("empty")
-    neg = s.startswith("(") and s.endswith(")")
-    if neg:
-        s = s[1:-1]
-    for ch in (",", "₹", "$", "€", "£", " "):
-        s = s.replace(ch, "")
-    val = float(s)
-    return -val if neg else val
+    """Back-compat shim. Prefer tb.parse_amount, which keeps the Dr/Cr tag."""
+    return float(tb.parse_amount(raw).value)
 
 
-def _read_csv(content: bytes) -> tuple[List[str], List[list]]:
+def _read_csv(content: bytes) -> List[list]:
     text = content.decode("utf-8-sig")
-    all_rows = list(csv.reader(io.StringIO(text)))
-    if not all_rows:
-        return [], []
-    headers = [("" if h is None else str(h).strip()) for h in all_rows[0]]
-    return headers, [list(r) for r in all_rows[1:]]
+    return [list(r) for r in csv.reader(io.StringIO(text))]
 
 
-def load_sheet(filename: str, content: bytes, sheet_name: str | None) -> tuple[List[str], List[list]]:
-    """Return (headers, data_rows) for one sheet. CSV has a single virtual sheet."""
+def load_raw_rows(filename: str, content: bytes, sheet_name: str | None) -> List[list]:
+    """Every row of one sheet, header included -- header detection happens later."""
     name = (filename or "").lower()
     if name.endswith(".csv"):
         return _read_csv(content)
@@ -141,65 +132,129 @@ def load_sheet(filename: str, content: bytes, sheet_name: str | None) -> tuple[L
                 raise ValueError(f"Sheet '{sheet_name}' not found")
             else:
                 ws = wb.worksheets[0]
-            rows = list(ws.iter_rows(values_only=True))
+            return [list(r) for r in ws.iter_rows(values_only=True)]
         finally:
             wb.close()
-        if not rows:
-            return [], []
-        headers = [("" if h is None else str(h).strip()) for h in rows[0]]
-        return headers, [list(r) for r in rows[1:]]
     raise ValueError("Unsupported file format. Use .csv or .xlsx")
 
 
-def inspect_spreadsheet(filename: str, content: bytes, preview: int = 5) -> List[dict]:
-    """List every sheet with its column headers and the first `preview` data rows."""
+def load_sheet(
+    filename: str, content: bytes, sheet_name: str | None,
+    header_row: int | None = None, detect_header: bool = False,
+) -> tuple[List[str], List[list]]:
+    """Return (headers, data_rows) for one sheet. CSV has a single virtual sheet."""
+    rows = load_raw_rows(filename, content, sheet_name)
+    if not rows:
+        return [], []
+    hr = header_row if header_row is not None else (
+        tb.detect_header_row(rows) if detect_header else 0
+    )
+    headers, first_data = tb.build_headers(rows, hr)
+    return headers, rows[first_data:]
+
+
+def inspect_spreadsheet(
+    filename: str, content: bytes, preview: int = 5, detect_header: bool = False,
+) -> List[dict]:
+    """List every sheet with its headers and first `preview` data rows.
+
+    `detect_header` is opt-in because the sales importer (the other caller) treats
+    row 1 as the header unconditionally; turning detection on there would make its
+    preview disagree with its import.
+    """
     name = (filename or "").lower()
-    sheets: List[dict] = []
     if name.endswith(".csv"):
-        headers, data = _read_csv(content)
-        sheets.append({
-            "name": "Sheet1",
-            "headers": headers,
-            "preview_rows": [[("" if c is None else str(c)) for c in row] for row in data[:preview]],
-        })
+        raw_by_sheet = [("Sheet1", _read_csv(content))]
     elif name.endswith(".xlsx"):
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
         try:
-            for ws in wb.worksheets:
-                rows_iter = ws.iter_rows(values_only=True)
-                try:
-                    header_row = next(rows_iter)
-                except StopIteration:
-                    header_row = ()
-                headers = [("" if h is None else str(h).strip()) for h in header_row]
-                preview_rows = []
-                for row in rows_iter:
-                    if len(preview_rows) >= preview:
-                        break
-                    preview_rows.append([("" if c is None else str(c)) for c in row])
-                sheets.append({"name": ws.title, "headers": headers, "preview_rows": preview_rows})
+            raw_by_sheet = [(ws.title, [list(r) for r in ws.iter_rows(values_only=True)])
+                            for ws in wb.worksheets]
         finally:
             wb.close()
     else:
         raise ValueError("Unsupported file format. Use .csv or .xlsx")
+
+    sheets: List[dict] = []
+    for title, rows in raw_by_sheet:
+        hr = tb.detect_header_row(rows) if detect_header else 0
+        headers, first_data = tb.build_headers(rows, hr)
+        skipped = [
+            [("" if c is None else str(c)) for c in row]
+            for row in rows[:hr] if any(str(c or "").strip() for c in row)
+        ]
+        sheets.append({
+            "name": title,
+            "headers": headers,
+            "preview_rows": [[("" if c is None else str(c)) for c in row]
+                             for row in rows[first_data:first_data + preview]],
+            "header_row": hr + 1,          # 1-indexed for humans
+            "first_data_row": first_data + 1,
+            "skipped_leading_rows": skipped,
+            "suggested_map": tb.suggest_column_map(headers),
+        })
     return sheets
+
+
+# ---------------------------------------------------------------------------
+# Parsing a trial balance
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ParsedTrialBalance:
+    rows: List[dict]                      # DB-ready kwargs for TrialBalanceAccount
+    errors: List[dict]                     # rows that could not be parsed
+    dropped: List[dict]                    # blank / total / repeated-header rows
+    validation: tb.TBValidation
+    convention: tb.ConventionReport
+    header_row: int                        # 0-indexed
+    headers: List[str]
+    sample_rows: List[dict]
+    section_count: int = 0
+
+
+def _cell(row: list, idx: Dict[str, int], field: str):
+    i = idx.get(field)
+    if i is None or i >= len(row):
+        return None
+    return row[i]
 
 
 def parse_trial_balance(
     filename: str,
     content: bytes,
     sheet_name: str | None,
-    column_map: Dict[str, str | None],
-) -> tuple[List[dict], List[dict]]:
-    """Parse the chosen sheet using column_map (field -> source header).
-    Returns (valid_rows, errors). ledger_name + all four numerics are required;
-    ledger_code is optional. Rows failing validation are collected, not raised."""
-    headers, data_rows = load_sheet(filename, content, sheet_name)
+    column_map: Dict[str, Any],
+    *,
+    convention: tb.TBSignConvention | None = None,
+    header_row: int | None = None,
+    sample_size: int = 20,
+) -> ParsedTrialBalance:
+    """Parse the chosen sheet into canonical rows plus full diagnostics.
+
+    Two passes: the first parses cells and infers the sign convention from the
+    file as a whole (a single row cannot tell you whether credits are negative),
+    the second normalizes with that convention. Row-level problems are collected,
+    never raised -- only a structurally unusable mapping raises ValueError.
+    """
+    decimal_style = column_map.get("decimal_style") or "auto"
+    credit_sign = column_map.get("credit_sign") or "auto"
+
+    map_errors = tb.validate_column_map(column_map)
+    if map_errors:
+        raise ValueError("; ".join(map_errors))
+
+    raw_rows = load_raw_rows(filename, content, sheet_name)
+    if not raw_rows:
+        raise ValueError("The sheet is empty")
+
+    hr = header_row if header_row is not None else tb.detect_header_row(raw_rows)
+    headers, first_data = tb.build_headers(raw_rows, hr)
 
     idx: Dict[str, int] = {}
     missing: List[str] = []
     for field, src in column_map.items():
-        if not src:
+        if not src or field in ("decimal_style", "credit_sign"):
             continue
         if src in headers:
             idx[field] = headers.index(src)
@@ -209,43 +264,180 @@ def parse_trial_balance(
         raise ValueError(f"Mapped columns not found in sheet: {missing}")
     if "ledger_name" not in idx:
         raise ValueError("ledger_name must be mapped")
-    for f in TB_NUMERIC_FIELDS:
-        if f not in idx:
-            raise ValueError(f"{f} must be mapped")
 
-    def cell(row: list, field: str):
-        i = idx.get(field)
-        if i is None or i >= len(row):
-            return None
-        return row[i]
+    data_rows = raw_rows[first_data:]
 
-    valid: List[dict] = []
+    # --- pass 1: classify + parse cells ---
     errors: List[dict] = []
-    for i, row in enumerate(data_rows, start=1):
-        if not any(c not in (None, "") for c in row):
-            continue  # skip fully blank rows
-        row_errors: List[str] = []
-        rec: Dict[str, Any] = {}
+    dropped: List[dict] = []
+    section_count = 0
+    staged: List[tuple[int, str, str | None, Dict[str, tb.ParsedAmount]]] = []
 
-        name = cell(row, "ledger_name")
+    for offset, row in enumerate(data_rows):
+        row_no = first_data + offset + 1  # 1-indexed source row, for the user
+        kind = tb.classify_row(row, idx, headers)
+        if kind in (tb.RowKind.blank, tb.RowKind.total, tb.RowKind.repeated_header):
+            if kind is not tb.RowKind.blank:
+                dropped.append({
+                    "row": row_no,
+                    "kind": kind.value,
+                    "reason": _DROP_REASONS[kind],
+                    "raw": [("" if c is None else str(c)) for c in row],
+                })
+            else:
+                dropped.append({"row": row_no, "kind": kind.value,
+                                "reason": _DROP_REASONS[kind], "raw": []})
+            continue
+        if kind is tb.RowKind.section:
+            section_count += 1
+
+        name = _cell(row, idx, "ledger_name")
         if name is None or str(name).strip() == "":
-            row_errors.append("ledger_name is required")
-        else:
-            rec["ledger_name"] = str(name).strip()
+            errors.append({"row": row_no, "errors": ["ledger_name is required"]})
+            continue
 
+        code = None
         if "ledger_code" in idx:
-            code = cell(row, "ledger_code")
-            rec["ledger_code"] = None if code in (None, "") else str(code).strip()
+            raw_code = _cell(row, idx, "ledger_code")
+            code = None if raw_code in (None, "") else str(raw_code).strip()
 
-        for f in TB_NUMERIC_FIELDS:
+        parsed: Dict[str, tb.ParsedAmount] = {}
+        row_errors: List[str] = []
+        for field in tb.NUMERIC_MAP_FIELDS:
+            if field not in idx:
+                continue
+            raw = _cell(row, idx, field)
             try:
-                rec[f] = _to_number(cell(row, f))
-            except (ValueError, TypeError):
-                row_errors.append(f"{f} must be a number (got {cell(row, f)!r})")
-
+                parsed[field] = tb.parse_amount(raw, decimal_style=decimal_style)
+            except tb.AmountParseError as e:
+                row_errors.append(f"{field}: {e} (got {raw!r})")
         if row_errors:
-            errors.append({"row": i, "errors": row_errors})
-        else:
-            valid.append(rec)
+            errors.append({"row": row_no, "errors": row_errors})
+            continue
+        staged.append((row_no, str(name).strip(), code, parsed))
 
-    return valid, errors
+    # --- infer the convention from the file as a whole ---
+    has_closing_col = "closing_balance" in idx
+    has_closing_pair = "closing_debit" in idx or "closing_credit" in idx
+    closings = [p["closing_balance"] for _, _, _, p in staged if "closing_balance" in p]
+    sum_dr = sum((p["debit"].magnitude for _, _, _, p in staged if "debit" in p), Decimal(0))
+    sum_cr = sum((p["credit"].magnitude for _, _, _, p in staged if "credit" in p), Decimal(0))
+    report = tb.detect_sign_convention(
+        closings,
+        has_closing_column=has_closing_col,
+        has_closing_pair=has_closing_pair,
+        sum_debit=sum_dr if "debit" in idx else None,
+        sum_credit=sum_cr if "credit" in idx else None,
+    )
+    effective = convention
+    override_evidence: str | None = None
+    if effective is not None:
+        override_evidence = "overridden by the user"
+    elif report.convention in (tb.TBSignConvention.explicit, tb.TBSignConvention.derived):
+        effective = report.convention
+    elif credit_sign == "positive":
+        effective = tb.TBSignConvention.magnitude
+        override_evidence = "credit_sign=positive selected"
+    elif credit_sign == "negative":
+        effective = tb.TBSignConvention.signed
+        override_evidence = "credit_sign=negative selected"
+    else:
+        effective = report.convention
+    if override_evidence is not None:
+        report = replace(report, convention=effective,
+                         evidence=[*report.evidence, override_evidence])
+
+    # --- pass 2: normalize ---
+    out_rows: List[dict] = []
+    figures: List[tb.RowFigures] = []
+    for row_no, name, code, parsed in staged:
+        amounts = tb.normalize_amounts(
+            opening=parsed.get("opening_balance"),
+            opening_debit=parsed.get("opening_debit"),
+            opening_credit=parsed.get("opening_credit"),
+            debit=parsed.get("debit"),
+            credit=parsed.get("credit"),
+            closing=parsed.get("closing_balance"),
+            closing_debit=parsed.get("closing_debit"),
+            closing_credit=parsed.get("closing_credit"),
+            convention=effective,
+            credit_sign=credit_sign,
+            group_nature=None,   # mapping happens after import; see recanonicalize()
+        )
+        out_rows.append({
+            "ledger_code": code,
+            "ledger_name": name,
+            "opening_balance": float(amounts.opening_balance),
+            "debit": float(amounts.debit),
+            "credit": float(amounts.credit),
+            "closing_balance": float(amounts.closing_balance),
+            "opening_net_debit": float(amounts.opening_net_debit),
+            "closing_net_debit": float(amounts.closing_net_debit),
+            "sign_unresolved": amounts.sign_unresolved,
+            "source_row_consistent": amounts.row_consistent,
+        })
+        figures.append(tb.RowFigures(row=row_no, ledger_name=name, amounts=amounts))
+
+    validation = tb.validate_rows(figures)
+    sample = [
+        {
+            "row": f.row,
+            "ledger_name": f.ledger_name,
+            "opening_balance": float(f.amounts.opening_balance),
+            "debit": float(f.amounts.debit),
+            "credit": float(f.amounts.credit),
+            "closing_balance": float(f.amounts.closing_balance),
+            "closing_net_debit": float(f.amounts.closing_net_debit),
+            "derived": list(f.amounts.derived),
+            "notes": list(f.amounts.notes),
+        }
+        for f in figures[:sample_size]
+    ]
+
+    return ParsedTrialBalance(
+        rows=out_rows,
+        errors=errors,
+        dropped=dropped,
+        validation=validation,
+        convention=report,
+        header_row=hr,
+        headers=headers,
+        sample_rows=sample,
+        section_count=section_count,
+    )
+
+
+_DROP_REASONS = {
+    tb.RowKind.blank: "blank row",
+    tb.RowKind.total: "total / carried-forward row",
+    tb.RowKind.repeated_header: "repeated header row",
+    tb.RowKind.section: "section heading",
+}
+
+
+def stated_totals(filename: str, content: bytes, sheet_name: str | None,
+                  column_map: Dict[str, Any], header_row: int | None = None
+                  ) -> tuple[float | None, float | None]:
+    """The Dr/Cr figures off the sheet's own Total row, when it has one.
+
+    A free cross-check: if the sheet says total debit is 5,000 and our own sum says
+    something else, the user almost certainly mapped the wrong column.
+    """
+    raw_rows = load_raw_rows(filename, content, sheet_name)
+    if not raw_rows:
+        return None, None
+    hr = header_row if header_row is not None else tb.detect_header_row(raw_rows)
+    headers, first_data = tb.build_headers(raw_rows, hr)
+    idx = {f: headers.index(s) for f, s in column_map.items()
+           if s and f not in ("decimal_style", "credit_sign") and s in headers}
+    for row in raw_rows[first_data:]:
+        if tb.classify_row(row, idx, headers) is not tb.RowKind.total:
+            continue
+        try:
+            dr = tb.parse_amount(_cell(row, idx, "debit")).magnitude
+            cr = tb.parse_amount(_cell(row, idx, "credit")).magnitude
+        except tb.AmountParseError:
+            continue
+        if dr or cr:
+            return float(dr), float(cr)
+    return None, None

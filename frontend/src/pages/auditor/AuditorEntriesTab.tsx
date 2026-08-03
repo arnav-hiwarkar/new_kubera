@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, ScrollText } from 'lucide-react'
 import { Card, Button, Spinner, StatusBadge, EmptyState, useToast, Drawer, Field } from '@/components/ui'
-import { useAuditorListEntries, useAuditorDeleteEntry, useAuditorCreateEntry, useAuditorTrialBalance } from '@/api/hooks/auditorEngagements'
+import { useAuditorListEntries, useAuditorDeleteEntry, useAuditorCreateEntry, useAuditorTrialBalanceAccounts } from '@/api/hooks/auditorEngagements'
 import { formatMoney } from '@/lib/format'
 
 type EntryLineState = {
@@ -23,7 +23,7 @@ function NewEntryDrawer({
   const [debitLines, setDebitLines] = useState<EntryLineState[]>([])
   const [creditLines, setCreditLines] = useState<EntryLineState[]>([])
 
-  const { data: tbAccounts = [] } = useAuditorTrialBalance(engagementId)
+  const { data: tbAccounts = [] } = useAuditorTrialBalanceAccounts(engagementId)
   const createEntry = useAuditorCreateEntry()
   const toast = useToast()
 

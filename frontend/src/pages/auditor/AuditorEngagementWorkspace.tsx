@@ -7,14 +7,12 @@ import {
   FileText,
   ListChecks,
   MessagesSquare,
-  Layers,
-  Scale,
   ScrollText,
 } from 'lucide-react'
 import { Button, Card, StatCard, StatusBadge, Spinner, EmptyState, Tabs } from '@/components/ui'
-import { formatMoney } from '@/lib/format'
 import { useAuditorEngagements, useAuditorTrialBalance } from '@/api/hooks/auditorEngagements'
 import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable'
+import { BalanceStatCards } from '@/components/auditease/BalanceStatCards'
 import { RequirementsTab } from './RequirementsTab'
 import { QueriesTab } from './QueriesTab'
 import { AuditorEntriesTab } from './AuditorEntriesTab'
@@ -27,7 +25,7 @@ export function AuditorEngagementWorkspace() {
   const navigate = useNavigate()
 
   const { data: engagements = [], isLoading } = useAuditorEngagements()
-  const { data: accounts = [], isLoading: tbLoading } = useAuditorTrialBalance(engagementId)
+  const { data: tbView, isLoading: tbLoading } = useAuditorTrialBalance(engagementId)
   const { data: reqs = [] } = useAuditorListRequirements(engagementId)
   const { data: queries = [] } = useAuditorListQueries(engagementId)
   const { data: entries = [] } = useAuditorListEntries(engagementId)
@@ -43,10 +41,6 @@ export function AuditorEngagementWorkspace() {
         description="You may not have access, or it has been closed."
       />
     )
-
-  const totalDebit = accounts.reduce((s, a) => s + a.debit, 0)
-  const totalCredit = accounts.reduce((s, a) => s + a.credit, 0)
-  const balanced = Math.round((totalDebit - totalCredit) * 100) === 0
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: <ClipboardCheck /> },
@@ -100,30 +94,7 @@ export function AuditorEngagementWorkspace() {
             </div>
             <div className="mt-3"><StatusBadge status={eng.status} /></div>
           </Card>
-          <StatCard label="Ledgers" value={accounts.length} icon={<Layers />} tone="info" loading={tbLoading} />
-          <StatCard
-            label="Balanced"
-            display={
-              <span
-                className={
-                  accounts.length === 0
-                    ? 'text-text-muted'
-                    : balanced
-                      ? 'text-status-verified'
-                      : 'text-status-pending'
-                }
-              >
-                {accounts.length === 0 ? '—' : balanced ? 'Yes' : 'No'}
-              </span>
-            }
-            icon={<Scale />}
-            tone={accounts.length === 0 ? 'neutral' : balanced ? 'info' : 'warning'}
-            sub={
-              accounts.length > 0 && !balanced
-                ? `Dr ${formatMoney(totalDebit)} / Cr ${formatMoney(totalCredit)}`
-                : undefined
-            }
-          />
+          <BalanceStatCards totals={tbView?.totals} loading={tbLoading} accent="auditor" />
           <StatCard
             label="Open requirements"
             value={reqs.filter((r) => r.status === 'open').length}
@@ -140,7 +111,7 @@ export function AuditorEngagementWorkspace() {
         </div>
       )}
 
-      {tab === 'trial-balance' && <TrialBalanceTable accounts={accounts} loading={tbLoading} readonly={true} />}
+      {tab === 'trial-balance' && <TrialBalanceTable view={tbView} loading={tbLoading} readonly={true} />}
       {tab === 'entries' && <AuditorEntriesTab engagementId={eng.id} />}
       {tab === 'requirements' && <RequirementsTab engagementId={eng.id} />}
       {tab === 'queries' && <QueriesTab engagementId={eng.id} />}

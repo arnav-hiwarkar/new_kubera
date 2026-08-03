@@ -1,15 +1,31 @@
 """Chart-of-accounts helpers: seeding the fixed top groups and resolving the
 root→leaf name path for a group (used to display mappings on the TB)."""
 import uuid
+from dataclasses import dataclass
 from typing import Dict, List
 
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.auditease import LedgerGroup
+from app.models.auditease import BalanceNature, LedgerGroup
 
-# The four fixed, read-only top-level groups (company_id = NULL, level 0).
-DEFAULT_TOP_GROUPS = ["Assets", "Liabilities", "Income", "Expenditure"]
+# The four fixed, read-only top-level groups (company_id = NULL, level 0), each with
+# the natural side of its balance. This mapping is the single source of accounting
+# nature: it is persisted onto the seeded rows so report code never has to infer
+# nature by string-comparing a group name (which silently dropped ledgers from every
+# total if a head was renamed or a company created its own level-0 group).
+#
+# Note there is no separate Equity head: Share Capital and Reserves & Surplus are
+# seeded under Liabilities, so the balance identity A = L + E + P/L still holds and
+# the Balance Sheet renders an equity block by grouping on the level-1 name.
+TOP_GROUP_NATURES: dict[str, BalanceNature] = {
+    "Assets": BalanceNature.debit,
+    "Liabilities": BalanceNature.credit,
+    "Income": BalanceNature.credit,
+    "Expenditure": BalanceNature.debit,
+}
+
+DEFAULT_TOP_GROUPS = list(TOP_GROUP_NATURES)
 
 SCHEDULE_III_SEED = {
     "Assets": [
@@ -48,10 +64,18 @@ async def ensure_default_ledger_groups(db: AsyncSession) -> None:
     
     for name in DEFAULT_TOP_GROUPS:
         if name not in existing_tops:
-            group = LedgerGroup(company_id=None, parent_id=None, name=name, level=0, has_children=True)
+            group = LedgerGroup(
+                company_id=None, parent_id=None, name=name, level=0,
+                has_children=True, nature=TOP_GROUP_NATURES[name],
+            )
             db.add(group)
             existing_tops[name] = group
-            
+        elif existing_tops[name].nature is None:
+            # Repair a row seeded before `nature` existed. Belt-and-braces with the
+            # migration's UPDATE, and it self-heals dev databases built via
+            # metadata.create_all (which never runs migrations).
+            existing_tops[name].nature = TOP_GROUP_NATURES[name]
+
     await db.flush()
     
     # 2. Sub-groups
@@ -107,6 +131,41 @@ def build_path_map(groups: List[LedgerGroup]) -> Dict[uuid.UUID, List[str]]:
         return result
 
     return {g.id: path(g.id) for g in groups}
+
+
+def build_nature_map(groups: List[LedgerGroup]) -> Dict[uuid.UUID, BalanceNature | None]:
+    """Map each group id to the accounting nature of its level-0 ancestor.
+
+    A group inherits nature from its root, so a ledger mapped three levels deep
+    still resolves. Returns None for a group whose root carries no nature (e.g. a
+    company-created top-level group) -- callers must treat that as *unresolved* and
+    report it, not as zero.
+    """
+    by_id = {g.id: g for g in groups}
+    cache: Dict[uuid.UUID, BalanceNature | None] = {}
+
+    def nature(gid: uuid.UUID) -> BalanceNature | None:
+        if gid in cache:
+            return cache[gid]
+        g = by_id.get(gid)
+        if g is None:
+            return None
+        cache[gid] = g.nature if g.parent_id is None else nature(g.parent_id)
+        return cache[gid]
+
+    return {g.id: nature(g.id) for g in groups}
+
+
+@dataclass
+class GroupIndex:
+    """Both lookups a caller needs, resolved from a single query."""
+    paths: Dict[uuid.UUID, List[str]]
+    natures: Dict[uuid.UUID, BalanceNature | None]
+
+
+async def resolve_group_index(db: AsyncSession, company_id: uuid.UUID) -> GroupIndex:
+    groups = await load_visible_groups(db, company_id)
+    return GroupIndex(paths=build_path_map(groups), natures=build_nature_map(groups))
 
 
 async def resolve_group_paths(db: AsyncSession, company_id: uuid.UUID) -> Dict[uuid.UUID, List[str]]:

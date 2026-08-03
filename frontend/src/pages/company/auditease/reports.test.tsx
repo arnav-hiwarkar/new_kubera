@@ -35,6 +35,7 @@ const preview: ReportPreviewResponse = {
       closing: 1000,
       adjustment: 200,
       final: 1200,
+      net_debit: 1000, sign_unresolved: false, is_synthetic: false,
     },
     {
       ledger_id: 'l2',
@@ -45,6 +46,7 @@ const preview: ReportPreviewResponse = {
       closing: 600,
       adjustment: 0,
       final: 600,
+      net_debit: -600, sign_unresolved: false, is_synthetic: false,
     },
     {
       ledger_id: 'l3',
@@ -55,6 +57,7 @@ const preview: ReportPreviewResponse = {
       closing: 500,
       adjustment: 0,
       final: 700,
+      net_debit: -500, sign_unresolved: false, is_synthetic: false,
     },
     {
       ledger_id: 'l4',
@@ -65,17 +68,35 @@ const preview: ReportPreviewResponse = {
       closing: 100,
       adjustment: 0,
       final: 100,
+      net_debit: 100, sign_unresolved: false, is_synthetic: false,
+    },
+    {
+      ledger_id: null,
+      ledger_name: 'Profit for the period (transferred to Reserves & Surplus)',
+      ledger_code: null,
+      top_group: 'Liabilities',
+      group_path: ['Liabilities', 'Reserves & Surplus'],
+      nature: 'credit',
+      closing: 0,
+      adjustment: 0,
+      final: 600,
+      net_debit: 0,
+      sign_unresolved: false,
+      is_synthetic: true,
     },
   ],
-  totals: { assets: 1200, liabilities: 600, income: 700, expenditure: 100 },
+  totals: { assets: 1200, liabilities: 600, income: 700, expenditure: 100, equity: 600, other_liabilities: 600, groups: [] },
   net_profit: 600,
-  balance_check: { assets: 1200, liabilities_plus_equity: 1200, difference: 0, balanced: true },
+  balance_check: { assets: 1200, liabilities_plus_equity: 1200, difference: 0, balanced: true, statement_ready: true, unmapped_net_debit: 0, difference_including_unmapped: 0 },
   entries: {
     approved: [{ id: 'e1', code: 'AJE-1', description: 'Extra sale', total: 200, line_count: 2 }],
     approved_count: 1,
     proposed_count: 1,
   },
   unmapped_count: 1,
+  unresolved_nature_count: 0,
+  sign_convention: 'signed',
+  warnings: [],
 }
 
 beforeEach(() => {

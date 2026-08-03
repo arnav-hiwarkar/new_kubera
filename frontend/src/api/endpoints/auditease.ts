@@ -8,6 +8,9 @@ import type {
   TrialBalanceAccountResponse,
   TBInspectResponse,
   TBImportResult,
+  TBPreviewResponse,
+  TrialBalanceViewResponse,
+  SetSignConventionRequest,
   LedgerGroupResponse,
   LedgerGroupCreate,
   LedgerGroupRename,
@@ -54,9 +57,19 @@ export const auditeaseCompanyApi = {
       `/api/v1/auditease/engagements/${engagementId}/trial-balance/import`,
       { formData },
     ),
+  previewTrialBalance: (engagementId: string, formData: FormData) =>
+    companyClient.post<TBPreviewResponse>(
+      `/api/v1/auditease/engagements/${engagementId}/trial-balance/preview`,
+      { formData },
+    ),
   getTrialBalance: (engagementId: string) =>
-    companyClient.get<TrialBalanceAccountResponse[]>(
+    companyClient.get<TrialBalanceViewResponse>(
       `/api/v1/auditease/engagements/${engagementId}/trial-balance`,
+    ),
+  setSignConvention: (engagementId: string, body: SetSignConventionRequest) =>
+    companyClient.post<TrialBalanceViewResponse>(
+      `/api/v1/auditease/engagements/${engagementId}/trial-balance/sign-convention`,
+      { body },
     ),
 
   // Chart of accounts (company-global groups)

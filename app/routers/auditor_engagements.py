@@ -21,7 +21,7 @@ from app.schemas.auditease import (
     AuditEngagementResponse, AuditEntryCreate, AuditEntryResponse,
     RequirementRequestCreate, RequirementRequestResponse,
     QueryCreate, QueryResponse, QueryMessageCreate, QueryMessageResponse,
-    TrialBalanceAccountResponse
+    TrialBalanceAccountResponse, TrialBalanceViewResponse
 )
 from app.schemas.docvault import DocumentResponse
 from app.services import document_access as doc_access
@@ -122,22 +122,30 @@ async def accept_engagement(
     return {"message": "Engagement accepted"}
 
 
-@router.get("/engagements/{engagement_id}/trial-balance", response_model=List[TrialBalanceAccountResponse])
+@router.get("/engagements/{engagement_id}/trial-balance", response_model=TrialBalanceViewResponse)
 async def get_trial_balance(
     engagement_id: uuid.UUID,
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
+    """Same envelope as the company endpoint, and the same totals implementation.
+
+    Read-only for the auditor: correcting a sign convention is a company action.
+    """
     eng = await check_auditor_access(db, current_auditor.id, engagement_id)
-    result = await db.execute(
-        select(TrialBalanceAccount)
-        .where(TrialBalanceAccount.engagement_id == engagement_id)
-        .order_by(TrialBalanceAccount.ledger_name)
+    from app.services import trial_balance_query as tbq
+
+    figures = await tbq.load_engagement_figures(db, eng.company_id, engagement_id)
+    return TrialBalanceViewResponse(
+        accounts=[TrialBalanceAccountResponse.model_validate(a) for a in figures.accounts],
+        totals=tbq.totals_response(figures.summary),
+        sign_convention=eng.tb_sign_convention,
+        sign_unresolved_count=figures.summary.sign_unresolved_count,
+        inconsistent_row_count=sum(
+            1 for a in figures.accounts if a.source_row_consistent is False
+        ),
+        warnings=tbq.view_warnings(figures.figures, figures.summary, eng.tb_sign_convention),
     )
-    accounts = list(result.scalars().all())
-    from app.services import ledger_groups as lg
-    path_map = await lg.resolve_group_paths(db, eng.company_id)
-    return lg.attach_group_paths(accounts, path_map)
 
 
 @router.post("/engagements/{engagement_id}/entries", response_model=AuditEntryResponse, status_code=status.HTTP_201_CREATED)
