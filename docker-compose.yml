@@ -32,7 +32,7 @@ services:
     command: >
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     environment:
@@ -52,6 +52,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
 
   worker:
     build:
@@ -104,6 +110,25 @@ services:
       dockerfile: Dockerfile
     depends_on:
       - api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1/index.html"]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 10s
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - maintenance_runtime:/var/lib/kubera-maintenance
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t >/dev/null 2>&1 && kill -0 $$(cat /var/run/nginx.pid)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   caddy:
     image: caddy:2-alpine
@@ -118,7 +143,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - frontend
+      gateway:
+        condition: service_healthy
 
 volumes:
   pgdata:
@@ -126,3 +152,4 @@ volumes:
   backup_data:
   caddy_data:
   caddy_config:
+  maintenance_runtime:

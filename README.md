@@ -15,14 +15,15 @@ Kubera is a comprehensive **multi-tenant** platform featuring DocVault, AuditEas
 2. [Prerequisites](#prerequisites)
 3. [Configuration (`.env`)](#configuration-env)
 4. [Deploy (server / production)](#deploy-server--production)
-5. [Everyday operations](#everyday-operations)
-6. [Local development (uv)](#local-development-uv)
-7. [Database migrations](#database-migrations)
-8. [Creating companies & users](#creating-companies--users)
-9. [Operator scripts](#operator-scripts)
-10. [Testing](#testing)
-11. [API docs](#api-docs)
-12. [Troubleshooting](#troubleshooting)
+5. [Zero-downtime maintenance mode](#zero-downtime-maintenance-mode)
+6. [Everyday operations](#everyday-operations)
+7. [Local development (uv)](#local-development-uv)
+8. [Database migrations](#database-migrations)
+9. [Creating companies & users](#creating-companies--users)
+10. [Operator scripts](#operator-scripts)
+11. [Testing](#testing)
+12. [API docs](#api-docs)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -38,7 +39,19 @@ Kubera is a comprehensive **multi-tenant** platform featuring DocVault, AuditEas
 | `worker`   | Celery worker (background jobs, backups)     | —                |
 | `beat`     | Celery beat (scheduled jobs, e.g. nightly backup) | —           |
 | `frontend` | Built React app served by Nginx              | — (behind Caddy) |
+| `gateway`  | Persistent app/maintenance traffic switch    | — (behind Caddy) |
 | `caddy`    | Reverse proxy + automatic HTTPS              | `80`, `443`      |
+
+Public traffic follows this path:
+
+```text
+Internet -> Caddy -> gateway -- app mode --------> frontend -> API
+                           `-- maintenance mode -> standalone maintenance page
+```
+
+The gateway and its maintenance page do not depend on React, FastAPI, Postgres,
+or Redis. Its selected mode and countdown state live in the persistent
+`maintenance_runtime` Docker volume.
 
 Dependencies are declared in `pyproject.toml` and pinned in `uv.lock`. The Docker image installs them with `uv` at build time — **you do not need `uv` installed on a server to deploy.** `uv` is only needed for running the backend directly on your machine (see [Local development](#local-development-uv)).
 
@@ -133,6 +146,68 @@ Once up:
 - **API directly:** `http://localhost:8000` · Swagger at `/docs`.
 
 Next: [create your first company & admin](#creating-companies--users).
+
+---
+
+## Zero-downtime maintenance mode
+
+Run the maintenance controls on the Docker host from the repository directory:
+
+```bash
+python3 maintenance.py on       # immediately route all public traffic to maintenance
+python3 maintenance.py status   # show mode, countdown, config, and app readiness
+python3 maintenance.py off      # verify readiness, count down 10 seconds, restore Kubera
+```
+
+`on` blocks every public route, including `/api/*`, while localhost and the
+internal Docker network remain available for migrations and verification. The
+maintenance page is standalone and continues working while the frontend, API,
+worker, and beat containers are stopped or rebuilt.
+
+Use this deployment sequence:
+
+```bash
+python3 maintenance.py on
+
+docker compose up -d --build api frontend worker beat
+docker compose exec api alembic upgrade head
+
+python3 maintenance.py status
+python3 maintenance.py off
+```
+
+The `off` command refuses to begin its countdown unless both the frontend and
+API dependencies are ready. During the countdown, every open maintenance page
+shows the same server-synchronized time and reloads automatically when Kubera
+returns. Pressing Ctrl+C cancels the return and leaves maintenance enabled.
+
+Modes reported by `status`:
+
+- `app` — Kubera is serving normally.
+- `maintenance` — the standalone maintenance page is serving all public routes.
+- `closing` — the 10-second return countdown is active.
+
+You can verify the public response during maintenance:
+
+```bash
+curl -i https://<DOMAIN>/
+curl -i https://<DOMAIN>/api/v1/auth/company/me
+```
+
+Both return the maintenance response with HTTP `503`, `Retry-After`, `no-store`,
+and `noindex` headers. The direct API development port is bound to
+`127.0.0.1:8000`, so it cannot bypass maintenance through the server's public IP.
+
+> **Do not run `docker compose down` during a no-downtime maintenance window.**
+> It removes Caddy and the gateway, which are the public edge. Rebuild only the
+> application services shown above. Host, Docker daemon, network, DNS, and Caddy
+> outages are outside the application-level zero-downtime guarantee.
+
+If a switch reports a validation or reload failure, the script restores or
+retains maintenance routing. Fix the reported gateway/configuration problem,
+check `docker compose logs gateway`, run `python3 maintenance.py status`, and
+then rerun the desired command. Repeated `on`, `off`, and `status` commands are
+safe.
 
 ---
 
@@ -277,11 +352,13 @@ uv run delete_user.py
 | `delete_company.py`  | **Permanently delete** a company: every user, document, file and audit record is destroyed, and the name + admin email are free to reuse from scratch. Irreversible. |
 | `list_companies.py`  | List companies. |
 | `list_users.py [filter]` | List users across companies (marks `DELETED` / `INACTIVE`). |
+| `maintenance.py on\|off\|status` | Safely control the persistent public maintenance gateway. |
 
 ```bash
 python3 create_company.py
 python3 delete_company.py
 python3 list_users.py acme
+python3 maintenance.py status
 ```
 
 > Other root `*.py` files (`e2e_*.py`, `debug_script.py`, `migrate.py`, `generate_docs.py`, …) are development/one-off utilities and are **not** needed for normal operation.
@@ -297,6 +374,7 @@ docker compose up -d postgres redis     # ensure infra is running
 uv run pytest                            # run the whole suite
 uv run pytest tests/test_auth.py -q      # a single file
 uv run pytest -k "archive" -q            # by keyword
+node --test maintenance/maintenance.test.js # maintenance countdown logic
 ```
 
 ---

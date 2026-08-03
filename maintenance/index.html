@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#f6f7f5" />
+    <title>Kubera — Back soon</title>
+    <link rel="stylesheet" href="/maintenance.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+    <div class="grid" aria-hidden="true"></div>
+
+    <main class="page-shell">
+      <section class="maintenance-card" aria-labelledby="maintenance-title">
+        <header class="brand" aria-label="Kubera">
+          <span class="brand-mark" aria-hidden="true">K</span>
+          <span class="brand-name">Kubera</span>
+        </header>
+
+        <div class="visual" aria-hidden="true">
+          <div class="orbit orbit-outer"></div>
+          <div class="orbit orbit-inner"></div>
+          <div class="visual-core">
+            <svg class="countdown-ring" viewBox="0 0 120 120">
+              <circle class="ring-track" cx="60" cy="60" r="52"></circle>
+              <circle class="ring-progress" cx="60" cy="60" r="52"></circle>
+            </svg>
+            <span class="core-mark" data-core-mark>K</span>
+            <span class="countdown-number" data-countdown hidden></span>
+          </div>
+          <span class="orbit-dot orbit-dot-one"></span>
+          <span class="orbit-dot orbit-dot-two"></span>
+        </div>
+
+        <div class="copy">
+          <div class="status-pill" data-status>
+            <span class="status-dot" aria-hidden="true"></span>
+            <span data-status-text>Scheduled maintenance</span>
+          </div>
+          <h1 id="maintenance-title">Kubera will be back soon.</h1>
+          <p data-message>
+            We are making a few careful improvements. Your workspace and data remain safe while we finish up.
+          </p>
+          <p class="live-update" data-live aria-live="polite" aria-atomic="true"></p>
+        </div>
+
+        <footer>
+          <span class="secure-line"><span aria-hidden="true">&#9670;</span> Securely upgrading</span>
+          <span>Thank you for your patience</span>
+        </footer>
+      </section>
+    </main>
+
+    <script type="module" src="/maintenance.js"></script>
+  </body>
+</html>

@@ -34,6 +34,9 @@ htmlcov/
 celerybeat-schedule
 celerybeat-schedule.*
 
+# Host-side lock used by the maintenance operator CLI
+.maintenance.lock
+
 # Local test/dev vault storage (encrypted upload fixtures)
 .tmp_vault/
 .vault_dev/
