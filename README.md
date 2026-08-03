@@ -147,6 +147,31 @@ Once up:
 
 Next: [create your first company & admin](#creating-companies--users).
 
+### Upgrading an existing production installation to the maintenance gateway
+
+An already-running Caddy process does **not** automatically reload when the
+bind-mounted `Caddyfile` changes. During the first deployment of the gateway,
+build the new service and gracefully load the new edge route:
+
+```bash
+git pull
+docker compose up -d --build gateway
+
+docker compose exec -T caddy \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+docker compose exec -T caddy \
+  caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+
+python3 maintenance.py status
+```
+
+The final status must show `Edge route: gateway:80`. Rebuilding only `api`,
+`frontend`, `worker`, and `beat` intentionally keeps the public edge alive, so
+it also cannot load a newly changed Caddyfile by itself. The maintenance `on`
+and `off` commands now detect this condition, validate the mounted Caddyfile,
+and safely reconcile live Caddy before continuing. `status` detects a mismatch
+but remains read-only.
+
 ---
 
 ## Zero-downtime maintenance mode
@@ -187,6 +212,11 @@ Modes reported by `status`:
 - `maintenance` — the standalone maintenance page is serving all public routes.
 - `closing` — the 10-second return countdown is active.
 
+In addition to the mode, require both `Gateway: valid` and
+`Edge route: gateway:80`. An edge route of `frontend:80` means the running
+Caddy process is bypassing maintenance; `on` or `off` will repair it only after
+validating that the mounted configuration targets the gateway.
+
 You can verify the public response during maintenance:
 
 ```bash
@@ -205,9 +235,24 @@ and `noindex` headers. The direct API development port is bound to
 
 If a switch reports a validation or reload failure, the script restores or
 retains maintenance routing. Fix the reported gateway/configuration problem,
-check `docker compose logs gateway`, run `python3 maintenance.py status`, and
+check `docker compose logs gateway caddy`, run `python3 maintenance.py status`, and
 then rerun the desired command. Repeated `on`, `off`, and `status` commands are
 safe.
+
+Edge diagnostics:
+
+```bash
+# Desired configuration currently mounted in the container
+docker compose exec -T caddy \
+  caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile --pretty
+
+# Configuration Caddy is actually serving from memory
+docker compose exec -T caddy \
+  wget -qO- http://127.0.0.1:2019/config/
+
+# Relevant edge logs
+docker compose logs --tail=100 caddy gateway
+```
 
 ---
 
