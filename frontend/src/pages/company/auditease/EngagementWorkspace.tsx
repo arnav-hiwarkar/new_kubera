@@ -27,6 +27,7 @@ import { ApiError } from '@/api/http'
 import { useEngagement, useCompanyTrialBalance, useCloseEngagement, useSetSignConvention } from '@/api/hooks/auditease'
 import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable'
 import { BalanceStatCards } from '@/components/auditease/BalanceStatCards'
+import { TrialBalanceLoadError } from '@/components/auditease/TrialBalanceLoadError'
 import { ImportTrialBalanceModal } from './ImportTrialBalanceModal'
 import { InviteAuditorModal } from './InviteAuditorModal'
 import { MappingTab } from './MappingTab'
@@ -44,7 +45,13 @@ export function EngagementWorkspace() {
   const toast = useToast()
 
   const { data: eng, isLoading } = useEngagement(engagementId)
-  const { data: tbView, isLoading: tbLoading } = useCompanyTrialBalance(engagementId)
+  const {
+    data: tbView,
+    isLoading: tbLoading,
+    isError: tbIsError,
+    error: tbError,
+    refetch: refetchTrialBalance,
+  } = useCompanyTrialBalance(engagementId)
   const accounts = tbView?.accounts ?? []
   const closeEng = useCloseEngagement()
   const setConvention = useSetSignConvention()
@@ -148,7 +155,15 @@ export function EngagementWorkspace() {
             <div className="mt-3"><StatusBadge status={eng.status} /></div>
             <p className="mt-1 truncate text-sm text-text-muted">{eng.auditor_email ?? 'No auditor invited'}</p>
           </Card>
-          <BalanceStatCards totals={tbView?.totals} loading={tbLoading} />
+          {tbIsError ? (
+            <TrialBalanceLoadError
+              error={tbError}
+              onRetry={() => void refetchTrialBalance()}
+              className="sm:col-span-2 lg:col-span-3"
+            />
+          ) : (
+            <BalanceStatCards totals={tbView?.totals} loading={tbLoading} />
+          )}
           <StatCard
             label="Open requirements"
             value={reqs.filter((r) => r.status === 'open').length}
@@ -180,6 +195,10 @@ export function EngagementWorkspace() {
       {/* Trial Balance */}
       {tab === 'trial-balance' && (
         <div className="flex flex-col gap-4">
+          {tbIsError ? (
+            <TrialBalanceLoadError error={tbError} onRetry={() => void refetchTrialBalance()} />
+          ) : (
+            <>
           {tbView && accounts.length > 0 && (!tbView.sign_convention || tbView.sign_unresolved_count > 0) && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-status-pending/40 bg-status-pending/5 px-4 py-3 text-sm">
               <span className="text-status-pending">Confirm whether the source stores credit balances as negative or positive values.</span>
@@ -202,6 +221,8 @@ export function EngagementWorkspace() {
             )}
           </div>
           <TrialBalanceTable view={tbView} loading={tbLoading} />
+            </>
+          )}
         </div>
       )}
 

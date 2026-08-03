@@ -3,7 +3,7 @@ import { auditorEngagementsApi } from '@/api/endpoints/auditorEngagements'
 
 export const auditorKeys = {
   engagements: ['auditor', 'engagements'] as const,
-  trialBalance: (id: string) => ['auditor', 'trial-balance', id] as const,
+  trialBalance: (id: string) => ['auditor', 'trial-balance-view', 'v2', id] as const,
 }
 
 export function useAuditorEngagements() {

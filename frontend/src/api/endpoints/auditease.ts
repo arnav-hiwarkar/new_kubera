@@ -1,4 +1,5 @@
 import { companyClient } from '@/api/clients/company'
+import { parseTrialBalanceView } from '@/api/contracts/trialBalance'
 import type {
   AuditEngagementResponse,
   AuditEngagementCreate,
@@ -65,7 +66,7 @@ export const auditeaseCompanyApi = {
   getTrialBalance: (engagementId: string) =>
     companyClient.get<TrialBalanceViewResponse>(
       `/api/v1/auditease/engagements/${engagementId}/trial-balance`,
-    ),
+    ).then(parseTrialBalanceView),
   setSignConvention: (engagementId: string, body: SetSignConventionRequest) =>
     companyClient.post<TrialBalanceViewResponse>(
       `/api/v1/auditease/engagements/${engagementId}/trial-balance/sign-convention`,

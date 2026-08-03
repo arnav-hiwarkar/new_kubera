@@ -15,7 +15,7 @@ import type {
 export const auditeaseKeys = {
   engagements: ['auditease', 'engagements'] as const,
   engagement: (id: string) => ['auditease', 'engagement', id] as const,
-  trialBalance: (id: string) => ['auditease', 'trial-balance', id] as const,
+  trialBalance: (id: string) => ['auditease', 'trial-balance-view', 'v2', id] as const,
   ledgerGroups: ['auditease', 'ledger-groups'] as const,
   entries: (id: string) => ['auditease', 'entries', id] as const,
   mappingSources: (id: string) => ['auditease', 'mapping-sources', id] as const,
@@ -296,7 +296,7 @@ export function useApproveRejectEntry() {
       qc.invalidateQueries({ queryKey: ['auditease', 'entries'] })
       // We should also invalidate the trial balance if we want it to reflect approved entries,
       // but for V1 we can invalidate both just in case.
-      qc.invalidateQueries({ queryKey: ['auditease', 'trial-balance'] })
+      qc.invalidateQueries({ queryKey: ['auditease', 'trial-balance-view', 'v2'] })
       // Approving/rejecting an entry changes the report figures.
       qc.invalidateQueries({ queryKey: ['auditease', 'report-preview'] })
     },

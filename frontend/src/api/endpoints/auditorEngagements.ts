@@ -1,4 +1,5 @@
 import { auditorClient } from '@/api/clients/auditor'
+import { parseTrialBalanceView } from '@/api/contracts/trialBalance'
 import type {
   AuditEngagementResponse,
   TrialBalanceViewResponse,
@@ -23,7 +24,7 @@ export const auditorEngagementsApi = {
   getTrialBalance: (id: string) =>
     auditorClient.get<TrialBalanceViewResponse>(
       `/api/v1/auditor/engagements/${id}/trial-balance`,
-    ),
+    ).then(parseTrialBalanceView),
   createEntry: (id: string, body: AuditEntryCreate) =>
     auditorClient.post<AuditEntryResponse>(`/api/v1/auditor/engagements/${id}/entries`, {
       body,

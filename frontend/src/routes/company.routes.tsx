@@ -22,12 +22,15 @@ import { EngagementWorkspace } from '@/pages/company/auditease/EngagementWorkspa
 import { CompliancePage } from '@/pages/company/compliance/CompliancePage'
 import { NotificationsPage } from '@/pages/company/notifications/NotificationsPage'
 import { ActivityLogPage } from '@/pages/company/activity/ActivityLogPage'
+import { AppRouteError } from './AppRouteError'
 
 /**
  * Company identity route tree. Everything under `/app` is wrapped by CompanyGuard,
  * which only authenticates against the company token namespace. The provider wraps
  * both the public login and the guarded area so the login page can call signIn.
  */
+// Route-object modules intentionally keep their small local layout beside the config.
+// eslint-disable-next-line react-refresh/only-export-components
 function CompanyAuthLayout() {
   return (
     <CompanyAuthProvider>
@@ -38,6 +41,7 @@ function CompanyAuthLayout() {
 
 export const companyRoutes: RouteObject = {
   element: <CompanyAuthLayout />,
+  errorElement: <AppRouteError audience="company" />,
   children: [
     { path: 'login', element: <CompanyLogin /> },
     { path: 'activate', element: <CompanyActivate /> },

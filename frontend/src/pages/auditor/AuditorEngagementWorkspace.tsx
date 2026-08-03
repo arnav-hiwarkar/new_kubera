@@ -13,6 +13,7 @@ import { Button, Card, StatCard, StatusBadge, Spinner, EmptyState, Tabs } from '
 import { useAuditorEngagements, useAuditorTrialBalance } from '@/api/hooks/auditorEngagements'
 import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable'
 import { BalanceStatCards } from '@/components/auditease/BalanceStatCards'
+import { TrialBalanceLoadError } from '@/components/auditease/TrialBalanceLoadError'
 import { RequirementsTab } from './RequirementsTab'
 import { QueriesTab } from './QueriesTab'
 import { AuditorEntriesTab } from './AuditorEntriesTab'
@@ -25,7 +26,13 @@ export function AuditorEngagementWorkspace() {
   const navigate = useNavigate()
 
   const { data: engagements = [], isLoading } = useAuditorEngagements()
-  const { data: tbView, isLoading: tbLoading } = useAuditorTrialBalance(engagementId)
+  const {
+    data: tbView,
+    isLoading: tbLoading,
+    isError: tbIsError,
+    error: tbError,
+    refetch: refetchTrialBalance,
+  } = useAuditorTrialBalance(engagementId)
   const { data: reqs = [] } = useAuditorListRequirements(engagementId)
   const { data: queries = [] } = useAuditorListQueries(engagementId)
   const { data: entries = [] } = useAuditorListEntries(engagementId)
@@ -94,7 +101,15 @@ export function AuditorEngagementWorkspace() {
             </div>
             <div className="mt-3"><StatusBadge status={eng.status} /></div>
           </Card>
-          <BalanceStatCards totals={tbView?.totals} loading={tbLoading} accent="auditor" />
+          {tbIsError ? (
+            <TrialBalanceLoadError
+              error={tbError}
+              onRetry={() => void refetchTrialBalance()}
+              className="sm:col-span-2"
+            />
+          ) : (
+            <BalanceStatCards totals={tbView?.totals} loading={tbLoading} accent="auditor" />
+          )}
           <StatCard
             label="Open requirements"
             value={reqs.filter((r) => r.status === 'open').length}
@@ -111,7 +126,11 @@ export function AuditorEngagementWorkspace() {
         </div>
       )}
 
-      {tab === 'trial-balance' && <TrialBalanceTable view={tbView} loading={tbLoading} readonly={true} />}
+      {tab === 'trial-balance' && (
+        tbIsError
+          ? <TrialBalanceLoadError error={tbError} onRetry={() => void refetchTrialBalance()} />
+          : <TrialBalanceTable view={tbView} loading={tbLoading} readonly={true} />
+      )}
       {tab === 'entries' && <AuditorEntriesTab engagementId={eng.id} />}
       {tab === 'requirements' && <RequirementsTab engagementId={eng.id} />}
       {tab === 'queries' && <QueriesTab engagementId={eng.id} />}

@@ -6,7 +6,10 @@ import { AuditorLogin } from '@/pages/auditor/AuditorLogin'
 import { AuditorRegister } from '@/pages/auditor/AuditorRegister'
 import { AuditorEngagements } from '@/pages/auditor/AuditorEngagements'
 import { AuditorEngagementWorkspace } from '@/pages/auditor/AuditorEngagementWorkspace'
+import { AppRouteError } from './AppRouteError'
 
+// Route-object modules intentionally keep their small local layout beside the config.
+// eslint-disable-next-line react-refresh/only-export-components
 function AuditorAuthLayout() {
   return (
     <AuditorAuthProvider>
@@ -23,6 +26,7 @@ function AuditorAuthLayout() {
 export const auditorRoutes: RouteObject = {
   path: 'auditor',
   element: <AuditorAuthLayout />,
+  errorElement: <AppRouteError audience="auditor" />,
   children: [
     { path: 'login', element: <AuditorLogin /> },
     { path: 'register', element: <AuditorRegister /> },
