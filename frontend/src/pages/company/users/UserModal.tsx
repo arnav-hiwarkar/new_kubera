@@ -1,30 +1,18 @@
 import { useState, useEffect } from 'react'
 import { Modal, Button, Field, Input, Select, Switch } from '@/components/ui'
-import { MODULE_IDS, type ModuleId } from '@/auth/company/ModuleGuard'
+import { MODULE_DEFINITIONS, type ModuleId } from '@/auth/company/modules'
 import type { UserCreate, UserUpdate, UserResponse } from '@/api/types'
 
 interface UserModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (data: any) => Promise<void>
+  onSave: (data: UserCreate | UserUpdate) => Promise<void>
   onDelete?: (id: string) => Promise<void>
   onDeactivate?: (id: string) => Promise<void>
   onReactivate?: (id: string) => Promise<void>
   /** Whether the current user may manage (deactivate/delete) the edited user (admin, not self). */
   canManage?: boolean
   initialData?: UserResponse | null
-}
-
-const moduleNames: Record<ModuleId, string> = {
-  dashboard: 'Dashboard',
-  docvault: 'DocVault',
-  sales: 'Sales',
-  assets: 'Assets',
-  kra: 'KRA & Appraisals',
-  auditease: 'AuditEase',
-  compliance: 'Compliance',
-  notifications: 'Notifications',
-  activity: 'Activity Log',
 }
 
 export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onReactivate, canManage, initialData }: UserModalProps) {
@@ -51,7 +39,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
     if (initialData) {
       setEmail(initialData.email)
       setFullName(initialData.full_name)
-      setRole(initialData.role as any)
+      setRole(initialData.role)
       setDepartment(initialData.department || '')
       setDesignation(initialData.designation || '')
       setAccessibleModules(initialData.accessible_modules as ModuleId[] || [])
@@ -184,7 +172,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
           <Field label="Role">
             <Select
               value={role}
-              onChange={(e) => setRole(e.target.value as any)}
+              onChange={(e) => setRole(e.target.value as typeof role)}
             >
               <option value="admin">Admin</option>
               <option value="manager">Manager</option>
@@ -215,12 +203,12 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-4">
-              {MODULE_IDS.map((modId) => (
+              {MODULE_DEFINITIONS.map(({ id, label }) => (
                 <Switch
-                  key={modId}
-                  checked={accessibleModules.includes(modId)}
-                  onChange={() => toggleModule(modId)}
-                  label={moduleNames[modId]}
+                  key={id}
+                  checked={accessibleModules.includes(id)}
+                  onChange={() => toggleModule(id)}
+                  label={label}
                 />
               ))}
             </div>

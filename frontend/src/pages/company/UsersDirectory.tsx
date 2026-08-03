@@ -5,7 +5,7 @@ import { usersApi } from '@/api/endpoints/users'
 import { ApiError } from '@/api/http'
 import { useCompanyAuth } from '@/auth/company'
 import { cn } from '@/lib/cn'
-import type { UserResponse } from '@/api/types'
+import type { UserCreate, UserResponse, UserUpdate } from '@/api/types'
 import { PageHeader, DataTable, StatusBadge, StatCard, type Column, Button } from '@/components/ui'
 import { UserModal } from './users/UserModal'
 
@@ -19,7 +19,7 @@ function initials(name: string) {
 type UserState = 'active' | 'inactive' | 'deleted'
 
 /** Derive the display status from is_active + deleted_at. */
-export function userState(u: UserResponse): UserState {
+function userState(u: UserResponse): UserState {
   if (u.deleted_at) return 'deleted'
   return u.is_active ? 'active' : 'inactive'
 }
@@ -88,7 +88,7 @@ export function UsersDirectory() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => usersApi.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: UserUpdate }) => usersApi.update(id, data),
     onSuccess: invalidate,
   })
 
@@ -107,11 +107,11 @@ export function UsersDirectory() {
     onSuccess: invalidate,
   })
 
-  const handleSave = async (data: any) => {
+  const handleSave = async (data: UserCreate | UserUpdate) => {
     if (editingUser) {
-      await updateMutation.mutateAsync({ id: editingUser.id, data })
+      await updateMutation.mutateAsync({ id: editingUser.id, data: data as UserUpdate })
     } else {
-      await createMutation.mutateAsync(data)
+      await createMutation.mutateAsync(data as UserCreate)
     }
   }
 
@@ -137,7 +137,7 @@ export function UsersDirectory() {
     setModalOpen(true)
   }
 
-  const users = data ?? []
+  const users = useMemo(() => data ?? [], [data])
   // Headline counts reflect live (non-deleted) accounts.
   const liveUsers = useMemo(() => users.filter((u) => !u.deleted_at), [users])
   const roleCounts = useMemo(() => {

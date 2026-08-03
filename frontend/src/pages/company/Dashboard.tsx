@@ -11,6 +11,7 @@ import { useQuery } from '@tanstack/react-query'
 import { usersApi } from '@/api/endpoints/users'
 import { Card, StatCard } from '@/components/ui'
 import { useCompanyAuth } from '@/auth/company'
+import { hasModuleAccess, type ModuleId } from '@/auth/company/modules'
 import { cn } from '@/lib/cn'
 
 function greeting(): string {
@@ -20,16 +21,23 @@ function greeting(): string {
   return 'Good evening'
 }
 
-const quickLinks = [
-  { label: 'DocVault', to: '/app/docvault', icon: Archive, desc: 'Documents & versions' },
-  { label: 'AuditEase', to: '/app/auditease', icon: ShieldCheck, desc: 'Audit engagements' },
-  { label: 'Assets', to: '/app/assets', icon: Laptop, desc: 'Company assets' },
-  { label: 'ROC Compliance', to: '/app/compliance/roc', icon: ClipboardCheck, desc: 'Statutory filings' },
+const quickLinks: Array<{
+  label: string
+  to: string
+  icon: typeof Archive
+  desc: string
+  moduleId: ModuleId
+}> = [
+  { label: 'DocVault', to: '/app/docvault', icon: Archive, desc: 'Documents & versions', moduleId: 'docvault' },
+  { label: 'AuditEase', to: '/app/auditease', icon: ShieldCheck, desc: 'Audit engagements', moduleId: 'auditease' },
+  { label: 'Assets', to: '/app/assets', icon: Laptop, desc: 'Company assets', moduleId: 'assets' },
+  { label: 'ROC Compliance', to: '/app/compliance/roc', icon: ClipboardCheck, desc: 'Statutory filings', moduleId: 'roc' },
   {
     label: 'SecretarialEase',
     to: '/app/compliance/secretarial',
     icon: ScrollText,
     desc: 'Registers & meetings',
+    moduleId: 'secretarial',
   },
 ]
 
@@ -74,7 +82,7 @@ export function Dashboard() {
       <Card>
         <h2 className="mb-4 text-md font-semibold text-text-primary">Jump back in</h2>
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-          {quickLinks.map((q) => (
+          {quickLinks.filter((q) => hasModuleAccess(profile, q.moduleId)).map((q) => (
             <button
               key={q.to}
               onClick={() => navigate(q.to)}

@@ -3,13 +3,14 @@ import { NavLink } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { cn } from '@/lib/cn'
+import type { ModuleId } from '@/auth/company/modules'
 
 export interface NavItem {
   label: string
   to: string
   /** Lucide icon component for the item. */
   icon?: ComponentType<{ className?: string }>
-  moduleId?: string
+  moduleId?: ModuleId
 }
 
 export interface NavSection {

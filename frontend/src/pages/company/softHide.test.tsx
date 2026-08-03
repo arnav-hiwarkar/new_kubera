@@ -144,3 +144,63 @@ describe('Sales and KRA soft hide', () => {
     expect(screen.queryByRole('heading', { name: 'Sales' })).not.toBeInTheDocument()
   })
 })
+
+describe('split compliance module access', () => {
+  it.each([
+    {
+      modules: ['dashboard', 'roc'],
+      visible: 'ROC Compliance',
+      hidden: 'SecretarialEase',
+    },
+    {
+      modules: ['dashboard', 'secretarial'],
+      visible: 'SecretarialEase',
+      hidden: 'ROC Compliance',
+    },
+  ])('shows only $visible across navigation and dashboard discovery', async ({ modules, visible, hidden }) => {
+    installFetchMock({
+      id: 'employee-1',
+      email: 'employee@acme.test',
+      full_name: 'Eve Employee',
+      role: 'employee',
+      accessible_modules: modules,
+    })
+    renderApp('/app')
+
+    expect(await screen.findByRole('heading', { name: /Eve/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: visible })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: hidden })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: new RegExp(visible) })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: new RegExp(hidden) })).not.toBeInTheDocument()
+  })
+
+  it('keeps the unauthorized SecretarialEase direct route out of reach for a ROC-only user', async () => {
+    installFetchMock({
+      id: 'employee-1',
+      email: 'employee@acme.test',
+      full_name: 'Eve Employee',
+      role: 'employee',
+      accessible_modules: ['dashboard', 'roc'],
+    })
+    renderApp('/app/compliance/secretarial')
+
+    expect(await screen.findByRole('heading', { name: /Eve/ })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'SecretarialEase' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /ROC Compliance.*Statutory filings/ })).toBeInTheDocument()
+  })
+
+  it('shows both compliance modules when both grants are present', async () => {
+    installFetchMock({
+      id: 'employee-1',
+      email: 'employee@acme.test',
+      full_name: 'Eve Employee',
+      role: 'employee',
+      accessible_modules: ['dashboard', 'roc', 'secretarial'],
+    })
+    renderApp('/app')
+
+    expect(await screen.findByRole('heading', { name: /Eve/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'ROC Compliance' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'SecretarialEase' })).toBeInTheDocument()
+  })
+})

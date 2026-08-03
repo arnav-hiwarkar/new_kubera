@@ -12,6 +12,7 @@ from app.models.company import CompanyUser, UserRole
 from app.schemas.users import UserCreate, UserUpdate, UserResponse
 from app.auth import get_direct_report_ids
 from app.services import account_admin
+from app.access_modules import normalize_accessible_modules
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -52,7 +53,7 @@ async def create_user(
         manager_id=body.manager_id,
         designation=body.designation,
         department=body.department,
-        accessible_modules=body.accessible_modules,
+        accessible_modules=normalize_accessible_modules(body.accessible_modules),
         is_active=True
     )
     db.add(user)
@@ -136,6 +137,10 @@ async def update_user(
             raise HTTPException(status_code=400, detail="Invalid manager_id")
 
     update_data = body.model_dump(exclude_unset=True)
+    if update_data.get("accessible_modules") is not None:
+        update_data["accessible_modules"] = normalize_accessible_modules(
+            update_data["accessible_modules"]
+        )
     for key, value in update_data.items():
         setattr(user, key, value)
 

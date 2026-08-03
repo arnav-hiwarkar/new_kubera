@@ -5,7 +5,7 @@ import { PageTransition } from '@/layouts/PageTransition'
 import { companyNav } from '@/config/navigation'
 import { useCompanyAuth } from '@/auth/company'
 import { useCompanyBranding } from '@/api/hooks/companyProfile'
-import { hasModuleAccess, type ModuleId } from '@/auth/company/ModuleGuard'
+import { hasModuleAccess } from '@/auth/company/modules'
 
 export function CompanyShell() {
   const { profile, signOut } = useCompanyAuth()
@@ -21,9 +21,8 @@ export function CompanyShell() {
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
-        const anyItem = item as any
-        if (!anyItem.moduleId) return true // public item like directory or custom-fields
-        return hasModuleAccess(profile, anyItem.moduleId as ModuleId)
+        if (!item.moduleId) return true // public item like directory or custom-fields
+        return hasModuleAccess(profile, item.moduleId)
       }),
     }))
     .filter((section) => section.items.length > 0)

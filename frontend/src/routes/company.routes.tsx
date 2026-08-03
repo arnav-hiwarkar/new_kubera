@@ -75,8 +75,8 @@ export const companyRoutes: RouteObject = {
                 { path: 'sales', element: <ModuleGuard moduleId="sales"><SalesPage /></ModuleGuard> },
                 { path: 'custom-fields', element: <CustomFieldsPage /> },
                 { path: 'docvault', element: <ModuleGuard moduleId="docvault"><DocVaultPage /></ModuleGuard> },
-                { path: 'compliance/roc', element: <ModuleGuard moduleId="compliance"><CompliancePage domain="roc" /></ModuleGuard> },
-                { path: 'compliance/secretarial', element: <ModuleGuard moduleId="compliance"><CompliancePage domain="secretarial" /></ModuleGuard> },
+                { path: 'compliance/roc', element: <ModuleGuard moduleId="roc"><CompliancePage domain="roc" /></ModuleGuard> },
+                { path: 'compliance/secretarial', element: <ModuleGuard moduleId="secretarial"><CompliancePage domain="secretarial" /></ModuleGuard> },
                 {
                   path: 'auditease',
                   element: <ModuleGuard moduleId="auditease"><Outlet /></ModuleGuard>,

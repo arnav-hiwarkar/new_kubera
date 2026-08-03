@@ -5,7 +5,7 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.auth import get_current_company_user
+from app.auth import get_current_company_user, require_module
 from app.models.company import CompanyUser
 from sqlalchemy import func
 from app.models.compliance import ComplianceDomain, DocumentType, MeetingRecord
@@ -13,7 +13,11 @@ from app.schemas.compliance import DocumentTypeCreate, DocumentTypeResponse, Mee
 
 
 def create_compliance_router(domain: ComplianceDomain, prefix: str, tags: List[str]) -> APIRouter:
-    router = APIRouter(prefix=prefix, tags=tags)
+    router = APIRouter(
+        prefix=prefix,
+        tags=tags,
+        dependencies=[Depends(require_module(domain.value))],
+    )
 
     @router.post("/document-types", response_model=DocumentTypeResponse, status_code=status.HTTP_201_CREATED)
     async def create_document_type(

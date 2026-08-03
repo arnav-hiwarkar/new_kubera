@@ -4,6 +4,23 @@ from httpx import AsyncClient
 from tests.conftest import create_test_company, get_company_token
 from app.models.compliance import ComplianceDomain
 
+
+async def _create_employee(client: AsyncClient, admin_headers: dict, email: str, modules: list[str]):
+    response = await client.post(
+        "/api/v1/users",
+        json={
+            "email": email,
+            "password": "pass1234",
+            "full_name": email.split("@")[0],
+            "role": "employee",
+            "accessible_modules": modules,
+        },
+        headers=admin_headers,
+    )
+    assert response.status_code == 201, response.text
+    token = await get_company_token(client, email=email, password="pass1234")
+    return {"Authorization": f"Bearer {token}"}
+
 @pytest.mark.asyncio
 async def test_secretarial_flow(client: AsyncClient):
     await create_test_company(client, email="sec@a.com", password="pass1234")
@@ -136,3 +153,79 @@ async def test_record_rejects_wrong_domain_type(client: AsyncClient):
     # Using a ROC type under the secretarial domain must be rejected.
     resp = await client.post("/api/v1/secretarial/meeting-records", json={"doc_type_id": roc_dt}, headers=headers)
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_compliance_module_access_is_independent_and_server_enforced(client: AsyncClient):
+    await create_test_company(client, email="permissions-admin@a.com", password="pass1234")
+    admin_headers = {
+        "Authorization": (
+            "Bearer "
+            + await get_company_token(
+                client, email="permissions-admin@a.com", password="pass1234"
+            )
+        )
+    }
+
+    roc_only = await _create_employee(client, admin_headers, "roc-only@a.com", ["roc"])
+    secretarial_only = await _create_employee(
+        client, admin_headers, "secretarial-only@a.com", ["secretarial"]
+    )
+    neither = await _create_employee(client, admin_headers, "neither@a.com", [])
+    both = await _create_employee(
+        client, admin_headers, "both@a.com", ["roc", "secretarial"]
+    )
+
+    # Admins bypass stored module grants and can use both domains.
+    assert (
+        await client.get("/api/v1/roc/document-types", headers=admin_headers)
+    ).status_code == 200
+    assert (
+        await client.get("/api/v1/secretarial/document-types", headers=admin_headers)
+    ).status_code == 200
+
+    assert (await client.get("/api/v1/roc/document-types", headers=roc_only)).status_code == 200
+    assert (
+        await client.get("/api/v1/secretarial/document-types", headers=roc_only)
+    ).status_code == 403
+
+    assert (
+        await client.get("/api/v1/secretarial/document-types", headers=secretarial_only)
+    ).status_code == 200
+    assert (
+        await client.get("/api/v1/roc/document-types", headers=secretarial_only)
+    ).status_code == 403
+
+    for path in ("roc", "secretarial"):
+        assert (
+            await client.get(f"/api/v1/{path}/document-types", headers=neither)
+        ).status_code == 403
+        assert (
+            await client.get(f"/api/v1/{path}/document-types", headers=both)
+        ).status_code == 200
+
+    forbidden = await client.post(
+        "/api/v1/secretarial/document-types",
+        json={"name": "Must not be created"},
+        headers=roc_only,
+    )
+    assert forbidden.status_code == 403
+    rows = (
+        await client.get("/api/v1/secretarial/document-types", headers=admin_headers)
+    ).json()
+    assert not any(row["name"] == "Must not be created" for row in rows)
+
+    assert (
+        await client.post(
+            "/api/v1/roc/document-types",
+            json={"name": "ROC permitted"},
+            headers=roc_only,
+        )
+    ).status_code == 201
+    assert (
+        await client.post(
+            "/api/v1/secretarial/document-types",
+            json={"name": "Secretarial permitted"},
+            headers=secretarial_only,
+        )
+    ).status_code == 201

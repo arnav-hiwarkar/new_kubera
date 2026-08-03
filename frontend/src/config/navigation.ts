@@ -37,8 +37,8 @@ export const companyNav: NavSection[] = [
     items: [
       { label: 'Assets', to: '/app/assets', icon: Laptop, moduleId: 'assets' },
       { label: 'Custom Fields', to: '/app/custom-fields', icon: SlidersHorizontal },
-      { label: 'ROC Compliance', to: '/app/compliance/roc', icon: ClipboardCheck, moduleId: 'compliance' },
-      { label: 'SecretarialEase', to: '/app/compliance/secretarial', icon: ScrollText, moduleId: 'compliance' },
+      { label: 'ROC Compliance', to: '/app/compliance/roc', icon: ClipboardCheck, moduleId: 'roc' },
+      { label: 'SecretarialEase', to: '/app/compliance/secretarial', icon: ScrollText, moduleId: 'secretarial' },
     ],
   },
   {
