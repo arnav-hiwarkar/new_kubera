@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Button, Input, Select, Spinner, EmptyState, useToast } from '@/components/ui'
+import { Button, Input, Select, Spinner, EmptyState, ConfirmDialog, useToast } from '@/components/ui'
 import { docvaultApi } from '@/api/endpoints/docvault'
 import { saveBlob } from '@/lib/download'
 import { formatDate } from '@/lib/format'
@@ -8,6 +8,8 @@ import {
   useDocumentTypes,
   useUnsyncedDocuments,
   useSyncFromDocVault,
+  useArchiveMeetingRecord,
+  useUnarchiveMeetingRecord,
   type Domain,
 } from '@/api/hooks/compliance'
 import type { DocumentTypeResponse, MeetingRecordResponse } from '@/api/types'
@@ -46,10 +48,13 @@ function monthKey(date: string | null | undefined): string {
 
 export function RecordsTab({ domain }: { domain: Domain }) {
   const toast = useToast()
-  const { data: recordsData, isLoading } = useMeetingRecords(domain)
+  const [showArchived, setShowArchived] = useState(false)
+  const { data: recordsData, isLoading } = useMeetingRecords(domain, showArchived)
   const { data: typesData } = useDocumentTypes(domain)
   const { data: unsyncedData } = useUnsyncedDocuments(domain)
   const sync = useSyncFromDocVault(domain)
+  const archive = useArchiveMeetingRecord(domain)
+  const unarchive = useUnarchiveMeetingRecord(domain)
 
   const records = useMemo(() => recordsData ?? [], [recordsData])
   const types = useMemo(() => typesData ?? [], [typesData])
@@ -71,6 +76,7 @@ export function RecordsTab({ domain }: { domain: Domain }) {
   const [view, setView] = useState<View>('type')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<MeetingRecordResponse | null>(null)
+  const [confirmArchive, setConfirmArchive] = useState<MeetingRecordResponse | null>(null)
 
   const now = new Date()
   const curYear = now.getFullYear()
@@ -97,6 +103,27 @@ export function RecordsTab({ domain }: { domain: Domain }) {
   const openEdit = (r: MeetingRecordResponse) => {
     setEditing(r)
     setModalOpen(true)
+  }
+
+  const doArchive = async () => {
+    if (!confirmArchive) return
+    try {
+      await archive.mutateAsync(confirmArchive.id)
+      toast.success('Record archived')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to archive record')
+    } finally {
+      setConfirmArchive(null)
+    }
+  }
+
+  const doUnarchive = async (r: MeetingRecordResponse) => {
+    try {
+      await unarchive.mutateAsync(r.id)
+      toast.success('Record restored')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to restore record')
+    }
   }
 
   const filtered = useMemo(() => {
@@ -180,6 +207,12 @@ export function RecordsTab({ domain }: { domain: Domain }) {
         >
           This month
         </Button>
+        <Button
+          variant={showArchived ? 'primary' : 'secondary'}
+          onClick={() => setShowArchived((v) => !v)}
+        >
+          Show archived
+        </Button>
         <div className="ml-auto flex gap-1">
           <Button variant={view === 'type' ? 'primary' : 'ghost'} onClick={() => setView('type')}>
             By type
@@ -187,8 +220,9 @@ export function RecordsTab({ domain }: { domain: Domain }) {
           <Button variant={view === 'month' ? 'primary' : 'ghost'} onClick={() => setView('month')}>
             By month
           </Button>
-          {/* Only offered when the DocVault bucket actually holds something new. */}
-          {unsyncedCount > 0 && (
+          {/* Only offered when the DocVault bucket actually holds something new.
+              Syncing is a live-records action, so it is hidden in the archived view. */}
+          {!showArchived && unsyncedCount > 0 && (
             <Button variant="secondary" onClick={() => void handleSync()} loading={sync.isPending}>
               Sync from DocVault ({unsyncedCount})
             </Button>
@@ -203,8 +237,12 @@ export function RecordsTab({ domain }: { domain: Domain }) {
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState
-          title="No records"
-          description="Create a record to capture a completed compliance document."
+          title={showArchived ? 'No archived records' : 'No records'}
+          description={
+            showArchived
+              ? 'Archived records are kept here along with their files.'
+              : 'Create a record to capture a completed compliance document.'
+          }
         />
       ) : (
         <div className="flex flex-col gap-6">
@@ -235,9 +273,21 @@ export function RecordsTab({ domain }: { domain: Domain }) {
                         <div className="font-medium text-text-primary">{heading}</div>
                         <div className="truncate text-xs text-text-muted">{subtitle}</div>
                       </div>
-                      <Button variant="ghost" onClick={() => openEdit(r)}>
-                        Edit
-                      </Button>
+                      {/* Archived records are locked server-side, so no Edit. */}
+                      {showArchived ? (
+                        <Button variant="secondary" onClick={() => void doUnarchive(r)}>
+                          Unarchive
+                        </Button>
+                      ) : (
+                        <>
+                          <Button variant="ghost" onClick={() => openEdit(r)}>
+                            Edit
+                          </Button>
+                          <Button variant="ghost" onClick={() => setConfirmArchive(r)}>
+                            Archive
+                          </Button>
+                        </>
+                      )}
                       {r.document_id && (
                         <Button variant="ghost" onClick={() => void handleDownload(r, heading)}>
                           Download
@@ -258,6 +308,17 @@ export function RecordsTab({ domain }: { domain: Domain }) {
         domain={domain}
         types={types}
         record={editing}
+      />
+
+      <ConfirmDialog
+        open={confirmArchive !== null}
+        title="Archive record?"
+        message="The record and its file are kept — the file is archived in DocVault too. You can restore it later."
+        confirmLabel="Archive"
+        destructive
+        loading={archive.isPending}
+        onConfirm={() => void doArchive()}
+        onCancel={() => setConfirmArchive(null)}
       />
     </div>
   )

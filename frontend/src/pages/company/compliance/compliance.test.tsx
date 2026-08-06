@@ -20,6 +20,8 @@ vi.mock('@/api/endpoints/compliance', () => {
     getBucket: vi.fn(),
     listUnsyncedDocuments: vi.fn(),
     syncFromDocVault: vi.fn(),
+    archiveMeetingRecord: vi.fn(),
+    unarchiveMeetingRecord: vi.fn(),
   }
   return { rocApi: api, secretarialApi: api }
 })
@@ -184,6 +186,54 @@ describe('RecordsTab', () => {
     expect(await screen.findByText('AOC-4')).toBeInTheDocument()
     // Once as the group heading, once as the row subtitle.
     expect(screen.getAllByText(/Unclassified/).length).toBeGreaterThan(0)
+  })
+
+  it('archives a record through the confirm dialog', async () => {
+    vi.mocked(rocApi.listDocumentTypes).mockResolvedValue([docType({})])
+    vi.mocked(rocApi.listMeetingRecords).mockResolvedValue([record({})])
+    vi.mocked(rocApi.archiveMeetingRecord).mockResolvedValue(record({ archived_at: '2026-08-06T00:00:00Z' }))
+    const u = userEvent.setup()
+    wrap(<RecordsTab domain="roc" />)
+
+    await u.click(await screen.findByRole('button', { name: 'Archive' }))
+    expect(await screen.findByText('Archive record?')).toBeInTheDocument()
+    // The confirm dialog's own Archive button is the second one on screen.
+    await u.click(screen.getAllByRole('button', { name: 'Archive' })[1])
+
+    await waitFor(() => expect(rocApi.archiveMeetingRecord).toHaveBeenCalledWith('r1'))
+  })
+
+  it('switches to the archived view and offers Unarchive instead of Edit', async () => {
+    vi.mocked(rocApi.listDocumentTypes).mockResolvedValue([docType({})])
+    // The live and archived views are separate queries; answer each by its argument.
+    vi.mocked(rocApi.listMeetingRecords).mockImplementation((archived = false) =>
+      Promise.resolve(
+        archived
+          ? [record({ id: 'r2', title: 'Retired filing', archived_at: '2026-08-06T00:00:00Z' })]
+          : [record({})],
+      ),
+    )
+    vi.mocked(rocApi.listUnsyncedDocuments).mockResolvedValue([
+      { id: 'doc9', title: 'Waiting', original_filename: null, size_bytes: null, uploaded_at: null },
+    ])
+    vi.mocked(rocApi.unarchiveMeetingRecord).mockResolvedValue(record({}))
+    const u = userEvent.setup()
+    wrap(<RecordsTab domain="roc" />)
+
+    await screen.findByText('Board Minutes 2026-07-05')
+    expect(screen.getByRole('button', { name: /Sync from DocVault/ })).toBeInTheDocument()
+
+    await u.click(screen.getByRole('button', { name: 'Show archived' }))
+
+    expect(await screen.findByText('Retired filing')).toBeInTheDocument()
+    await waitFor(() => expect(rocApi.listMeetingRecords).toHaveBeenCalledWith(true))
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+    // Syncing is a live-records action.
+    expect(screen.queryByRole('button', { name: /Sync from DocVault/ })).not.toBeInTheDocument()
+
+    await u.click(screen.getByRole('button', { name: 'Unarchive' }))
+    await waitFor(() => expect(rocApi.unarchiveMeetingRecord).toHaveBeenCalledWith('r2'))
   })
 
   it('prefills the edit modal and PATCHes the record', async () => {

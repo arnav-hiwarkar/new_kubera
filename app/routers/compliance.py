@@ -1,5 +1,6 @@
 import uuid
-from typing import Annotated, List
+from datetime import datetime, timezone
+from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,7 @@ from app.schemas.compliance import (
     SyncResultResponse,
     UnsyncedDocumentResponse,
 )
+from app.services.activity import log_activity
 from app.services.compliance_bucket import ensure_compliance_bucket, find_compliance_bucket
 
 
@@ -193,16 +195,55 @@ def create_compliance_router(domain: ComplianceDomain, prefix: str, tags: List[s
         await db.refresh(db_rec)
         return db_rec
 
+    async def _load_record(db: AsyncSession, company_id: uuid.UUID, record_id: uuid.UUID) -> MeetingRecord:
+        result = await db.execute(
+            select(MeetingRecord).where(
+                and_(
+                    MeetingRecord.id == record_id,
+                    MeetingRecord.company_id == company_id,
+                    MeetingRecord.domain == domain,
+                )
+            )
+        )
+        db_rec = result.scalar_one_or_none()
+        if not db_rec:
+            raise HTTPException(status_code=404, detail="Record not found")
+        return db_rec
+
+    async def _load_linked_document(
+        db: AsyncSession, company_id: uuid.UUID, document_id: Optional[uuid.UUID]
+    ) -> Optional[Document]:
+        """The record's docVault document, if it still has one. A record may have no
+        file at all, and the FK is SET NULL, so absence is normal rather than an error."""
+        if not document_id:
+            return None
+        res = await db.execute(
+            select(Document).where(
+                and_(Document.id == document_id, Document.company_id == company_id)
+            )
+        )
+        return res.scalar_one_or_none()
+
     @router.get("/meeting-records", response_model=List[MeetingRecordResponse])
     async def list_meeting_records(
         current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
-        db: Annotated[AsyncSession, Depends(get_db)]
+        db: Annotated[AsyncSession, Depends(get_db)],
+        archived: bool = False,
     ):
+        """Live records by default; pass archived=true for the archived view.
+
+        A switch rather than an include-flag: the two are separate screens, never
+        mixed into one list.
+        """
+        archived_filter = (
+            MeetingRecord.archived_at.is_not(None) if archived else MeetingRecord.archived_at.is_(None)
+        )
         result = await db.execute(
             select(MeetingRecord).where(
                 and_(
                     MeetingRecord.company_id == current_user.company_id,
-                    MeetingRecord.domain == domain
+                    MeetingRecord.domain == domain,
+                    archived_filter,
                 )
             )
         )
@@ -261,18 +302,9 @@ def create_compliance_router(domain: ComplianceDomain, prefix: str, tags: List[s
         current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
         db: Annotated[AsyncSession, Depends(get_db)]
     ):
-        result = await db.execute(
-            select(MeetingRecord).where(
-                and_(
-                    MeetingRecord.id == record_id,
-                    MeetingRecord.company_id == current_user.company_id,
-                    MeetingRecord.domain == domain,
-                )
-            )
-        )
-        db_rec = result.scalar_one_or_none()
-        if not db_rec:
-            raise HTTPException(status_code=404, detail="Record not found")
+        db_rec = await _load_record(db, current_user.company_id, record_id)
+        if db_rec.archived_at is not None:
+            raise HTTPException(status_code=409, detail="Archived records are locked")
 
         fields = update.model_dump(exclude_unset=True)
         if fields.get("doc_type_id") is not None:
@@ -280,6 +312,73 @@ def create_compliance_router(domain: ComplianceDomain, prefix: str, tags: List[s
         for key, value in fields.items():
             setattr(db_rec, key, value)
 
+        await db.commit()
+        await db.refresh(db_rec)
+        return db_rec
+
+    @router.post("/meeting-records/{record_id}/archive", response_model=MeetingRecordResponse)
+    async def archive_meeting_record(
+        record_id: uuid.UUID,
+        current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+        db: Annotated[AsyncSession, Depends(get_db)]
+    ):
+        """Retire a record and its file without deleting either.
+
+        The linked docVault document is archived the same way docVault's own DELETE
+        archives one (status + is_editable), and its previous status is snapshotted so
+        unarchiving can put it back exactly.
+        """
+        db_rec = await _load_record(db, current_user.company_id, record_id)
+        if db_rec.archived_at is not None:
+            raise HTTPException(status_code=409, detail="Record is already archived")
+
+        doc = await _load_linked_document(db, current_user.company_id, db_rec.document_id)
+        if doc:
+            db_rec.archived_document_status = doc.status.value
+            db_rec.archived_document_editable = doc.is_editable
+            doc.status = DocumentStatus.archived
+            doc.is_editable = False
+
+        db_rec.archived_at = datetime.now(timezone.utc)
+        await log_activity(
+            db, current_user.company_id, current_user.id,
+            "record.archived", "meeting_record", db_rec.id,
+            {"document_id": str(db_rec.document_id) if db_rec.document_id else None},
+        )
+        await db.commit()
+        await db.refresh(db_rec)
+        return db_rec
+
+    @router.post("/meeting-records/{record_id}/unarchive", response_model=MeetingRecordResponse)
+    async def unarchive_meeting_record(
+        record_id: uuid.UUID,
+        current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+        db: Annotated[AsyncSession, Depends(get_db)]
+    ):
+        """Undo an archive, restoring the document to its exact pre-archive status.
+
+        A document that was already archived in docVault before the record was
+        archived snapshots as 'archived' and so correctly stays archived — we only
+        ever undo what we did.
+        """
+        db_rec = await _load_record(db, current_user.company_id, record_id)
+        if db_rec.archived_at is None:
+            raise HTTPException(status_code=409, detail="Record is not archived")
+
+        doc = await _load_linked_document(db, current_user.company_id, db_rec.document_id)
+        if doc and db_rec.archived_document_status:
+            doc.status = DocumentStatus(db_rec.archived_document_status)
+            # A document locked before we touched it stays locked.
+            doc.is_editable = bool(db_rec.archived_document_editable)
+
+        db_rec.archived_document_status = None
+        db_rec.archived_document_editable = None
+        db_rec.archived_at = None
+        await log_activity(
+            db, current_user.company_id, current_user.id,
+            "record.unarchived", "meeting_record", db_rec.id,
+            {"document_id": str(db_rec.document_id) if db_rec.document_id else None},
+        )
         await db.commit()
         await db.refresh(db_rec)
         return db_rec

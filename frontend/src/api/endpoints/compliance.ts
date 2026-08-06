@@ -24,8 +24,11 @@ function createComplianceApi(base: '/api/v1/roc' | '/api/v1/secretarial') {
       companyClient.put<DocumentTypeResponse>(`${base}/document-types/${id}`, { body }),
     deleteDocumentType: (id: string) =>
       companyClient.delete<void>(`${base}/document-types/${id}`),
-    listMeetingRecords: () =>
-      companyClient.get<MeetingRecordResponse[]>(`${base}/meeting-records`),
+    /** Live records by default; `archived` switches to the archived view. */
+    listMeetingRecords: (archived = false) =>
+      companyClient.get<MeetingRecordResponse[]>(`${base}/meeting-records`, {
+        query: { archived },
+      }),
     createMeetingRecord: (body: MeetingRecordCreate) =>
       companyClient.post<MeetingRecordResponse>(`${base}/meeting-records`, { body }),
     updateMeetingRecord: (id: string, body: MeetingRecordUpdate) =>
@@ -36,6 +39,11 @@ function createComplianceApi(base: '/api/v1/roc' | '/api/v1/secretarial') {
       companyClient.get<UnsyncedDocumentResponse[]>(`${base}/meeting-records/unsynced`),
     syncFromDocVault: () =>
       companyClient.post<SyncResultResponse>(`${base}/meeting-records/sync`),
+    /** Retires the record and archives its docVault document; nothing is deleted. */
+    archiveMeetingRecord: (id: string) =>
+      companyClient.post<MeetingRecordResponse>(`${base}/meeting-records/${id}/archive`),
+    unarchiveMeetingRecord: (id: string) =>
+      companyClient.post<MeetingRecordResponse>(`${base}/meeting-records/${id}/unarchive`),
   }
 }
 

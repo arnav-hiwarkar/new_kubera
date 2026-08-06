@@ -1,7 +1,7 @@
 import uuid
 import enum
-from datetime import date
-from sqlalchemy import String, ForeignKey, Date, Enum as SAEnum
+from datetime import date, datetime
+from sqlalchemy import String, ForeignKey, Boolean, Date, DateTime, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,5 +41,13 @@ class MeetingRecord(Base, TimestampMixin, TenantScopedMixin):
     structured_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # The date the document pertains to (meeting/filing period); drives month views.
     record_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Set = archived. The record and its file are both retained; the linked docVault
+    # document is archived alongside it.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The document's status and lock state immediately before we archived it, so
+    # unarchiving puts both back exactly. Status is plain text rather than the enum:
+    # it is a snapshot of a past value, not a live state.
+    archived_document_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    archived_document_editable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     doc_type = relationship("DocumentType")

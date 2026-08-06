@@ -16,10 +16,11 @@ export function useDocumentTypes(domain: Domain) {
   })
 }
 
-export function useMeetingRecords(domain: Domain) {
+/** The archived flag is part of the key so the live and archived views cache apart. */
+export function useMeetingRecords(domain: Domain, archived = false) {
   return useQuery({
-    queryKey: ['compliance', domain, 'records'],
-    queryFn: () => apiFor(domain).listMeetingRecords(),
+    queryKey: ['compliance', domain, 'records', { archived }],
+    queryFn: () => apiFor(domain).listMeetingRecords(archived),
   })
 }
 
@@ -75,6 +76,22 @@ export function useUnsyncedDocuments(domain: Domain) {
   return useQuery({
     queryKey: ['compliance', domain, 'unsynced'],
     queryFn: () => apiFor(domain).listUnsyncedDocuments(),
+  })
+}
+
+export function useArchiveMeetingRecord(domain: Domain) {
+  const invalidate = useInvalidateCompliance(domain)
+  return useMutation({
+    mutationFn: (id: string) => apiFor(domain).archiveMeetingRecord(id),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUnarchiveMeetingRecord(domain: Domain) {
+  const invalidate = useInvalidateCompliance(domain)
+  return useMutation({
+    mutationFn: (id: string) => apiFor(domain).unarchiveMeetingRecord(id),
+    onSuccess: invalidate,
   })
 }
 

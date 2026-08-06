@@ -46,6 +46,9 @@ class MeetingRecordResponse(MeetingRecordBase):
     id: uuid.UUID
     company_id: uuid.UUID
     domain: ComplianceDomain
+    # Set when archived. archived_document_status is an internal restore detail and
+    # is deliberately not exposed.
+    archived_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}

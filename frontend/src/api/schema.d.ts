@@ -2100,7 +2100,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Meeting Records */
+        /**
+         * List Meeting Records
+         * @description Live records by default; pass archived=true for the archived view.
+         *
+         *     A switch rather than an include-flag: the two are separate screens, never
+         *     mixed into one list.
+         */
         get: operations["list_meeting_records_api_v1_secretarial_meeting_records_get"];
         put?: never;
         /** Create Meeting Record */
@@ -2168,6 +2174,54 @@ export interface paths {
         patch: operations["update_meeting_record_api_v1_secretarial_meeting_records__record_id__patch"];
         trace?: never;
     };
+    "/api/v1/secretarial/meeting-records/{record_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive Meeting Record
+         * @description Retire a record and its file without deleting either.
+         *
+         *     The linked docVault document is archived the same way docVault's own DELETE
+         *     archives one (status + is_editable), and its previous status is snapshotted so
+         *     unarchiving can put it back exactly.
+         */
+        post: operations["archive_meeting_record_api_v1_secretarial_meeting_records__record_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/secretarial/meeting-records/{record_id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unarchive Meeting Record
+         * @description Undo an archive, restoring the document to its exact pre-archive status.
+         *
+         *     A document that was already archived in docVault before the record was
+         *     archived snapshots as 'archived' and so correctly stays archived — we only
+         *     ever undo what we did.
+         */
+        post: operations["unarchive_meeting_record_api_v1_secretarial_meeting_records__record_id__unarchive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roc/document-types": {
         parameters: {
             query?: never;
@@ -2231,7 +2285,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Meeting Records */
+        /**
+         * List Meeting Records
+         * @description Live records by default; pass archived=true for the archived view.
+         *
+         *     A switch rather than an include-flag: the two are separate screens, never
+         *     mixed into one list.
+         */
         get: operations["list_meeting_records_api_v1_roc_meeting_records_get"];
         put?: never;
         /** Create Meeting Record */
@@ -2297,6 +2357,54 @@ export interface paths {
         head?: never;
         /** Update Meeting Record */
         patch: operations["update_meeting_record_api_v1_roc_meeting_records__record_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/roc/meeting-records/{record_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive Meeting Record
+         * @description Retire a record and its file without deleting either.
+         *
+         *     The linked docVault document is archived the same way docVault's own DELETE
+         *     archives one (status + is_editable), and its previous status is snapshotted so
+         *     unarchiving can put it back exactly.
+         */
+        post: operations["archive_meeting_record_api_v1_roc_meeting_records__record_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roc/meeting-records/{record_id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unarchive Meeting Record
+         * @description Undo an archive, restoring the document to its exact pre-archive status.
+         *
+         *     A document that was already archived in docVault before the record was
+         *     archived snapshots as 'archived' and so correctly stays archived — we only
+         *     ever undo what we did.
+         */
+        post: operations["unarchive_meeting_record_api_v1_roc_meeting_records__record_id__unarchive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
@@ -4369,6 +4477,8 @@ export interface components {
              */
             company_id: string;
             domain: components["schemas"]["ComplianceDomain"];
+            /** Archived At */
+            archived_at?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -10073,7 +10183,9 @@ export interface operations {
     };
     list_meeting_records_api_v1_secretarial_meeting_records_get: {
         parameters: {
-            query?: never;
+            query?: {
+                archived?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -10087,6 +10199,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecordResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -10178,6 +10299,68 @@ export interface operations {
                 "application/json": components["schemas"]["MeetingRecordUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_meeting_record_api_v1_secretarial_meeting_records__record_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unarchive_meeting_record_api_v1_secretarial_meeting_records__record_id__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -10340,7 +10523,9 @@ export interface operations {
     };
     list_meeting_records_api_v1_roc_meeting_records_get: {
         parameters: {
-            query?: never;
+            query?: {
+                archived?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -10354,6 +10539,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecordResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -10445,6 +10639,68 @@ export interface operations {
                 "application/json": components["schemas"]["MeetingRecordUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_meeting_record_api_v1_roc_meeting_records__record_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unarchive_meeting_record_api_v1_roc_meeting_records__record_id__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

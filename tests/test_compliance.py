@@ -281,6 +281,97 @@ async def test_patch_rejects_foreign_and_wrong_domain_types(client: AsyncClient)
 
 
 @pytest.mark.asyncio
+async def test_archiving_a_record_archives_its_docvault_document(client: AsyncClient):
+    await create_test_company(client, email="arch@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='arch@a.com', password='pass1234')}"}
+
+    doc_id = await _upload_to_domain_bucket(client, headers, "roc", "MGT-7")
+    record_id = (await client.post("/api/v1/roc/meeting-records/sync", headers=headers)).json()["records"][0]["id"]
+
+    # Put the document in a non-default state so the restore fidelity is meaningful.
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"status": "verified"}, headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.post(f"/api/v1/roc/meeting-records/{record_id}/archive", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["archived_at"] is not None
+
+    # The file is archived and locked in docVault, but still there and downloadable.
+    doc = (await client.get(f"/api/v1/docvault/documents/{doc_id}", headers=headers)).json()
+    assert doc["status"] == "archived"
+    assert doc["is_editable"] is False
+    assert (await client.get(f"/api/v1/docvault/documents/{doc_id}/download", headers=headers)).status_code == 200
+
+    # Gone from the live list, present in the archived one.
+    assert (await client.get("/api/v1/roc/meeting-records", headers=headers)).json() == []
+    archived = (await client.get("/api/v1/roc/meeting-records?archived=true", headers=headers)).json()
+    assert [r["id"] for r in archived] == [record_id]
+
+    # Archived records are locked, and archiving twice is rejected.
+    resp = await client.patch(f"/api/v1/roc/meeting-records/{record_id}", json={"title": "Nope"}, headers=headers)
+    assert resp.status_code == 409
+    assert (await client.post(f"/api/v1/roc/meeting-records/{record_id}/archive", headers=headers)).status_code == 409
+
+    # Unarchiving restores the document to its exact prior status, not 'uploaded'.
+    resp = await client.post(f"/api/v1/roc/meeting-records/{record_id}/unarchive", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["archived_at"] is None
+    doc = (await client.get(f"/api/v1/docvault/documents/{doc_id}", headers=headers)).json()
+    assert doc["status"] == "verified"
+    assert doc["is_editable"] is True
+
+    assert len((await client.get("/api/v1/roc/meeting-records", headers=headers)).json()) == 1
+    assert (await client.get("/api/v1/roc/meeting-records?archived=true", headers=headers)).json() == []
+    # Unarchiving an already-live record is rejected.
+    assert (await client.post(f"/api/v1/roc/meeting-records/{record_id}/unarchive", headers=headers)).status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_archive_record_without_a_file(client: AsyncClient):
+    await create_test_company(client, email="archnofile@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='archnofile@a.com', password='pass1234')}"}
+
+    record_id = (await client.post(
+        "/api/v1/secretarial/meeting-records", json={"title": "No file"}, headers=headers
+    )).json()["id"]
+
+    assert (await client.post(f"/api/v1/secretarial/meeting-records/{record_id}/archive", headers=headers)).status_code == 200
+    assert (await client.get("/api/v1/secretarial/meeting-records", headers=headers)).json() == []
+    assert (await client.post(f"/api/v1/secretarial/meeting-records/{record_id}/unarchive", headers=headers)).status_code == 200
+    assert len((await client.get("/api/v1/secretarial/meeting-records", headers=headers)).json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_archived_records_still_claim_their_document(client: AsyncClient):
+    """Archiving must not make a document look importable again."""
+    await create_test_company(client, email="archsync@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='archsync@a.com', password='pass1234')}"}
+
+    await _upload_to_domain_bucket(client, headers, "roc", "Reimport me")
+    record_id = (await client.post("/api/v1/roc/meeting-records/sync", headers=headers)).json()["records"][0]["id"]
+    await client.post(f"/api/v1/roc/meeting-records/{record_id}/archive", headers=headers)
+
+    assert (await client.get("/api/v1/roc/meeting-records/unsynced", headers=headers)).json() == []
+    assert (await client.post("/api/v1/roc/meeting-records/sync", headers=headers)).json()["imported"] == 0
+
+
+@pytest.mark.asyncio
+async def test_archive_is_scoped_to_company_and_domain(client: AsyncClient):
+    await create_test_company(client, email="archscope1@a.com", password="pass1234")
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, email='archscope1@a.com', password='pass1234')}"}
+    await create_test_company(client, email="archscope2@a.com", password="pass1234")
+    h2 = {"Authorization": f"Bearer {await get_company_token(client, email='archscope2@a.com', password='pass1234')}"}
+
+    record_id = (await client.post("/api/v1/roc/meeting-records", json={"title": "Mine"}, headers=h1)).json()["id"]
+
+    # Another company cannot archive it, and the wrong domain prefix cannot either.
+    assert (await client.post(f"/api/v1/roc/meeting-records/{record_id}/archive", headers=h2)).status_code == 404
+    assert (await client.post(f"/api/v1/secretarial/meeting-records/{record_id}/archive", headers=h1)).status_code == 404
+    # Still live afterwards.
+    assert len((await client.get("/api/v1/roc/meeting-records", headers=h1)).json()) == 1
+
+
+@pytest.mark.asyncio
 async def test_compliance_module_access_is_independent_and_server_enforced(client: AsyncClient):
     await create_test_company(client, email="permissions-admin@a.com", password="pass1234")
     admin_headers = {
