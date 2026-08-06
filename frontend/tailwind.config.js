@@ -97,6 +97,17 @@ export default {
       backgroundImage: {
         'accent-gradient': 'linear-gradient(135deg, var(--accent) 0%, var(--accent-active) 100%)',
       },
+      keyframes: {
+        // Long bucket names scroll back-and-forth on hover so the full name is
+        // readable. Distance/duration are supplied per-name via CSS variables.
+        'bucket-marquee': {
+          '0%, 12%': { transform: 'translateX(0)' },
+          '88%, 100%': { transform: 'translateX(var(--marquee-distance, 0))' },
+        },
+      },
+      animation: {
+        'bucket-marquee': 'bucket-marquee var(--marquee-duration, 4s) ease-in-out infinite alternate',
+      },
     },
   },
   plugins: [],

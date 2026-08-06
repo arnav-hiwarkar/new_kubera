@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from 'react'
+import { useEffect, useRef, useState, type ComponentType, type CSSProperties } from 'react'
 import { Files, Folder, FolderOpen, Lock, Pencil, Plus, Users, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button, Input, ConfirmDialog, useToast } from '@/components/ui'
@@ -9,6 +9,58 @@ import { useCreateBucket, useDeleteBucket, useUpdateBucket } from '@/api/hooks/d
 import { BucketAccessModal } from './BucketAccessModal'
 
 export type BucketSelection = 'all' | 'uncategorized' | string
+
+/**
+ * Bucket name that stays on one line. When the name is too long to fit, the
+ * right edge fades (hinting more text) and, on row hover, the name scrolls
+ * back-and-forth so the whole thing can be read. Short names render plainly.
+ */
+function BucketName({ label }: { label: string }) {
+  const outerRef = useRef<HTMLSpanElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
+  const [distance, setDistance] = useState(0)
+
+  useEffect(() => {
+    const outer = outerRef.current
+    const text = textRef.current
+    if (!outer || !text) return
+    const measure = () => {
+      const diff = text.scrollWidth - outer.clientWidth
+      setDistance(diff > 1 ? diff : 0)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(outer)
+    return () => ro.disconnect()
+  }, [label])
+
+  const overflowing = distance > 0
+
+  return (
+    <span
+      ref={outerRef}
+      className={cn(
+        'min-w-0 flex-1 overflow-hidden whitespace-nowrap',
+        overflowing && 'bucket-name-fade',
+      )}
+    >
+      <span
+        ref={textRef}
+        className={cn('inline-block', overflowing && 'group-hover:animate-bucket-marquee')}
+        style={
+          overflowing
+            ? ({
+                '--marquee-distance': `-${distance}px`,
+                '--marquee-duration': `${Math.max(3, distance / 30)}s`,
+              } as CSSProperties)
+            : undefined
+        }
+      >
+        {label}
+      </span>
+    </span>
+  )
+}
 
 export interface BucketRailProps {
   buckets: BucketResponse[]
@@ -115,24 +167,30 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
       )
     }
     return (
-      <li key={key} className="group flex items-center">
+      <li
+        key={key}
+        className={cn(
+          'group flex flex-col rounded-btn transition-colors',
+          active
+            ? 'bg-accent-subtle'
+            : 'hover:bg-bg-raised',
+        )}
+      >
         <button
           onClick={() => onSelect(key)}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-2 rounded-btn px-2 py-1.5 text-left text-sm transition-colors',
-            active
-              ? 'bg-accent-subtle font-medium text-accent'
-              : 'text-text-secondary hover:bg-bg-raised hover:text-text-primary',
+            'flex min-w-0 items-center gap-2 rounded-btn px-2 py-1.5 text-left text-sm',
+            active ? 'font-medium text-accent' : 'text-text-secondary group-hover:text-text-primary',
           )}
         >
           <Icon className="h-4 w-4 shrink-0" />
-          <span className="truncate">{label}</span>
+          <BucketName label={label} />
           {deletable?.visibility === 'restricted' && (
             <Lock className="h-3 w-3 shrink-0 text-text-muted" aria-label="Restricted bucket" />
           )}
           <span
             className={cn(
-              'ml-auto shrink-0 rounded-pill px-1.5 py-0.5 text-xs font-semibold tabular-nums',
+              'shrink-0 rounded-pill px-1.5 py-0.5 text-xs font-semibold tabular-nums',
               active ? 'bg-accent/15 text-accent' : 'bg-bg-raised text-text-muted',
             )}
           >
@@ -140,32 +198,38 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
           </span>
         </button>
         {deletable && (
-          <div className="ml-1 flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-            {isAdmin && (
-              <button
-                onClick={() => startRename(deletable)}
-                aria-label={`Rename bucket ${deletable.name}`}
-                className="text-text-muted hover:text-accent"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-            )}
-            {isAdmin && (
-              <button
-                onClick={() => setToManage(deletable)}
-                aria-label={`Manage access for bucket ${deletable.name}`}
-                className="text-text-muted hover:text-accent"
-              >
-                <Users className="h-4 w-4" />
-              </button>
-            )}
-            <button
-              onClick={() => setToDelete(deletable)}
-              aria-label={`Delete bucket ${deletable.name}`}
-              className="text-text-muted hover:text-status-action"
-            >
-              <X className="h-4 w-4" />
-            </button>
+          // Actions drop into their own row on hover/focus; the grid-rows trick
+          // animates the height so the list below slides down smoothly.
+          <div className="grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-nav group-hover:grid-rows-[1fr] group-focus-within:grid-rows-[1fr]">
+            <div className="overflow-hidden">
+              <div className="flex items-center justify-end gap-2 px-2 pb-1.5">
+                {isAdmin && (
+                  <button
+                    onClick={() => startRename(deletable)}
+                    aria-label={`Rename bucket ${deletable.name}`}
+                    className="text-text-muted hover:text-accent"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={() => setToManage(deletable)}
+                    aria-label={`Manage access for bucket ${deletable.name}`}
+                    className="text-text-muted hover:text-accent"
+                  >
+                    <Users className="h-4 w-4" />
+                  </button>
+                )}
+                <button
+                  onClick={() => setToDelete(deletable)}
+                  aria-label={`Delete bucket ${deletable.name}`}
+                  className="text-text-muted hover:text-status-action"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </li>

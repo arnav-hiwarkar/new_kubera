@@ -230,3 +230,15 @@ h1, h2, h3, .tracking-display {
   background-clip: content-box;
 }
 *::-webkit-scrollbar-thumb:hover { background: var(--text-muted); background-clip: content-box; }
+
+/* DocVault bucket names: fade the right edge when the name is clipped, hinting
+   there's more text. The fade lifts on row hover so the marquee reveals it. */
+.bucket-name-fade {
+  -webkit-mask-image: linear-gradient(to right, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 78%, transparent 100%);
+}
+.group:hover .bucket-name-fade,
+.group:focus-within .bucket-name-fade {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
