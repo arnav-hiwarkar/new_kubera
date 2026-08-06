@@ -3756,6 +3756,8 @@ export interface components {
             is_editable: boolean;
             /** Created By */
             created_by: string | null;
+            /** Created By Name */
+            created_by_name?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -3855,6 +3857,8 @@ export interface components {
             checksum: string;
             /** Uploaded By */
             uploaded_by: string | null;
+            /** Uploaded By Name */
+            uploaded_by_name?: string | null;
             /**
              * Uploaded At
              * Format: date-time

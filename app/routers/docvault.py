@@ -39,6 +39,28 @@ async def log_activity(db: AsyncSession, company_id: uuid.UUID, actor_id: uuid.U
     db.add(log)
 
 
+async def _attach_uploader_names(db: AsyncSession, docs: List[Document]) -> List[Document]:
+    """Resolve created_by / uploaded_by UUIDs to user names in a single query.
+
+    The names are set as transient attributes on the ORM objects so Pydantic
+    (from_attributes) picks them up. full_name is retained even for soft-deleted
+    users; auditor/deleted-user uploads have a null FK and stay None.
+    """
+    ids = {d.created_by for d in docs if d.created_by}
+    ids |= {v.uploaded_by for d in docs for v in d.versions if v.uploaded_by}
+    names: dict[uuid.UUID, str] = {}
+    if ids:
+        rows = await db.execute(
+            select(CompanyUser.id, CompanyUser.full_name).where(CompanyUser.id.in_(ids))
+        )
+        names = {row.id: row.full_name for row in rows}
+    for d in docs:
+        d.created_by_name = names.get(d.created_by)
+        for v in d.versions:
+            v.uploaded_by_name = names.get(v.uploaded_by)
+    return docs
+
+
 async def get_company_kek(db: AsyncSession, company_id: uuid.UUID) -> bytes:
     result = await db.execute(select(CompanyKey).where(CompanyKey.company_id == company_id))
     key_record = result.scalar_one_or_none()
@@ -321,7 +343,7 @@ async def upload_document(
     
     # Reload with versions
     result = await db.execute(select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id))
-    return result.scalar_one()
+    return (await _attach_uploader_names(db, [result.scalar_one()]))[0]
 
 
 @router.post("/documents/{document_id}/versions", response_model=DocumentResponse)
@@ -351,8 +373,12 @@ async def upload_document_version(
     
     await log_activity(db, current_user.company_id, current_user.id, "document.version_uploaded", "document", doc.id, {"version": next_version})
     await db.commit()
-    await db.refresh(doc)
-    return doc
+
+    # Reload with versions (db.refresh does not reliably reload the collection).
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id)
+    )
+    return (await _attach_uploader_names(db, [result.scalar_one()]))[0]
 
 
 @router.get("/documents", response_model=List[DocumentResponse])
@@ -380,7 +406,7 @@ async def list_documents(
         
     query = query.order_by(desc(Document.created_at))
     result = await db.execute(query)
-    return result.scalars().all()
+    return await _attach_uploader_names(db, list(result.scalars().all()))
 
 
 @router.get("/documents/search", response_model=List[DocumentResponse])
@@ -412,7 +438,7 @@ async def search_documents(
         .order_by(desc(Document.created_at))
     )
     result = await db.execute(query)
-    return result.scalars().all()
+    return await _attach_uploader_names(db, list(result.scalars().all()))
 
 
 @router.get("/documents/{document_id}", response_model=DocumentResponse)
@@ -431,7 +457,7 @@ async def get_document(
         raise HTTPException(status_code=404, detail="Document not found")
     if not await can_access_bucket(db, current_user, doc.bucket_id):
         raise HTTPException(status_code=404, detail="Document not found")
-    return doc
+    return (await _attach_uploader_names(db, [doc]))[0]
 
 
 @router.get("/documents/{document_id}/download")
@@ -501,7 +527,7 @@ async def update_document(
 
     update_data = updates.model_dump(exclude_unset=True)
     if not update_data:
-        return doc
+        return (await _attach_uploader_names(db, [doc]))[0]
 
     # A locked (non-editable) document freezes its content/metadata — title, tags
     # and bucket. Status changes (incl. archive) and toggling is_editable back on
@@ -524,8 +550,12 @@ async def update_document(
         
     await log_activity(db, current_user.company_id, current_user.id, "document.updated", "document", doc.id, {"updated_fields": list(update_data.keys())})
     await db.commit()
-    await db.refresh(doc)
-    return doc
+
+    # Reload with versions (db.refresh does not reliably reload the collection).
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id)
+    )
+    return (await _attach_uploader_names(db, [result.scalar_one()]))[0]
 
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

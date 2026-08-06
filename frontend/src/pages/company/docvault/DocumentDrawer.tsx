@@ -56,8 +56,9 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
   // versions. Status changes (incl. archive) and the editable toggle stay open.
   const locked = !document.is_editable
   const bucketName = buckets.find((b) => b.id === document.bucket_id)?.name ?? 'Uncategorized'
+  const currentVersion = document.versions.find((v) => v.id === document.current_version_id)
   const currentVersionNo =
-    document.versions.find((v) => v.id === document.current_version_id)?.version_number ??
+    currentVersion?.version_number ??
     Math.max(0, ...document.versions.map((v) => v.version_number))
   const sortedVersions = [...document.versions].sort((a, b) => b.version_number - a.version_number)
 
@@ -144,6 +145,26 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
         }
       >
         <div className="flex flex-col gap-5">
+          {/* Uploader meta */}
+          <div className="flex flex-wrap gap-x-2 gap-y-1 text-sm text-text-secondary">
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+              <span className="shrink-0 text-text-muted">Created by</span>
+              <span className="truncate font-medium text-text-primary" title={document.created_by_name ?? 'Unknown'}>
+                {document.created_by_name ?? 'Unknown'}
+              </span>
+            </span>
+            <span className="shrink-0 text-text-muted">·</span>
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+              <span className="shrink-0 text-text-muted">Current version by</span>
+              <span
+                className="truncate font-medium text-text-primary"
+                title={currentVersion?.uploaded_by_name ?? 'Unknown'}
+              >
+                {currentVersion?.uploaded_by_name ?? 'Unknown'}
+              </span>
+            </span>
+          </div>
+
           {/* Name */}
           <Field label="Name" hint={locked ? 'Locked — enable editing to rename' : undefined}>
             <div className="flex gap-2">
@@ -238,23 +259,26 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
             </h3>
             <ul className="flex flex-col divide-y divide-border rounded-card border border-border">
               {sortedVersions.map((v) => (
-                <li key={v.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono font-medium text-text-primary">
-                      v{v.version_number}
-                    </span>
-                    {v.id === document.current_version_id && (
-                      <span className="rounded-full bg-accent-subtle px-1.5 py-0.5 text-xs text-accent">
-                        current
+                <li key={v.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-medium text-text-primary">
+                        v{v.version_number}
                       </span>
-                    )}
-                    <span className="text-text-muted">
-                      {formatBytes(v.size_bytes)} · {formatDate(v.uploaded_at)}
+                      {v.id === document.current_version_id && (
+                        <span className="rounded-full bg-accent-subtle px-1.5 py-0.5 text-xs text-accent">
+                          current
+                        </span>
+                      )}
+                    </div>
+                    <span className="truncate text-text-muted" title={v.uploaded_by_name ?? 'Unknown'}>
+                      {formatBytes(v.size_bytes)} · {formatDate(v.uploaded_at)} · by{' '}
+                      {v.uploaded_by_name ?? 'Unknown'}
                     </span>
                   </div>
                   <button
                     onClick={() => downloadVersion(v.id, v.original_filename)}
-                    className="text-accent hover:underline"
+                    className="shrink-0 text-accent hover:underline"
                   >
                     Download
                   </button>

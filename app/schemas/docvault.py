@@ -42,6 +42,7 @@ class DocumentVersionResponse(BaseModel):
     size_bytes: int
     checksum: str
     uploaded_by: Optional[uuid.UUID]
+    uploaded_by_name: Optional[str] = None
     uploaded_at: datetime
     version_number: int
 
@@ -59,6 +60,7 @@ class DocumentResponse(BaseModel):
     tags: List[str]
     is_editable: bool
     created_by: Optional[uuid.UUID]
+    created_by_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     versions: List[DocumentVersionResponse] = []

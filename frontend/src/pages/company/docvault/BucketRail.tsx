@@ -119,7 +119,7 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
         <button
           onClick={() => onSelect(key)}
           className={cn(
-            'flex flex-1 items-center gap-2 rounded-btn px-2 py-1.5 text-left text-sm transition-colors',
+            'flex min-w-0 flex-1 items-center gap-2 rounded-btn px-2 py-1.5 text-left text-sm transition-colors',
             active
               ? 'bg-accent-subtle font-medium text-accent'
               : 'text-text-secondary hover:bg-bg-raised hover:text-text-primary',
@@ -139,39 +139,41 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
             {count}
           </span>
         </button>
-        {deletable && isAdmin && (
-          <button
-            onClick={() => startRename(deletable)}
-            aria-label={`Rename bucket ${deletable.name}`}
-            className="ml-1 hidden text-text-muted hover:text-accent group-hover:block"
-          >
-            <Pencil className="h-4 w-4" />
-          </button>
-        )}
-        {deletable && isAdmin && (
-          <button
-            onClick={() => setToManage(deletable)}
-            aria-label={`Manage access for bucket ${deletable.name}`}
-            className="ml-1 hidden text-text-muted hover:text-accent group-hover:block"
-          >
-            <Users className="h-4 w-4" />
-          </button>
-        )}
         {deletable && (
-          <button
-            onClick={() => setToDelete(deletable)}
-            aria-label={`Delete bucket ${deletable.name}`}
-            className="ml-1 hidden text-text-muted hover:text-status-action group-hover:block"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="ml-1 flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            {isAdmin && (
+              <button
+                onClick={() => startRename(deletable)}
+                aria-label={`Rename bucket ${deletable.name}`}
+                className="text-text-muted hover:text-accent"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => setToManage(deletable)}
+                aria-label={`Manage access for bucket ${deletable.name}`}
+                className="text-text-muted hover:text-accent"
+              >
+                <Users className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              onClick={() => setToDelete(deletable)}
+              aria-label={`Delete bucket ${deletable.name}`}
+              className="text-text-muted hover:text-status-action"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         )}
       </li>
     )
   }
 
   return (
-    <div className="flex w-56 shrink-0 flex-col rounded-card border border-border bg-bg-surface p-2">
+    <div className="flex w-56 shrink-0 flex-col self-start rounded-card border border-border bg-bg-surface p-2">
       <div className="mb-1 flex items-center justify-between px-2 py-1">
         <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">
           Buckets
@@ -204,7 +206,7 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
         </div>
       )}
 
-      <ul className="flex flex-col gap-0.5">
+      <ul className="flex max-h-[70vh] flex-col gap-0.5 overflow-y-auto">
         {item('all', 'All Documents', activeCount, Files)}
         {item('uncategorized', 'Uncategorized', uncategorizedCount, FolderOpen)}
         <li className="my-1 border-t border-border" />
