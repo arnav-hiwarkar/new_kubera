@@ -1,14 +1,25 @@
 import { useMemo, useState } from 'react'
-import { Button, Input, Select, Spinner, EmptyState } from '@/components/ui'
+import { Button, Input, Select, Spinner, EmptyState, useToast } from '@/components/ui'
 import { docvaultApi } from '@/api/endpoints/docvault'
 import { saveBlob } from '@/lib/download'
 import { formatDate } from '@/lib/format'
-import { useMeetingRecords, useDocumentTypes, type Domain } from '@/api/hooks/compliance'
+import {
+  useMeetingRecords,
+  useDocumentTypes,
+  useUnsyncedDocuments,
+  useSyncFromDocVault,
+  type Domain,
+} from '@/api/hooks/compliance'
 import type { DocumentTypeResponse, MeetingRecordResponse } from '@/api/types'
 import { readFields, type FieldDef } from './schema'
 import { RecordModal } from './RecordModal'
 
 type View = 'type' | 'month'
+
+/** Records imported from docVault have no type until someone classifies them. */
+const UNCLASSIFIED = 'Unclassified'
+/** Sentinel for the type filter's "no type" option — '' already means "all". */
+const UNCLASSIFIED_FILTER = '__unclassified__'
 
 interface TypeInfo {
   name: string
@@ -34,11 +45,15 @@ function monthKey(date: string | null | undefined): string {
 }
 
 export function RecordsTab({ domain }: { domain: Domain }) {
+  const toast = useToast()
   const { data: recordsData, isLoading } = useMeetingRecords(domain)
   const { data: typesData } = useDocumentTypes(domain)
+  const { data: unsyncedData } = useUnsyncedDocuments(domain)
+  const sync = useSyncFromDocVault(domain)
 
   const records = useMemo(() => recordsData ?? [], [recordsData])
   const types = useMemo(() => typesData ?? [], [typesData])
+  const unsyncedCount = unsyncedData?.length ?? 0
 
   const typeById = useMemo(() => {
     const map: Record<string, TypeInfo> = {}
@@ -46,28 +61,58 @@ export function RecordsTab({ domain }: { domain: Domain }) {
     return map
   }, [types])
 
+  /** The type row for a record, or null when it is unclassified. */
+  const infoFor = (r: MeetingRecordResponse): TypeInfo | null =>
+    r.doc_type_id ? (typeById[r.doc_type_id] ?? null) : null
+
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [thisMonth, setThisMonth] = useState(false)
   const [view, setView] = useState<View>('type')
   const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<MeetingRecordResponse | null>(null)
 
   const now = new Date()
   const curYear = now.getFullYear()
   const curMonth = now.getMonth()
 
+  const handleSync = async () => {
+    try {
+      const result = await sync.mutateAsync()
+      toast.success(
+        result.imported === 1
+          ? 'Imported 1 document from DocVault'
+          : `Imported ${result.imported} documents from DocVault`,
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to sync from DocVault')
+    }
+  }
+
+  const openCreate = () => {
+    setEditing(null)
+    setModalOpen(true)
+  }
+
+  const openEdit = (r: MeetingRecordResponse) => {
+    setEditing(r)
+    setModalOpen(true)
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return records.filter((r) => {
-      if (typeFilter && r.doc_type_id !== typeFilter) return false
+      if (typeFilter === UNCLASSIFIED_FILTER) {
+        if (r.doc_type_id) return false
+      } else if (typeFilter && r.doc_type_id !== typeFilter) return false
       if (thisMonth) {
         if (!r.record_date) return false
         const d = new Date(r.record_date)
         if (d.getFullYear() !== curYear || d.getMonth() !== curMonth) return false
       }
       if (q) {
-        const name = typeById[r.doc_type_id]?.name ?? ''
-        const hay = `${name} ${JSON.stringify(r.structured_metadata ?? {})}`.toLowerCase()
+        const name = (r.doc_type_id ? typeById[r.doc_type_id]?.name : '') ?? ''
+        const hay = `${r.title ?? ''} ${name} ${JSON.stringify(r.structured_metadata ?? {})}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
@@ -78,7 +123,9 @@ export function RecordsTab({ domain }: { domain: Domain }) {
     const map = new Map<string, MeetingRecordResponse[]>()
     if (view === 'type') {
       for (const r of filtered) {
-        const label = typeById[r.doc_type_id]?.name ?? 'Unknown type'
+        const label = r.doc_type_id
+          ? (typeById[r.doc_type_id]?.name ?? 'Unknown type')
+          : UNCLASSIFIED
         const list = map.get(label) ?? []
         list.push(r)
         map.set(label, list)
@@ -99,10 +146,10 @@ export function RecordsTab({ domain }: { domain: Domain }) {
     })
   }, [filtered, view, typeById])
 
-  const handleDownload = async (r: MeetingRecordResponse, typeName: string) => {
+  const handleDownload = async (r: MeetingRecordResponse, label: string) => {
     if (!r.document_id) return
     const blob = await docvaultApi.downloadDocument(r.document_id)
-    saveBlob(blob, `${typeName}-${r.record_date ?? 'doc'}`)
+    saveBlob(blob, `${label}-${r.record_date ?? 'doc'}`)
   }
 
   return (
@@ -120,6 +167,7 @@ export function RecordsTab({ domain }: { domain: Domain }) {
           className="h-8 max-w-[200px]"
         >
           <option value="">All types</option>
+          <option value={UNCLASSIFIED_FILTER}>{UNCLASSIFIED}</option>
           {types.map((t: DocumentTypeResponse) => (
             <option key={t.id} value={t.id}>
               {t.name}
@@ -139,7 +187,13 @@ export function RecordsTab({ domain }: { domain: Domain }) {
           <Button variant={view === 'month' ? 'primary' : 'ghost'} onClick={() => setView('month')}>
             By month
           </Button>
-          <Button onClick={() => setModalOpen(true)}>New record</Button>
+          {/* Only offered when the DocVault bucket actually holds something new. */}
+          {unsyncedCount > 0 && (
+            <Button variant="secondary" onClick={() => void handleSync()} loading={sync.isPending}>
+              Sync from DocVault ({unsyncedCount})
+            </Button>
+          )}
+          <Button onClick={openCreate}>New record</Button>
         </div>
       </div>
 
@@ -161,26 +215,31 @@ export function RecordsTab({ domain }: { domain: Domain }) {
               </h3>
               <div className="rounded-card border border-border divide-y divide-border">
                 {rows.map((r) => {
-                  const info = typeById[r.doc_type_id]
-                  const typeName = info?.name ?? 'Unknown type'
+                  const info = infoFor(r)
+                  const typeName = r.doc_type_id
+                    ? (info?.name ?? 'Unknown type')
+                    : UNCLASSIFIED
+                  const heading = r.title?.trim() || typeName
                   const values = readValues(r.structured_metadata)
                   const preview = (info?.fields ?? [])
                     .filter((f) => values[f.key])
                     .slice(0, 2)
                     .map((f) => `${f.label}: ${values[f.key]}`)
+                  const subtitle = [typeName, ...preview].join(' · ')
                   return (
                     <div key={r.id} className="flex items-center gap-4 px-4 py-3">
                       <div className="w-28 shrink-0 text-sm text-text-secondary">
                         {r.record_date ? formatDate(r.record_date) : '—'}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium text-text-primary">{typeName}</div>
-                        {preview.length > 0 && (
-                          <div className="truncate text-xs text-text-muted">{preview.join(' · ')}</div>
-                        )}
+                        <div className="font-medium text-text-primary">{heading}</div>
+                        <div className="truncate text-xs text-text-muted">{subtitle}</div>
                       </div>
+                      <Button variant="ghost" onClick={() => openEdit(r)}>
+                        Edit
+                      </Button>
                       {r.document_id && (
-                        <Button variant="ghost" onClick={() => void handleDownload(r, typeName)}>
+                        <Button variant="ghost" onClick={() => void handleDownload(r, heading)}>
                           Download
                         </Button>
                       )}
@@ -198,6 +257,7 @@ export function RecordsTab({ domain }: { domain: Domain }) {
         onClose={() => setModalOpen(false)}
         domain={domain}
         types={types}
+        record={editing}
       />
     </div>
   )

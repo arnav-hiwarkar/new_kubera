@@ -93,6 +93,10 @@ export type DocumentTypeResponse = S['DocumentTypeResponse']
 export type DocumentTypeCreate = S['DocumentTypeCreate']
 export type MeetingRecordResponse = S['MeetingRecordResponse']
 export type MeetingRecordCreate = S['MeetingRecordCreate']
+export type MeetingRecordUpdate = S['MeetingRecordUpdate']
+export type BucketRefResponse = S['BucketRefResponse']
+export type UnsyncedDocumentResponse = S['UnsyncedDocumentResponse']
+export type SyncResultResponse = S['SyncResultResponse']
 
 // AuditEase (company + auditor)
 export type AuditEngagementResponse = S['AuditEngagementResponse']

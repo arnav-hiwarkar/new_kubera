@@ -2073,6 +2073,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/secretarial/bucket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Domain Bucket
+         * @description The docVault bucket this domain files into, created on first ask.
+         */
+        get: operations["get_domain_bucket_api_v1_secretarial_bucket_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/secretarial/meeting-records": {
         parameters: {
             query?: never;
@@ -2089,6 +2109,63 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/secretarial/meeting-records/unsynced": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Unsynced Documents */
+        get: operations["list_unsynced_documents_api_v1_secretarial_meeting_records_unsynced_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/secretarial/meeting-records/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync From Docvault
+         * @description Import every unclaimed bucket document as an untyped record.
+         *
+         *     Additive only: existing records are never updated or removed, so running
+         *     this twice in a row imports nothing the second time.
+         */
+        post: operations["sync_from_docvault_api_v1_secretarial_meeting_records_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/secretarial/meeting-records/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Meeting Record */
+        patch: operations["update_meeting_record_api_v1_secretarial_meeting_records__record_id__patch"];
         trace?: never;
     };
     "/api/v1/roc/document-types": {
@@ -2127,6 +2204,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roc/bucket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Domain Bucket
+         * @description The docVault bucket this domain files into, created on first ask.
+         */
+        get: operations["get_domain_bucket_api_v1_roc_bucket_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roc/meeting-records": {
         parameters: {
             query?: never;
@@ -2143,6 +2240,63 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roc/meeting-records/unsynced": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Unsynced Documents */
+        get: operations["list_unsynced_documents_api_v1_roc_meeting_records_unsynced_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roc/meeting-records/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync From Docvault
+         * @description Import every unclaimed bucket document as an untyped record.
+         *
+         *     Additive only: existing records are never updated or removed, so running
+         *     this twice in a row imports nothing the second time.
+         */
+        post: operations["sync_from_docvault_api_v1_roc_meeting_records_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roc/meeting-records/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Meeting Record */
+        patch: operations["update_meeting_record_api_v1_roc_meeting_records__record_id__patch"];
         trace?: never;
     };
 }
@@ -3274,6 +3428,19 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * BucketRefResponse
+         * @description The docVault bucket this compliance domain files its documents into.
+         */
+        BucketRefResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** BucketResponse */
         BucketResponse: {
             /**
@@ -4164,11 +4331,10 @@ export interface components {
         };
         /** MeetingRecordCreate */
         MeetingRecordCreate: {
-            /**
-             * Doc Type Id
-             * Format: uuid
-             */
-            doc_type_id: string;
+            /** Doc Type Id */
+            doc_type_id?: string | null;
+            /** Title */
+            title?: string | null;
             /** Document Id */
             document_id?: string | null;
             /** Structured Metadata */
@@ -4180,11 +4346,10 @@ export interface components {
         };
         /** MeetingRecordResponse */
         MeetingRecordResponse: {
-            /**
-             * Doc Type Id
-             * Format: uuid
-             */
-            doc_type_id: string;
+            /** Doc Type Id */
+            doc_type_id?: string | null;
+            /** Title */
+            title?: string | null;
             /** Document Id */
             document_id?: string | null;
             /** Structured Metadata */
@@ -4203,6 +4368,7 @@ export interface components {
              * Format: uuid
              */
             company_id: string;
+            domain: components["schemas"]["ComplianceDomain"];
             /**
              * Created At
              * Format: date-time
@@ -4213,6 +4379,23 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * MeetingRecordUpdate
+         * @description Partial update. The router applies it with exclude_unset, so an omitted
+         *     field is left alone while an explicit null clears it.
+         */
+        MeetingRecordUpdate: {
+            /** Doc Type Id */
+            doc_type_id?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Structured Metadata */
+            structured_metadata?: {
+                [key: string]: unknown;
+            } | null;
+            /** Record Date */
+            record_date?: string | null;
         };
         /** NotificationOut */
         NotificationOut: {
@@ -4740,6 +4923,13 @@ export interface components {
             pincode?: string | null;
             /** Is Active */
             is_active?: boolean | null;
+        };
+        /** SyncResultResponse */
+        SyncResultResponse: {
+            /** Imported */
+            imported: number;
+            /** Records */
+            records: components["schemas"]["MeetingRecordResponse"][];
         };
         /**
          * TBDiagnostics
@@ -5316,6 +5506,25 @@ export interface components {
         UnmapRequest: {
             /** Ledger Ids */
             ledger_ids: string[];
+        };
+        /**
+         * UnsyncedDocumentResponse
+         * @description A docVault document sitting in the domain's bucket with no record yet.
+         */
+        UnsyncedDocumentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Original Filename */
+            original_filename?: string | null;
+            /** Size Bytes */
+            size_bytes?: number | null;
+            /** Uploaded At */
+            uploaded_at?: string | null;
         };
         /** UserCreate */
         UserCreate: {
@@ -9842,6 +10051,26 @@ export interface operations {
             };
         };
     };
+    get_domain_bucket_api_v1_secretarial_bucket_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BucketRefResponse"];
+                };
+            };
+        };
+    };
     list_meeting_records_api_v1_secretarial_meeting_records_get: {
         parameters: {
             query?: never;
@@ -9877,6 +10106,81 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_unsynced_documents_api_v1_secretarial_meeting_records_unsynced_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsyncedDocumentResponse"][];
+                };
+            };
+        };
+    };
+    sync_from_docvault_api_v1_secretarial_meeting_records_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResultResponse"];
+                };
+            };
+        };
+    };
+    update_meeting_record_api_v1_secretarial_meeting_records__record_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingRecordUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10014,6 +10318,26 @@ export interface operations {
             };
         };
     };
+    get_domain_bucket_api_v1_roc_bucket_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BucketRefResponse"];
+                };
+            };
+        };
+    };
     list_meeting_records_api_v1_roc_meeting_records_get: {
         parameters: {
             query?: never;
@@ -10049,6 +10373,81 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_unsynced_documents_api_v1_roc_meeting_records_unsynced_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsyncedDocumentResponse"][];
+                };
+            };
+        };
+    };
+    sync_from_docvault_api_v1_roc_meeting_records_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResultResponse"];
+                };
+            };
+        };
+    };
+    update_meeting_record_api_v1_roc_meeting_records__record_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingRecordUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

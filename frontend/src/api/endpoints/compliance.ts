@@ -1,9 +1,13 @@
 import { companyClient } from '@/api/clients/company'
 import type {
+  BucketRefResponse,
   DocumentTypeResponse,
   DocumentTypeCreate,
   MeetingRecordResponse,
   MeetingRecordCreate,
+  MeetingRecordUpdate,
+  SyncResultResponse,
+  UnsyncedDocumentResponse,
 } from '@/api/types'
 
 /**
@@ -24,6 +28,14 @@ function createComplianceApi(base: '/api/v1/roc' | '/api/v1/secretarial') {
       companyClient.get<MeetingRecordResponse[]>(`${base}/meeting-records`),
     createMeetingRecord: (body: MeetingRecordCreate) =>
       companyClient.post<MeetingRecordResponse>(`${base}/meeting-records`, { body }),
+    updateMeetingRecord: (id: string, body: MeetingRecordUpdate) =>
+      companyClient.patch<MeetingRecordResponse>(`${base}/meeting-records/${id}`, { body }),
+    /** The docVault bucket this domain files into; created server-side if absent. */
+    getBucket: () => companyClient.get<BucketRefResponse>(`${base}/bucket`),
+    listUnsyncedDocuments: () =>
+      companyClient.get<UnsyncedDocumentResponse[]>(`${base}/meeting-records/unsynced`),
+    syncFromDocVault: () =>
+      companyClient.post<SyncResultResponse>(`${base}/meeting-records/sync`),
   }
 }
 

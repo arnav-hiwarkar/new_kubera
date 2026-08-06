@@ -16,6 +16,10 @@ vi.mock('@/api/endpoints/compliance', () => {
     deleteDocumentType: vi.fn(),
     listMeetingRecords: vi.fn(),
     createMeetingRecord: vi.fn(),
+    updateMeetingRecord: vi.fn(),
+    getBucket: vi.fn(),
+    listUnsyncedDocuments: vi.fn(),
+    syncFromDocVault: vi.fn(),
   }
   return { rocApi: api, secretarialApi: api }
 })
@@ -57,7 +61,9 @@ function record(over: Partial<MeetingRecordResponse>): MeetingRecordResponse {
   return {
     id: 'r1',
     company_id: 'co1',
+    domain: 'roc',
     doc_type_id: 'dt1',
+    title: 'Board Minutes 2026-07-05',
     document_id: 'doc1',
     structured_metadata: { meeting_date: '2026-07-05' },
     record_date: '2026-07-05',
@@ -69,6 +75,8 @@ function record(over: Partial<MeetingRecordResponse>): MeetingRecordResponse {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Default: nothing waiting in docVault, so the sync button stays hidden.
+  vi.mocked(rocApi.listUnsyncedDocuments).mockResolvedValue([])
 })
 
 describe('DocumentTypesTab', () => {
@@ -137,5 +145,71 @@ describe('RecordsTab', () => {
     await u.click(screen.getByRole('button', { name: 'This month' }))
     await waitFor(() => expect(screen.queryByText(/March 2025/)).not.toBeInTheDocument())
     expect(screen.getByText(new RegExp(currentMonth))).toBeInTheDocument()
+  })
+
+  it('hides the sync button when docVault has nothing new', async () => {
+    vi.mocked(rocApi.listDocumentTypes).mockResolvedValue([docType({})])
+    vi.mocked(rocApi.listMeetingRecords).mockResolvedValue([record({})])
+    wrap(<RecordsTab domain="roc" />)
+
+    await screen.findByText('Board Minutes 2026-07-05')
+    expect(screen.queryByRole('button', { name: /Sync from DocVault/ })).not.toBeInTheDocument()
+  })
+
+  it('shows the unsynced count and imports on click', async () => {
+    vi.mocked(rocApi.listDocumentTypes).mockResolvedValue([docType({})])
+    vi.mocked(rocApi.listMeetingRecords).mockResolvedValue([])
+    vi.mocked(rocApi.listUnsyncedDocuments).mockResolvedValue([
+      { id: 'doc1', title: 'AOC-4', original_filename: 'aoc4.pdf', size_bytes: 10, uploaded_at: null },
+      { id: 'doc2', title: 'MGT-7', original_filename: 'mgt7.pdf', size_bytes: 10, uploaded_at: null },
+    ])
+    vi.mocked(rocApi.syncFromDocVault).mockResolvedValue({ imported: 2, records: [] })
+    const u = userEvent.setup()
+    wrap(<RecordsTab domain="roc" />)
+
+    const button = await screen.findByRole('button', { name: /Sync from DocVault \(2\)/ })
+    await u.click(button)
+
+    await waitFor(() => expect(rocApi.syncFromDocVault).toHaveBeenCalled())
+    expect(await screen.findByText(/Imported 2 documents from DocVault/)).toBeInTheDocument()
+  })
+
+  it('renders an untyped record as Unclassified without crashing', async () => {
+    vi.mocked(rocApi.listDocumentTypes).mockResolvedValue([docType({})])
+    vi.mocked(rocApi.listMeetingRecords).mockResolvedValue([
+      record({ id: 'r9', doc_type_id: null, title: 'AOC-4', structured_metadata: null }),
+    ])
+    wrap(<RecordsTab domain="roc" />)
+
+    expect(await screen.findByText('AOC-4')).toBeInTheDocument()
+    // Once as the group heading, once as the row subtitle.
+    expect(screen.getAllByText(/Unclassified/).length).toBeGreaterThan(0)
+  })
+
+  it('prefills the edit modal and PATCHes the record', async () => {
+    vi.mocked(rocApi.listDocumentTypes).mockResolvedValue([docType({})])
+    vi.mocked(rocApi.listMeetingRecords).mockResolvedValue([
+      record({ id: 'r9', doc_type_id: null, title: 'AOC-4', structured_metadata: null, record_date: '2026-06-01' }),
+    ])
+    vi.mocked(rocApi.updateMeetingRecord).mockResolvedValue(record({}))
+    const u = userEvent.setup()
+    wrap(<RecordsTab domain="roc" />)
+
+    await u.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    // Prefilled from the record, and no file input in edit mode.
+    expect(screen.getByDisplayValue('AOC-4')).toBeInTheDocument()
+    expect(screen.queryByText('Completed document')).not.toBeInTheDocument()
+
+    // Classify it, then save.
+    await u.selectOptions(screen.getByDisplayValue('— Unclassified —'), 'dt1')
+    await u.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(rocApi.updateMeetingRecord).toHaveBeenCalledWith(
+        'r9',
+        expect.objectContaining({ doc_type_id: 'dt1', title: 'AOC-4', record_date: '2026-06-01' }),
+      ),
+    )
   })
 })

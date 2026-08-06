@@ -31,7 +31,12 @@ class MeetingRecord(Base, TimestampMixin, TenantScopedMixin):
     __tablename__ = "meeting_records"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    doc_type_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("document_types.id", ondelete="CASCADE"), nullable=False)
+    # Records imported from docVault arrive unclassified; the type is filled in later.
+    doc_type_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("document_types.id", ondelete="CASCADE"), nullable=True)
+    # Denormalised from the type: an untyped record still has to belong to exactly
+    # one of the two compliance apps, so the domain cannot be derived by joining.
+    domain: Mapped[ComplianceDomain] = mapped_column(SAEnum(ComplianceDomain, name="compliance_domain"), nullable=False, index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
     structured_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # The date the document pertains to (meeting/filing period); drives month views.

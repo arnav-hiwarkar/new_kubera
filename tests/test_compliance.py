@@ -155,6 +155,131 @@ async def test_record_rejects_wrong_domain_type(client: AsyncClient):
     assert resp.status_code == 400
 
 
+async def _upload_to_domain_bucket(
+    client: AsyncClient, headers: dict, domain: str, title: str, body: bytes = b"contents"
+) -> str:
+    """Put a file straight into the domain's docVault bucket, as a user would."""
+    bucket = (await client.get(f"/api/v1/{domain}/bucket", headers=headers)).json()
+    resp = await client.post(
+        "/api/v1/docvault/documents",
+        data={"title": title, "bucket_id": bucket["id"]},
+        files={"file": (f"{title}.pdf", body, "application/pdf")},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_record_can_be_created_untyped_and_classified_later(client: AsyncClient):
+    await create_test_company(client, email="untyped@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='untyped@a.com', password='pass1234')}"}
+
+    # A record may be staged with nothing but a title.
+    resp = await client.post(
+        "/api/v1/secretarial/meeting-records",
+        json={"title": "Awaiting classification"},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    created = resp.json()
+    assert created["doc_type_id"] is None
+    assert created["document_id"] is None
+    assert created["domain"] == ComplianceDomain.secretarial.value
+
+    # It is listed by its own domain and not the other one.
+    assert len((await client.get("/api/v1/secretarial/meeting-records", headers=headers)).json()) == 1
+    assert len((await client.get("/api/v1/roc/meeting-records", headers=headers)).json()) == 0
+
+    # Classifying it later fills in the details.
+    dt_id = (await client.post("/api/v1/secretarial/document-types", json={"name": "Board Minutes"}, headers=headers)).json()["id"]
+    resp = await client.patch(
+        f"/api/v1/secretarial/meeting-records/{created['id']}",
+        json={"doc_type_id": dt_id, "record_date": "2026-05-01", "structured_metadata": {"ref": "BM-1"}},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    patched = resp.json()
+    assert patched["doc_type_id"] == dt_id
+    assert patched["record_date"] == "2026-05-01"
+    assert patched["structured_metadata"] == {"ref": "BM-1"}
+    # An omitted field is left alone rather than cleared.
+    assert patched["title"] == "Awaiting classification"
+
+
+@pytest.mark.asyncio
+async def test_docvault_sync_imports_bucket_documents_once(client: AsyncClient):
+    await create_test_company(client, email="sync@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='sync@a.com', password='pass1234')}"}
+
+    # Nothing in the bucket yet.
+    assert (await client.get("/api/v1/roc/meeting-records/unsynced", headers=headers)).json() == []
+
+    doc_id = await _upload_to_domain_bucket(client, headers, "roc", "AOC-4 filing")
+
+    unsynced = (await client.get("/api/v1/roc/meeting-records/unsynced", headers=headers)).json()
+    assert [d["id"] for d in unsynced] == [doc_id]
+    assert unsynced[0]["title"] == "AOC-4 filing"
+    assert unsynced[0]["original_filename"] == "AOC-4 filing.pdf"
+
+    resp = await client.post("/api/v1/roc/meeting-records/sync", headers=headers)
+    assert resp.status_code == 200, resp.text
+    result = resp.json()
+    assert result["imported"] == 1
+    assert result["records"][0]["document_id"] == doc_id
+    assert result["records"][0]["doc_type_id"] is None
+    assert result["records"][0]["title"] == "AOC-4 filing"
+
+    # Now synced: the button's count drops to zero and a second sync is a no-op.
+    assert (await client.get("/api/v1/roc/meeting-records/unsynced", headers=headers)).json() == []
+    assert (await client.post("/api/v1/roc/meeting-records/sync", headers=headers)).json()["imported"] == 0
+    assert len((await client.get("/api/v1/roc/meeting-records", headers=headers)).json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_is_isolated_per_domain(client: AsyncClient):
+    await create_test_company(client, email="syncdom@a.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='syncdom@a.com', password='pass1234')}"}
+
+    await _upload_to_domain_bucket(client, headers, "roc", "ROC only doc")
+
+    # A ROC bucket document is invisible to SecretarialEase.
+    assert (await client.get("/api/v1/secretarial/meeting-records/unsynced", headers=headers)).json() == []
+    assert (await client.post("/api/v1/secretarial/meeting-records/sync", headers=headers)).json()["imported"] == 0
+
+    record_id = (await client.post("/api/v1/roc/meeting-records/sync", headers=headers)).json()["records"][0]["id"]
+
+    # And a ROC record cannot be edited through the secretarial prefix.
+    resp = await client.patch(
+        f"/api/v1/secretarial/meeting-records/{record_id}", json={"title": "Hijacked"}, headers=headers
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_rejects_foreign_and_wrong_domain_types(client: AsyncClient):
+    await create_test_company(client, email="patch1@a.com", password="pass1234")
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, email='patch1@a.com', password='pass1234')}"}
+    await create_test_company(client, email="patch2@a.com", password="pass1234")
+    h2 = {"Authorization": f"Bearer {await get_company_token(client, email='patch2@a.com', password='pass1234')}"}
+
+    record_id = (await client.post("/api/v1/secretarial/meeting-records", json={"title": "Mine"}, headers=h1)).json()["id"]
+
+    # A type from the other domain is rejected.
+    roc_dt = (await client.post("/api/v1/roc/document-types", json={"name": "ROC only"}, headers=h1)).json()["id"]
+    resp = await client.patch(f"/api/v1/secretarial/meeting-records/{record_id}", json={"doc_type_id": roc_dt}, headers=h1)
+    assert resp.status_code == 400
+
+    # A type owned by another company is rejected.
+    foreign_dt = (await client.post("/api/v1/secretarial/document-types", json={"name": "Theirs"}, headers=h2)).json()["id"]
+    resp = await client.patch(f"/api/v1/secretarial/meeting-records/{record_id}", json={"doc_type_id": foreign_dt}, headers=h1)
+    assert resp.status_code == 400
+
+    # And another company cannot touch the record at all.
+    resp = await client.patch(f"/api/v1/secretarial/meeting-records/{record_id}", json={"title": "Hacked"}, headers=h2)
+    assert resp.status_code == 404
+
+
 @pytest.mark.asyncio
 async def test_compliance_module_access_is_independent_and_server_enforced(client: AsyncClient):
     await create_test_company(client, email="permissions-admin@a.com", password="pass1234")
