@@ -1340,95 +1340,6 @@ async def _compute_report(db: AsyncSession, company_id: uuid.UUID, eng: AuditEng
     )
 
 
-def _report_to_html(report: ReportPreviewResponse) -> str:
-    """Render the computed report as a standalone HTML document."""
-    from app.services.reporting.format import format_money
-
-    def money(v: float) -> str:
-        return format_money(v)
-
-    def is_equity_line(line: ReportLine) -> bool:
-        return bool(
-            line.top_group == "Liabilities"
-            and line.group_path
-            and len(line.group_path) > 1
-            and tb._norm(line.group_path[1]) in tb.EQUITY_SUBGROUPS
-        )
-
-    def section(title: str, predicate, subtotal: float) -> str:
-        rows = ""
-        for line in report.lines:
-            if not predicate(line):
-                continue
-            path = " › ".join(line.group_path) if line.group_path else (line.top_group or "Unmapped")
-            cls = " class='synthetic'" if line.is_synthetic else ""
-            adjustment = "—" if line.is_synthetic else money(line.adjustment)
-            closing = "—" if line.is_synthetic else money(line.closing)
-            rows += (
-                f"<tr{cls}><td>{line.ledger_name}</td><td>{path}</td>"
-                f"<td class='num'>{closing}</td>"
-                f"<td class='num'>{adjustment}</td>"
-                f"<td class='num'>{money(line.final)}</td></tr>"
-            )
-        return (
-            f"<h2>{title}</h2>"
-            "<table><thead><tr><th>Ledger</th><th>Group</th>"
-            "<th class='num'>Closing</th><th class='num'>Adjustment</th>"
-            "<th class='num'>Final</th></tr></thead>"
-            f"<tbody>{rows}</tbody>"
-            f"<tfoot><tr class='total'><td colspan='4'>{title} total</td>"
-            f"<td class='num'>{money(subtotal)}</td></tr></tfoot></table>"
-        )
-
-    t = report.totals
-    bc = report.balance_check
-    entries_rows = "".join(
-        f"<tr><td>{e.code or '—'}</td><td>{e.description}</td>"
-        f"<td class='num'>{money(e.total)}</td><td class='num'>{e.line_count}</td></tr>"
-        for e in report.entries.approved
-    ) or "<tr><td colspan='4'>No approved adjusting entries.</td></tr>"
-
-    unmapped_note = "".join(
-        f"<p class='warn'>{w}</p>" for w in report.warnings
-    )
-    balance_note = (
-        "Balanced" if bc.balanced
-        else f"Not balanced — difference {money(bc.difference)}"
-    )
-
-    return (
-        "<html><head><meta charset='utf-8'><style>"
-        "body{font-family:Arial,Helvetica,sans-serif;margin:32px;color:#111}"
-        "h1{font-size:20px}h2{font-size:16px;margin-top:24px}"
-        "table{border-collapse:collapse;width:100%;margin-top:8px;font-size:13px}"
-        "th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}"
-        ".num{text-align:right;font-variant-numeric:tabular-nums}"
-        ".warn{color:#b45309}.total{font-weight:bold}"
-        ".synthetic{font-style:italic;background:#f8fafc}"
-        "</style></head><body>"
-        f"<h1>Financial Statements — {report.period_label}</h1>"
-        f"{unmapped_note}"
-        "<h2>Balance Sheet</h2>"
-        f"{section('Assets', lambda line: line.top_group == 'Assets', t.assets)}"
-        f"{section('Other Liabilities', lambda line: line.top_group == 'Liabilities' and not is_equity_line(line), t.other_liabilities)}"
-        f"{section('Equity', is_equity_line, t.equity)}"
-        f"<p class='total'>Total Assets: {money(t.assets)} &nbsp;|&nbsp; "
-        f"Total Liabilities: {money(t.liabilities)} &nbsp;|&nbsp; "
-        f"Total Liabilities and Equity: {money(bc.liabilities_plus_equity)} &nbsp;|&nbsp; {balance_note}</p>"
-        f"<h2>Profit &amp; Loss</h2>"
-        f"{section('Income', lambda line: line.top_group == 'Income', t.income)}"
-        f"{section('Expenditure', lambda line: line.top_group == 'Expenditure', t.expenditure)}"
-        f"<p class='total'>Total Income: {money(t.income)} &nbsp;|&nbsp; "
-        f"Total Expenditure: {money(t.expenditure)} &nbsp;|&nbsp; "
-        f"Net {'Profit' if report.net_profit >= 0 else 'Loss'}: {money(abs(report.net_profit))}</p>"
-        "<h2>Approved Adjusting Entries</h2>"
-        "<table><thead><tr><th>Code</th><th>Description</th>"
-        "<th class='num'>Amount</th><th class='num'>Lines</th></tr></thead>"
-        f"<tbody>{entries_rows}</tbody></table>"
-        "</body></html>"
-    )
-
-
 from fastapi.responses import Response, StreamingResponse
 from app.models.company import Company
 from app.services.reporting.auditease_reports import (
@@ -1437,7 +1348,7 @@ from app.services.reporting.auditease_reports import (
     build_balance_sheet,
     get_auditease_report_builder,
 )
-from app.services.reporting.pdf import render_html, render_pdf, render_pack_pdf
+from app.services.reporting.pdf import render_html, render_pdf, render_pack_pdf, render_pack_html
 from app.services.reporting.workbook import write_document, write_workbook
 from app.services.reporting.vault import archive_report
 
@@ -1644,8 +1555,17 @@ async def generate_report(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     eng, company_name, figures, warnings = await _get_engagement_reporting_context(db, current_user.company_id, engagement_id)
-    doc_model = build_balance_sheet(figures.figures, figures.summary, company_name, eng.period_label, "absolute", warnings)
-    html = render_html(doc_model)
+    sheets = build_all_auditease_reports(
+        figures=figures.figures,
+        summary=figures.summary,
+        approved_entries=figures.approved_entries,
+        company_name=company_name,
+        period_label=eng.period_label,
+        units="absolute",
+        warnings=warnings,
+    )
+    docs = [d for _, d in sheets]
+    html = render_pack_html(docs, pack_title=f"Annual Report - {eng.period_label}")
     
     filename = f"Annual Report - {eng.period_label}.html"
     doc = await archive_report(

@@ -85,7 +85,9 @@ async def _load_asset_context(
 
     # Default Fixed Asset Register and Dimension Summary to capitalized unless overridden
     effective_lifecycle_status = lifecycle_status
-    if effective_lifecycle_status is None and report_key in (REPORT_FIXED_ASSET_REGISTER, REPORT_DIMENSION_SUMMARY):
+    if effective_lifecycle_status == "all":
+        effective_lifecycle_status = None
+    elif effective_lifecycle_status is None and report_key in (REPORT_FIXED_ASSET_REGISTER, REPORT_DIMENSION_SUMMARY):
         effective_lifecycle_status = AssetLifecycleStatus.capitalized.value
 
     # Query lookups (locations, departments, etc.)
@@ -257,7 +259,7 @@ def _build_doc_by_key(report_key: str, ctx: Dict[str, Any], units: str = "absolu
             detail=f"Unknown asset report key '{report_key}'",
         )
 
-    if filter_desc and report_key in (REPORT_FIXED_ASSET_REGISTER, REPORT_DIMENSION_SUMMARY):
+    if filter_desc:
         new_subtitle = f"{doc.subtitle} | Filters: {filter_desc}" if doc.subtitle else f"Filters: {filter_desc}"
         doc = replace(doc, subtitle=new_subtitle)
 
@@ -370,13 +372,35 @@ async def export_asset_report_pack(
     db: Annotated[AsyncSession, Depends(get_db)],
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     unit: str = Query("absolute", pattern="^(absolute|thousands|lakhs|crores)$"),
+    lifecycle_status: Optional[str] = None,
+    operational_status: Optional[str] = None,
+    condition: Optional[str] = None,
+    category_id: Optional[uuid.UUID] = None,
+    location_id: Optional[uuid.UUID] = None,
+    branch_id: Optional[uuid.UUID] = None,
+    custodian_id: Optional[uuid.UUID] = None,
+    acquisition_id: Optional[uuid.UUID] = None,
 ):
-    ctx = await _load_asset_context(db, current_user.company_id, financial_year_id)
-
     docs: List[ReportDocument] = []
     omissions: List[str] = []
+    fy_label = ""
     for key, title, _ in ALL_ASSET_REPORTS:
         try:
+            ctx = await _load_asset_context(
+                db,
+                current_user.company_id,
+                financial_year_id,
+                report_key=key,
+                lifecycle_status=lifecycle_status,
+                operational_status=operational_status,
+                condition=condition,
+                category_id=category_id,
+                location_id=location_id,
+                branch_id=branch_id,
+                custodian_id=custodian_id,
+                acquisition_id=acquisition_id,
+            )
+            fy_label = ctx["fy"].label
             docs.append(_build_doc_by_key(key, ctx, units=unit))
         except HTTPException as e:
             if e.status_code == status.HTTP_409_CONFLICT:
@@ -392,7 +416,7 @@ async def export_asset_report_pack(
         new_warnings = tuple(list(first_doc.warnings) + [f"Omitted from pack — {om}" for om in omissions])
         docs[0] = replace(first_doc, warnings=new_warnings)
 
-    filename_base = f"Asset_Register_Pack_{ctx['fy'].label.replace('/', '_')}"
+    filename_base = f"Asset_Register_Pack_{fy_label.replace('/', '_')}"
 
     if format == "xlsx":
         sheets = [(d.title, d) for d in docs]
@@ -403,7 +427,7 @@ async def export_asset_report_pack(
             headers={"Content-Disposition": f'attachment; filename="{filename_base}.xlsx"'},
         )
     elif format == "pdf":
-        pdf_bytes = render_pack_pdf(docs, pack_title=f"Asset Register Pack — {ctx['fy'].label}")
+        pdf_bytes = render_pack_pdf(docs, pack_title=f"Asset Register Pack — {fy_label}")
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",

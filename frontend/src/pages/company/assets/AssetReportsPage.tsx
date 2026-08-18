@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, FileSpreadsheet, FileText, Download } from 'lucide-react'
 import { PageHeader, Card, Button, Spinner, useToast, EmptyState } from '@/components/ui'
 import { useFinancialYears } from '@/api/hooks/financialYears'
-import { useAssetCategories } from '@/api/hooks/assetMasters'
+import { useAssetCategories, useAssetLookups } from '@/api/hooks/assetMasters'
 import { useAssetReportsList, useAssetReportPreview, useArchiveAssetReport } from '@/api/hooks/assetReports'
 import { assetReportsApi } from '@/api/endpoints/assetReports'
 import { ReportExportMenu } from '@/components/reports/ReportExportMenu'
@@ -18,16 +18,38 @@ const UNIT_OPTIONS = [
 ] as const
 
 const STATUS_OPTIONS = [
-  { key: '', label: 'Default / All Statuses' },
+  { key: '', label: 'Capitalized (default)' },
+  { key: 'all', label: 'All Statuses' },
   { key: 'capitalized', label: 'Capitalized' },
   { key: 'draft', label: 'Draft' },
   { key: 'ready', label: 'Ready' },
   { key: 'disposed', label: 'Disposed' },
 ] as const
 
+const OP_STATUS_OPTIONS = [
+  { key: '', label: 'All Operations' },
+  { key: 'in_use', label: 'In Use' },
+  { key: 'in_storage', label: 'In Storage' },
+  { key: 'under_maintenance', label: 'Under Maintenance' },
+  { key: 'decommissioned', label: 'Decommissioned' },
+  { key: 'idle', label: 'Idle' },
+] as const
+
+const CONDITION_OPTIONS = [
+  { key: '', label: 'All Conditions' },
+  { key: 'excellent', label: 'Excellent' },
+  { key: 'good', label: 'Good' },
+  { key: 'fair', label: 'Fair' },
+  { key: 'poor', label: 'Poor' },
+  { key: 'scrap', label: 'Scrap' },
+] as const
+
 export function AssetReportsPage() {
   const { data: fys = [], isLoading: fysLoading } = useFinancialYears()
   const { data: categories = [] } = useAssetCategories()
+  const { data: locations = [] } = useAssetLookups('location')
+  const { data: branches = [] } = useAssetLookups('branch')
+  const { data: departments = [] } = useAssetLookups('department')
   const { data: reports = [] } = useAssetReportsList()
   const toast = useToast()
 
@@ -36,6 +58,11 @@ export function AssetReportsPage() {
   const [unit, setUnit] = useState<'absolute' | 'thousands' | 'lakhs' | 'crores'>('absolute')
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('')
   const [selectedStatus, setSelectedStatus] = useState<string>('')
+  const [selectedOpStatus, setSelectedOpStatus] = useState<string>('')
+  const [selectedCondition, setSelectedCondition] = useState<string>('')
+  const [selectedLocationId, setSelectedLocationId] = useState<string>('')
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('')
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('')
   const [downloadingPack, setDownloadingPack] = useState(false)
 
   const activeFyId = selectedFyId || (fys.length > 0 ? fys[0].id : '')
@@ -44,6 +71,10 @@ export function AssetReportsPage() {
   const activeFilters = {
     category_id: selectedCategoryId || undefined,
     lifecycle_status: selectedStatus || undefined,
+    operational_status: selectedOpStatus || undefined,
+    condition: selectedCondition || undefined,
+    location_id: selectedLocationId || undefined,
+    branch_id: selectedBranchId || undefined,
   }
 
   const {
@@ -90,7 +121,7 @@ export function AssetReportsPage() {
   const handleDownloadPack = async (format: 'xlsx' | 'pdf') => {
     if (!activeFyId) return
     setDownloadingPack(true)
-    const url = assetReportsApi.packUrl(activeFyId, format, unit)
+    const url = assetReportsApi.packUrl(activeFyId, format, unit, activeFilters)
     const token = localStorage.getItem('company_token') || ''
     try {
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -209,6 +240,105 @@ export function AssetReportsPage() {
                   ))}
                 </select>
               </div>
+
+              {/* Operational Status */}
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  Operation
+                </label>
+                <select
+                  value={selectedOpStatus}
+                  onChange={(e) => setSelectedOpStatus(e.target.value)}
+                  className="h-9 rounded-btn border border-border-strong bg-bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  {OP_STATUS_OPTIONS.map((o) => (
+                    <option key={o.key} value={o.key}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Condition */}
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  Condition
+                </label>
+                <select
+                  value={selectedCondition}
+                  onChange={(e) => setSelectedCondition(e.target.value)}
+                  className="h-9 rounded-btn border border-border-strong bg-bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  {CONDITION_OPTIONS.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Location */}
+              {locations.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-text-muted">
+                    Location
+                  </label>
+                  <select
+                    value={selectedLocationId}
+                    onChange={(e) => setSelectedLocationId(e.target.value)}
+                    className="h-9 rounded-btn border border-border-strong bg-bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    <option value="">All Locations</option>
+                    {locations.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Branch */}
+              {branches.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-text-muted">
+                    Branch
+                  </label>
+                  <select
+                    value={selectedBranchId}
+                    onChange={(e) => setSelectedBranchId(e.target.value)}
+                    className="h-9 rounded-btn border border-border-strong bg-bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    <option value="">All Branches</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Department */}
+              {departments.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-text-muted">
+                    Department
+                  </label>
+                  <select
+                    value={selectedDepartmentId}
+                    onChange={(e) => setSelectedDepartmentId(e.target.value)}
+                    className="h-9 rounded-btn border border-border-strong bg-bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    <option value="">All Departments</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Actions & Export */}

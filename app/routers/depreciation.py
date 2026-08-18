@@ -207,8 +207,15 @@ async def finalize_run(
         )
     except DepreciationConflictError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    except ValueError as e:
+    except DepreciationDataError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except FinancialYearNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND if "not found" in str(e).lower() else status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
 
     stmt = (
         select(DepreciationRun)

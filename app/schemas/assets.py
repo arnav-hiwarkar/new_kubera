@@ -335,11 +335,11 @@ from app.models.assets import AssetDisposalType
 class AssetDisposalRequest(BaseModel):
     disposal_date: date
     disposal_type: AssetDisposalType
-    sale_proceeds: Optional[Decimal] = None
+    sale_proceeds: Optional[Decimal] = Field(default=None, ge=0)
     buyer_name: Optional[str] = None
     disposal_invoice_no: Optional[str] = None
     disposal_remarks: Optional[str] = None
-    disposal_it_proceeds: Optional[Decimal] = None
+    disposal_it_proceeds: Optional[Decimal] = Field(default=None, ge=0)
 
 
 

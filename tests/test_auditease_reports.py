@@ -419,3 +419,31 @@ async def test_auditease_report_archive(client: AsyncClient):
     res_data = archive_res.json()
     assert "id" in res_data
     assert "/api/v1/docvault/documents/" in res_data["url"]
+
+
+@pytest.mark.asyncio
+async def test_auditease_generate_report_includes_balance_sheet_and_pl(client: AsyncClient):
+    """B5: POST /engagements/{id}/reports/generate must produce full pack with Balance Sheet, Profit & Loss and P&L figures."""
+    ctx = await setup_mapped_engagement(client, email="gen_test@testco.com")
+    headers = ctx["headers"]
+    eng_id = ctx["eng_id"]
+
+    gen_res = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/reports/generate",
+        headers=headers,
+    )
+    assert gen_res.status_code == 200, gen_res.text
+    data = gen_res.json()
+    assert "id" in data and "url" in data
+    doc_id = data["id"]
+
+    # Fetch the archived document from docvault
+    dl_res = await client.get(f"/api/v1/docvault/documents/{doc_id}/download", headers=headers)
+    assert dl_res.status_code == 200, dl_res.text
+    html_content = dl_res.text
+
+    assert "Balance Sheet" in html_content
+    assert "Profit and Loss" in html_content or "Statement of Profit and Loss" in html_content
+    # Check for known P&L figure or line from the test data (Revenue from Operations / 80,000)
+    assert "Revenue from Operations" in html_content or "80,000" in html_content
+

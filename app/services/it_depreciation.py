@@ -15,18 +15,6 @@ from app.services.asset_costing import money
 
 
 @dataclass(frozen=True)
-class ItAssetInput:
-    asset_id: str
-    asset_name: str
-    block_id: Optional[str]
-    original_cost: Decimal
-    put_to_use_date: Optional[date]
-    is_disposed: bool
-    sale_proceeds: Decimal = Decimal("0.00")
-
-
-
-@dataclass(frozen=True)
 class ItBlockDepreciationInput:
     block_id: Optional[str]
     block_name: str

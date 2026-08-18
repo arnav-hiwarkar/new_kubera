@@ -3,7 +3,6 @@ from decimal import Decimal
 import pytest
 
 from app.services.it_depreciation import (
-    ItAssetInput,
     ItBlockDepreciationInput,
     calculate_it_block_depreciation,
 )

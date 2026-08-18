@@ -11,6 +11,7 @@ Permission model (decision: split, with segregation of duties):
 """
 import uuid
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -780,15 +781,19 @@ async def dispose_asset(
 
     has_finalized_run = False
     if covering_fy:
-        run_stmt = select(DepreciationRun).where(
-            and_(
-                DepreciationRun.company_id == current_user.company_id,
-                DepreciationRun.financial_year_id == covering_fy.id,
-                DepreciationRun.status == DepreciationRunStatus.finalized.value,
+        run_stmt = (
+            select(DepreciationRun)
+            .where(
+                and_(
+                    DepreciationRun.company_id == current_user.company_id,
+                    DepreciationRun.financial_year_id == covering_fy.id,
+                    DepreciationRun.status == DepreciationRunStatus.finalized.value,
+                )
             )
+            .limit(1)
         )
         run_res = await db.execute(run_stmt)
-        if run_res.scalar_one_or_none() is not None:
+        if run_res.scalars().first() is not None:
             has_finalized_run = True
 
     issues = validate_disposal(

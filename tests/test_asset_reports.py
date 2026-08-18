@@ -7,7 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.models.assets import Asset, AssetLifecycleStatus, AssetOperationalStatus
+from app.models.assets import Asset, AssetLifecycleStatus, AssetOperationalStatus, AssetAcquisition, ItcTreatment, DiscountType
 from app.models.asset_masters import AssetCategory, ItAssetBlock
 from app.models.company import Company, CompanyUser
 from app.models.depreciation import DepreciationRun
@@ -18,6 +18,7 @@ from app.services.reporting.asset_reports import (
     build_fixed_asset_register_report,
     build_companies_act_schedule_ii_report,
     build_income_tax_appendix_i_report,
+    build_gst_itc_summary_report,
 )
 from tests.asset_helpers import admin_headers, seed_masters
 from tests.conftest import TestSessionLocal, create_test_company, get_company_token
@@ -532,3 +533,268 @@ async def test_asset_reports_archive_docvault(client: AsyncClient):
     arch_data = arch_res.json()
     assert arch_data["status"] == "archived"
     assert "document_id" in arch_data
+
+
+@pytest.mark.asyncio
+async def test_gst_itc_summary_report_endpoint(client: AsyncClient):
+    """B1: gst_itc_summary report for a company with acquisitions returns 200 and non-empty content."""
+    await seed_masters()
+    headers = await admin_headers(client, "gstitc_test@testco.com")
+
+    # Create FY
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    assert fy_res.status_code == 201, fy_res.text
+    fy_id = fy_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == "gstitc_test@testco.com"))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+
+        acq = AssetAcquisition(
+            company_id=user.company_id,
+            invoice_number="INV-2024-001",
+            invoice_date=date(2024, 4, 15),
+            quantity=1,
+            unit_basic_price=Decimal("100000.00"),
+            discount_type=DiscountType.amount,
+            gst_rate=Decimal("18.00"),
+            cgst_amount=Decimal("9000.00"),
+            sgst_amount=Decimal("9000.00"),
+            igst_amount=Decimal("0.00"),
+            itc_treatment=ItcTreatment.eligible,
+        )
+        session.add(acq)
+        await session.flush()
+
+        asset = Asset(
+            company_id=user.company_id,
+            acquisition_id=acq.id,
+            asset_name="Server Rack",
+            asset_code="SRV-001",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2024, 5, 1),
+            available_for_use_date=date(2024, 5, 1),
+            useful_life_months=36,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("118000.00"),
+        )
+        session.add(asset)
+        await session.commit()
+
+    # Request the gst_itc_summary report
+    res = await client.get(
+        f"/api/v1/asset-reports/gst_itc_summary/export?financial_year_id={fy_id}&format=xlsx",
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    assert len(res.content) > 1000
+
+
+@pytest.mark.asyncio
+async def test_gst_itc_summary_interstate_igst(client: AsyncClient):
+    """F6/B1: Interstate acquisition has igst_amount set, cgst/sgst null, reports IGST only."""
+    await seed_masters()
+    headers = await admin_headers(client, "interstate_gst@testco.com")
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == "interstate_gst@testco.com"))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+
+        acq = AssetAcquisition(
+            company_id=user.company_id,
+            invoice_number="INV-INTER-99",
+            invoice_date=date(2024, 5, 20),
+            quantity=1,
+            unit_basic_price=Decimal("200000.00"),
+            discount_type=DiscountType.amount,
+            gst_rate=Decimal("18.00"),
+            cgst_amount=None,
+            sgst_amount=None,
+            igst_amount=Decimal("36000.00"),
+            itc_treatment=ItcTreatment.eligible,
+        )
+        session.add(acq)
+        await session.flush()
+
+        asset = Asset(
+            company_id=user.company_id,
+            acquisition_id=acq.id,
+            asset_name="Interstate Router",
+            asset_code="RTR-001",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2024, 6, 1),
+            available_for_use_date=date(2024, 6, 1),
+            useful_life_months=36,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("236000.00"),
+        )
+        session.add(asset)
+        await session.commit()
+
+        # Build document directly to inspect rows
+        from app.services.reporting.asset_reports import build_gst_itc_summary_report
+        doc = build_gst_itc_summary_report([asset], "Interstate Co", "2024-25", "absolute")
+        assert len(doc.sections) == 1
+        assert len(doc.sections[0].rows) == 1
+        row = doc.sections[0].rows[0].cells
+        assert row["cgst"] == Decimal("0.00")
+        assert row["sgst"] == Decimal("0.00")
+        assert row["igst"] == Decimal("36000.00")
+        assert row["total_tax"] == Decimal("36000.00")
+        assert row["cgst"] + row["sgst"] + row["igst"] == row["total_tax"]
+        assert row["gst_rate"] == Decimal("18.00")
+
+
+@pytest.mark.asyncio
+async def test_disposals_register_includes_disposed_by_attribution(client: AsyncClient):
+    """H1: Disposals Register output includes Disposed By column and the acting user name/email."""
+    await seed_masters()
+    email = "disp_reg_user@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    fy_id = fy_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+
+        asset = Asset(
+            company_id=user.company_id,
+            asset_name="Disposed Vehicle",
+            asset_code="VEH-001",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2024, 4, 1),
+            available_for_use_date=date(2024, 4, 1),
+            useful_life_months=60,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("500000.00"),
+        )
+        session.add(asset)
+        await session.commit()
+        await session.refresh(asset)
+        asset_id = str(asset.id)
+
+    # Dispose asset
+    disp_res = await client.post(
+        f"/api/v1/assets/{asset_id}/dispose",
+        json={
+            "disposal_date": "2024-09-15",
+            "disposal_type": "sale",
+            "sale_proceeds": 200000.0,
+            "buyer_name": "Fleet Buyers",
+        },
+        headers=headers,
+    )
+    assert disp_res.status_code == 200
+
+    # Fetch Disposals Register report preview
+    rep_res = await client.get(
+        f"/api/v1/asset-reports/disposals_register/preview-html?financial_year_id={fy_id}",
+        headers=headers,
+    )
+    assert rep_res.status_code == 200
+    html = rep_res.text
+    assert "Disposed By" in html
+    assert "disp_reg_user@testco.com" in html or "Admin" in html
+
+
+@pytest.mark.asyncio
+async def test_pack_export_threads_filters_and_capitalized_default(client: AsyncClient):
+    """M1: Pack export /pack returns 200 and FAR inside pack has capitalized default."""
+    await seed_masters()
+    email = "pack_filter@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    fy_id = fy_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+
+        # 1 Draft asset, 1 Capitalized asset
+        draft_asset = Asset(
+            company_id=user.company_id,
+            asset_name="Draft CWIP Item",
+            asset_code="CWIP-001",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.draft,
+            operational_status=AssetOperationalStatus.in_storage,
+            original_cost=Decimal("30000.00"),
+        )
+        cap_asset = Asset(
+            company_id=user.company_id,
+            asset_name="Capitalized Machinery",
+            asset_code="MAC-001",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2024, 4, 1),
+            useful_life_months=60,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("150000.00"),
+        )
+        session.add_all([draft_asset, cap_asset])
+        await session.commit()
+
+    # Finalize depreciation run for FY
+    r = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy_id}, headers=headers)
+    assert r.status_code == 201
+    await client.post(f"/api/v1/depreciation/runs/{r.json()['id']}/finalize", headers=headers)
+
+    # Request pack in xlsx
+    pack_res = await client.post(
+        f"/api/v1/asset-reports/pack?financial_year_id={fy_id}&format=xlsx",
+        headers=headers,
+    )
+    assert pack_res.status_code == 200
+    assert pack_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@pytest.mark.asyncio
+async def test_applied_filters_printed_on_all_filtered_reports(client: AsyncClient):
+    """M3: Applied filters are printed in the subtitle of all filtered reports, not just FAR."""
+    await seed_masters()
+    email = "filter_sub@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    fy_id = fy_res.json()["id"]
+
+    # Preview additions register with operational_status filter
+    rep_res = await client.get(
+        f"/api/v1/asset-reports/additions_register/preview-html?financial_year_id={fy_id}&operational_status=in_use",
+        headers=headers,
+    )
+    assert rep_res.status_code == 200
+    html = rep_res.text
+    assert "Filters: Operation: in_use" in html
+
+

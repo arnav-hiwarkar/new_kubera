@@ -147,14 +147,6 @@ def build_balance_sheet(
         ReportRow(cells={"particulars": "Other current liabilities", "note_ref": "", "amount": other_curr_liab}, indent=1),
         ReportRow(cells={"particulars": "Short-term provisions", "note_ref": "", "amount": st_provisions}, indent=1),
     ]
-    total_liab_calc = (share_cap_amt + reserves_amt + warrants_amt) + app_money_amt + total_non_curr_liab + total_curr_liab
-    diff_liab = summary.liabilities_plus_equity - total_liab_calc
-    if diff_liab != Decimal("0.00"):
-        rows_curr_liab.append(
-            ReportRow(cells={"particulars": "Other / unallocated liabilities and equity", "note_ref": "", "amount": diff_liab}, indent=1)
-        )
-        total_curr_liab += diff_liab
-
     sec_curr_liab = ReportSection(
         title="4. Current Liabilities",
         columns=cols,
@@ -162,10 +154,24 @@ def build_balance_sheet(
         total=ReportTotal(label="Total Current Liabilities", cells={"amount": total_curr_liab}, level=2),
     )
 
+    total_liab_calc = (share_cap_amt + reserves_amt + warrants_amt) + app_money_amt + total_non_curr_liab + total_curr_liab
+    diff_liab = summary.liabilities_plus_equity - total_liab_calc
+    liab_children = [sec_shareholders_funds, sec_share_app, sec_non_curr_liab, sec_curr_liab]
+    if diff_liab != Decimal("0.00"):
+        sec_unallocated_liab = ReportSection(
+            title="5. Unallocated Liabilities and Equity",
+            columns=cols,
+            rows=(
+                ReportRow(cells={"particulars": "Other / unallocated liabilities and equity", "note_ref": "", "amount": diff_liab}, indent=1),
+            ),
+            total=ReportTotal(label="Total Unallocated Liabilities and Equity", cells={"amount": diff_liab}, level=2),
+        )
+        liab_children.append(sec_unallocated_liab)
+
     sec_equity_and_liabilities = ReportSection(
         title="I. EQUITY AND LIABILITIES",
         columns=cols,
-        children=(sec_shareholders_funds, sec_share_app, sec_non_curr_liab, sec_curr_liab),
+        children=tuple(liab_children),
         total=ReportTotal(label="TOTAL EQUITY AND LIABILITIES", cells={"amount": summary.liabilities_plus_equity}, level=0),
     )
 
@@ -202,14 +208,6 @@ def build_balance_sheet(
         ReportRow(cells={"particulars": "Other non-current assets", "note_ref": "", "amount": other_nc_assets}, indent=1),
     ]
 
-    total_assets_calc = total_non_curr_assets + total_curr_assets
-    diff_assets = summary.assets - total_assets_calc
-    if diff_assets != Decimal("0.00"):
-        rows_nc_assets.append(
-            ReportRow(cells={"particulars": "Other / unallocated assets", "note_ref": "", "amount": diff_assets}, indent=1)
-        )
-        total_non_curr_assets += diff_assets
-
     sec_non_curr_assets = ReportSection(
         title="1. Non-Current Assets",
         columns=cols,
@@ -231,10 +229,24 @@ def build_balance_sheet(
         total=ReportTotal(label="Total Current Assets", cells={"amount": total_curr_assets}, level=2),
     )
 
+    total_assets_calc = total_non_curr_assets + total_curr_assets
+    diff_assets = summary.assets - total_assets_calc
+    assets_children = [sec_non_curr_assets, sec_curr_assets]
+    if diff_assets != Decimal("0.00"):
+        sec_unallocated_assets = ReportSection(
+            title="3. Unallocated Assets",
+            columns=cols,
+            rows=(
+                ReportRow(cells={"particulars": "Other / unallocated assets", "note_ref": "", "amount": diff_assets}, indent=1),
+            ),
+            total=ReportTotal(label="Total Unallocated Assets", cells={"amount": diff_assets}, level=2),
+        )
+        assets_children.append(sec_unallocated_assets)
+
     sec_assets = ReportSection(
         title="II. ASSETS",
         columns=cols,
-        children=(sec_non_curr_assets, sec_curr_assets),
+        children=tuple(assets_children),
         total=ReportTotal(label="TOTAL ASSETS", cells={"amount": summary.assets}, level=0),
     )
 

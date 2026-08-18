@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
-from sqlalchemy import select, and_, delete
+from sqlalchemy import select, and_, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -75,37 +75,46 @@ async def _load_prior_run_lines(
         # Check if an unfinalized (draft) run exists for prior FY
         draft_run = (
             await db.execute(
-                select(DepreciationRun).where(
+                select(DepreciationRun)
+                .where(
                     and_(
                         DepreciationRun.company_id == company_id,
                         DepreciationRun.financial_year_id == prior_fy.id,
+                        DepreciationRun.status == DepreciationRunStatus.draft.value,
                     )
                 )
+                .limit(1)
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if draft_run is not None:
             raise DepreciationConflictError(
                 f"Depreciation for {prior_fy.label} must be finalized before running {fy_label}."
             )
 
-        # Check if assets were capitalized before fy_start that are not pre-cutover
-        prior_assets = (
+        # Check via SQL EXISTS if assets were capitalized or available before fy_start that are not pre-cutover
+        eff_date = func.coalesce(Asset.capitalization_date, Asset.available_for_use_date)
+        has_prior_cap_assets = (
             await db.execute(
-                select(Asset).where(
-                    and_(
-                        Asset.company_id == company_id,
-                        Asset.lifecycle_status.in_([AssetLifecycleStatus.capitalized, AssetLifecycleStatus.disposed]),
+                select(
+                    select(Asset.id)
+                    .where(
+                        and_(
+                            Asset.company_id == company_id,
+                            Asset.lifecycle_status.in_([
+                                AssetLifecycleStatus.capitalized,
+                                AssetLifecycleStatus.disposed,
+                            ]),
+                            Asset.is_pre_cutover.is_(False),
+                            eff_date < fy_start,
+                        )
                     )
+                    .exists()
                 )
             )
-        ).scalars().all()
-        has_prior_cap_assets = any(
-            (a.capitalization_date and a.capitalization_date < fy_start and not a.is_pre_cutover)
-            for a in prior_assets
-        )
+        ).scalar()
         if has_prior_cap_assets:
             raise DepreciationConflictError(
-                f"Depreciation for {prior_fy.label} must be finalized before running {fy_label}."
+                f"No depreciation run exists for prior financial year {prior_fy.label}. Please run and finalize depreciation for {prior_fy.label} before running {fy_label}."
             )
 
         return {}, {}
@@ -236,6 +245,7 @@ async def execute_depreciation_run(
             disposal_date=asset.disposal_date,
             disposal_type=asset.disposal_type,
             sale_proceeds=asset.sale_proceeds,
+            is_pre_cutover=asset.is_pre_cutover,
         )
 
         calc = calculate_asset_depreciation(inp, fy_start, fy_end)
@@ -387,20 +397,21 @@ async def finalize_depreciation_run(
     # Check partial uniqueness before finalizing
     existing_finalized = (
         await db.execute(
-            select(DepreciationRun).where(
+            select(DepreciationRun)
+            .where(
                 and_(
                     DepreciationRun.company_id == company_id,
                     DepreciationRun.financial_year_id == run.financial_year_id,
-                    DepreciationRun.book == run.book,
                     DepreciationRun.status == DepreciationRunStatus.finalized.value,
                     DepreciationRun.id != run.id,
                 )
             )
+            .limit(1)
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if existing_finalized:
         raise DepreciationConflictError(
-            f"A finalized depreciation run already exists for this financial year and book."
+            f"A finalized depreciation run already exists for this financial year."
         )
 
     run.status = DepreciationRunStatus.finalized.value

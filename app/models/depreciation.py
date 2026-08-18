@@ -39,10 +39,9 @@ class DepreciationRun(Base, TimestampMixin, TenantScopedMixin):
     __tablename__ = "depreciation_runs"
     __table_args__ = (
         Index(
-            "uq_depreciation_runs_company_fy_book_finalized",
+            "uq_depreciation_runs_company_fy_finalized",
             "company_id",
             "financial_year_id",
-            "book",
             unique=True,
             postgresql_where=text("status = 'finalized'"),
         ),

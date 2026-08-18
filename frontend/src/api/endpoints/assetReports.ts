@@ -62,10 +62,13 @@ export const assetReportsApi = {
     financialYearId: string,
     format: 'xlsx' | 'pdf',
     unit: string = 'absolute',
+    filters?: AssetReportFilters,
   ) =>
     `/api/v1/asset-reports/pack?financial_year_id=${encodeURIComponent(
       financialYearId,
-    )}&format=${encodeURIComponent(format)}&unit=${encodeURIComponent(unit)}`,
+    )}&format=${encodeURIComponent(format)}&unit=${encodeURIComponent(unit)}${buildFilterQuery(
+      filters,
+    )}`,
   archive: (
     reportKey: string,
     financialYearId: string,

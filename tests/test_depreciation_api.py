@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.models.assets import Asset, AssetLifecycleStatus, AssetOperationalStatus
 from app.models.asset_masters import AssetCategory, ItAssetBlock
 from app.models.company import CompanyUser
+from app.models.depreciation import DepreciationRun
 from tests.asset_helpers import admin_headers, seed_masters
 from tests.conftest import TestSessionLocal
 
@@ -716,4 +717,366 @@ async def test_depreciation_wdv_routing(client: AsyncClient):
     assert line["method"] == "WDV"
     assert float(line["depreciation_for_year"]) == 45070.00
     assert float(line["effective_rate_pct"]) == 45.07
+
+
+@pytest.mark.asyncio
+async def test_multiple_draft_runs_prior_fy_returns_409(client: AsyncClient):
+    """B4: Multiple draft runs in prior FY must return 409 Conflict when running next FY, not 500 MultipleResultsFound."""
+    await seed_masters()
+    email = "admin_multidraft@testco.com"
+    headers = await admin_headers(client, email)
+
+    # 1. Create FY1 and FY2
+    fy1_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2023-24", "start_date": "2023-04-01", "end_date": "2024-03-31"},
+        headers=headers,
+    )
+    assert fy1_res.status_code == 201, fy1_res.text
+    fy1_id = fy1_res.json()["id"]
+
+    fy2_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    assert fy2_res.status_code == 201, fy2_res.text
+    fy2_id = fy2_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+
+        # Insert 2 draft runs for FY1 directly
+        run1 = DepreciationRun(
+            company_id=user.company_id,
+            financial_year_id=fy1_id,
+            status="draft",
+            notes="Draft run 1",
+        )
+        run2 = DepreciationRun(
+            company_id=user.company_id,
+            financial_year_id=fy1_id,
+            status="draft",
+            notes="Draft run 2",
+        )
+        session.add_all([run1, run2])
+        await session.commit()
+
+    # 2. Attempt a run for FY2 -> should raise 409, not 500
+    run_fy2_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy2_id, "notes": "FY2 run attempt"},
+        headers=headers,
+    )
+    assert run_fy2_res.status_code == 409, f"Expected 409, got {run_fy2_res.status_code}: {run_fy2_res.text}"
+
+
+@pytest.mark.asyncio
+async def test_depreciation_run_finalized_uniqueness_rejected(client: AsyncClient):
+    """H1 / F2: Two finalized runs for the same (company_id, financial_year_id) are rejected with 409."""
+    await seed_masters()
+    email = "admin_uniq_run@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    assert fy_res.status_code == 201
+    fy_id = fy_res.json()["id"]
+
+    # Create and finalize first run
+    run1_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "First run"},
+        headers=headers,
+    )
+    assert run1_res.status_code == 201
+    run1_id = run1_res.json()["id"]
+
+    fin1_res = await client.post(f"/api/v1/depreciation/runs/{run1_id}/finalize", headers=headers)
+    assert fin1_res.status_code == 200
+
+    # Create second run directly or via DB
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        run2 = DepreciationRun(
+            company_id=user.company_id,
+            financial_year_id=fy_id,
+            status="draft",
+            notes="Second run",
+        )
+        session.add(run2)
+        await session.commit()
+        await session.refresh(run2)
+        run2_id = run2.id
+
+    # Attempt to finalize second run -> should return 409 Conflict
+    fin2_res = await client.post(f"/api/v1/depreciation/runs/{run2_id}/finalize", headers=headers)
+    assert fin2_res.status_code == 409, f"Expected 409, got {fin2_res.status_code}: {fin2_res.text}"
+
+
+@pytest.mark.asyncio
+async def test_prior_fy_disposal_in_live_block_still_depreciates(client: AsyncClient):
+    """H1 / F7: A block holding 1 asset disposed 2 years ago and 1 live asset still depreciates normally and is NOT flagged all_assets_disposed."""
+    await seed_masters()
+    email = "live_block_disp@testco.com"
+    headers = await admin_headers(client, email)
+
+    # Create 3 FYs: 2022-23, 2023-24, 2024-25
+    fy1_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2022-23", "start_date": "2022-04-01", "end_date": "2023-03-31"},
+        headers=headers,
+    )
+    fy1_id = fy1_res.json()["id"]
+
+    fy2_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2023-24", "start_date": "2023-04-01", "end_date": "2024-03-31"},
+        headers=headers,
+    )
+    fy2_id = fy2_res.json()["id"]
+
+    fy3_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    fy3_id = fy3_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
+        it_block_id = it_block.id
+
+        # Asset 1: Disposed in FY 2022-23
+        a1 = Asset(
+            company_id=user.company_id,
+            asset_name="Old Server",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.disposed,
+            operational_status=AssetOperationalStatus.in_storage,
+            capitalization_date=date(2022, 4, 1),
+            useful_life_months=36,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("50000.00"),
+            it_block_id=it_block_id,
+            it_dep_rate=Decimal("15.00"),
+            it_put_to_use_date=date(2022, 4, 1),
+            disposal_date=date(2022, 10, 1),
+            disposal_type="sale",
+            sale_proceeds=Decimal("20000.00"),
+            disposed_by=user.id,
+        )
+        # Asset 2: Live asset capitalized in FY 2022-23
+        a2 = Asset(
+            company_id=user.company_id,
+            asset_name="Live Server",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2022, 4, 1),
+            useful_life_months=60,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("100000.00"),
+            it_block_id=it_block_id,
+            it_dep_rate=Decimal("15.00"),
+            it_put_to_use_date=date(2022, 4, 1),
+        )
+        session.add_all([a1, a2])
+        await session.commit()
+
+    # Finalize FY1
+    r1 = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy1_id}, headers=headers)
+    assert r1.status_code == 201
+    await client.post(f"/api/v1/depreciation/runs/{r1.json()['id']}/finalize", headers=headers)
+
+    # Finalize FY2
+    r2 = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy2_id}, headers=headers)
+    assert r2.status_code == 201
+    await client.post(f"/api/v1/depreciation/runs/{r2.json()['id']}/finalize", headers=headers)
+
+    # Run FY3
+    r3 = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy3_id}, headers=headers)
+    assert r3.status_code == 201
+    r3_id = r3.json()["id"]
+
+    it_lines_res = await client.get(f"/api/v1/depreciation/runs/{r3_id}/it-lines", headers=headers)
+    assert it_lines_res.status_code == 200
+    it_lines = it_lines_res.json()
+    block_line = next(l for l in it_lines if l["it_block_id"] == str(it_block_id))
+
+    # Must have depreciation > 0 and NOT all_assets_disposed / capital loss
+    assert float(block_line["total_depreciation"]) > 0
+    assert float(block_line["closing_wdv"]) > 0
+    assert not block_line["has_stcl"]
+
+
+@pytest.mark.asyncio
+async def test_f9_gate_scenario_1_fy2_with_fy1_draft_returns_409(client: AsyncClient):
+    """H1 / F9 scenario 1: FY2 with FY1 in draft -> returns 409."""
+    await seed_masters()
+    email = "f9_sc1@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy1_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2023-24", "start_date": "2023-04-01", "end_date": "2024-03-31"},
+        headers=headers,
+    )
+    fy1_id = fy1_res.json()["id"]
+
+    fy2_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    fy2_id = fy2_res.json()["id"]
+
+    # Create draft run in FY1
+    r1 = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy1_id}, headers=headers)
+    assert r1.status_code == 201
+
+    # Attempt run in FY2 -> 409
+    r2 = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy2_id}, headers=headers)
+    assert r2.status_code == 409
+    assert "must be finalized" in r2.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_f9_gate_scenario_2_fy1_finalized_then_fy2_succeeds(client: AsyncClient):
+    """H1 / F9 scenario 2: FY1 finalized, then FY2 -> succeeds and carries forward."""
+    await seed_masters()
+    email = "f9_sc2@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy1_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2023-24", "start_date": "2023-04-01", "end_date": "2024-03-31"},
+        headers=headers,
+    )
+    fy1_id = fy1_res.json()["id"]
+
+    fy2_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    fy2_id = fy2_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+        asset = Asset(
+            company_id=user.company_id,
+            asset_name="Office AC",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2023, 4, 1),
+            useful_life_months=60,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("60000.00"),
+        )
+        session.add(asset)
+        await session.commit()
+
+    # Finalize FY1
+    r1 = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy1_id}, headers=headers)
+    assert r1.status_code == 201
+    await client.post(f"/api/v1/depreciation/runs/{r1.json()['id']}/finalize", headers=headers)
+
+    # Run FY2 -> succeeds (201)
+    r2 = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy2_id}, headers=headers)
+    assert r2.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_f9_gate_scenario_3_first_ever_fy_runs_cleanly(client: AsyncClient):
+    """H1 / F9 scenario 3: A company's first-ever FY, no prior year -> runs cleanly, not blocked."""
+    await seed_masters()
+    email = "f9_sc3@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    fy_id = fy_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+        asset = Asset(
+            company_id=user.company_id,
+            asset_name="First Laptop",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2024, 6, 1),
+            useful_life_months=36,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("75000.00"),
+        )
+        session.add(asset)
+        await session.commit()
+
+    # Run FY -> 201 created without errors
+    r = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy_id}, headers=headers)
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_f9_gate_scenario_4_pre_cutover_asset_runs_cleanly(client: AsyncClient):
+    """H1 / F9 scenario 4: A pre-cutover asset with opening figures and no prior run -> runs cleanly."""
+    await seed_masters()
+    email = "f9_sc4@testco.com"
+    headers = await admin_headers(client, email)
+
+    # Create prior FY and current FY, but NO prior run
+    fy1_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2023-24", "start_date": "2023-04-01", "end_date": "2024-03-31"},
+        headers=headers,
+    )
+    fy2_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    fy2_id = fy2_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+        # Pre-cutover asset capitalized before fy2_start
+        asset = Asset(
+            company_id=user.company_id,
+            asset_name="Pre-cutover Plant",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2022, 1, 1),
+            is_pre_cutover=True,
+            opening_accumulated_depreciation=Decimal("20000.00"),
+            useful_life_months=120,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("100000.00"),
+        )
+        session.add(asset)
+        await session.commit()
+
+    # Running FY2 should succeed (201) because asset is pre-cutover
+    r = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy2_id}, headers=headers)
+    assert r.status_code == 201, f"Expected 201, got {r.status_code}: {r.text}"
+
 

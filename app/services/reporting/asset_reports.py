@@ -1097,6 +1097,7 @@ def build_gst_itc_summary_report(
 
         supp_name = acq.supplier.name if acq.supplier else ""
         supp_gstin = acq.supplier.gstin if acq.supplier else ""
+        gst_rate = acq.gst_rate
 
         rows.append(
             ReportRow(

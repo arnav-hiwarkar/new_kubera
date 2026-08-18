@@ -56,7 +56,7 @@
 <!-- Document Sheets -->
 {% for doc in docs %}
 <div class="page-break"></div>
-<div class="report-container">
+<div class="report-container {{ 'landscape-page' if doc.landscape else '' }}">
   <div class="title-block">
     <div class="company-name">{{ doc.company_name }}</div>
     <h1>{{ doc.title }}</h1>
