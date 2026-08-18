@@ -114,6 +114,14 @@ describe('textSprite and LOD engine', () => {
       expect(sprite.userData.nodeId).toBe('doc_d1')
     })
 
+    it('creates THREE.Sprite with bottom-center anchoring, depthTest disabled, and elevated renderOrder', () => {
+      const sprite = createNodeSprite(mockDocNode)
+      expect(sprite.center.x).toBe(0.5)
+      expect(sprite.center.y).toBe(0)
+      expect(sprite.material.depthTest).toBe(false)
+      expect(sprite.renderOrder).toBe(999)
+    })
+
     it('uses texture cache to prevent redundant canvas redraws for identical node properties', () => {
       const sprite1 = createNodeSprite(mockDocNode)
       const sprite2 = createNodeSprite({ ...mockDocNode })

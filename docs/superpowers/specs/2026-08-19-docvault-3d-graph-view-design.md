@@ -1,11 +1,11 @@
 # DocVault 3D Knowledge Graph View
 
 **Date:** 2026-08-19  
-**Branch:** `v2`  
+**Branch:** `v3`  
 **Module:** DocVault (`/app/docvault`)  
 **Status:** Approved — ready for implementation plan  
 
-Adds an interactive 3D force-directed node visualization of DocVault documents and buckets (similar to Obsidian's graph view, in full 3D WebGL space). Documents within a bucket cluster together as cohesive 3D constellations, reacting elastically to drag interactions, zooming with distance-based label level-of-detail (LOD), flying camera navigation, and opening the full DocVault document drawer on node inspection.
+Adds an interactive, edge-to-edge fullscreen 3D force-directed node visualization of DocVault documents and buckets (similar to Obsidian's graph view, in full 3D WebGL space). Documents within a bucket cluster together as cohesive 3D constellations, reacting elastically to drag interactions, zooming with elevated distance-based label level-of-detail (LOD), camera fly-to navigation, and opening a dedicated floating top-right document inspector card in the 3D space with full editing and version download capabilities.
 
 ---
 
@@ -14,11 +14,12 @@ Adds an interactive 3D force-directed node visualization of DocVault documents a
 DocVault provides an encrypted, bucket-organized document repository with version control and tags. While the standard table and bucket rail interface is great for tabular data management, it lacks spatial awareness and relational discovery across buckets, tags, and document clusters.
 
 **Key Goals:**
-1. **Relational Spatial Visualization**: Visualize documents and buckets as an interactive 3D universe where intra-bucket documents naturally cluster together and documents sharing tags are subtly linked.
-2. **Elastic Cluster Interaction**: Clicking and dragging any document or bucket hub node elastically pulls connected cluster nodes along with it, creating a tactile, responsive physics feel.
-3. **Distance-Based Label LOD**: Zooming in displays crisp, camera-facing titles, status indicators, and version numbers for nearby nodes, while zooming out smoothly hides document labels to prevent visual noise.
-4. **Camera Fly-To & Search**: Instant autocomplete search in the HUD smoothly animates the camera to frame and highlight the target node.
-5. **Full Detail & Action Integration**: Clicking a document node opens the DocVault `DocumentDrawer` to view metadata, download versions, update tags/bucket/status, or archive documents in real time. Clicking a bucket hub opens a summary card.
+1. **Edge-to-Edge Fullscreen 3D Universe**: A dedicated fullscreen 3D workspace (`fixed inset-0 z-40`) giving an immersive, distraction-free Obsidian-style graph canvas.
+2. **Elevated & Visible Node Labels**: Billboard text sprites anchored cleanly above the top pole of each 3D node sphere with `depthTest = false` and `renderOrder = 999`, eliminating any clipping or occlusion by the 3D sphere geometry.
+3. **Embedded Top-Right Document Inspector (`GraphDocumentInspector.tsx`)**: Clicking a document node opens an embedded, floating glassmorphic inspector card in the top-right corner of the 3D canvas (without slide-over drawer overlays that dim the screen), providing complete metadata, version history with per-version downloads, new version uploads, inline rename, lock/editable toggle, status picker, bucket mover, tags editor, and archive/restore actions.
+4. **Elastic Cluster Interaction**: Clicking and dragging any document or bucket hub node elastically pulls connected cluster nodes along with it, creating a tactile, responsive physics feel.
+5. **Distance-Based Label LOD**: Zooming in displays crisp, camera-facing titles, status indicators, and version numbers for nearby nodes, while zooming out smoothly hides document labels to prevent visual noise.
+6. **Camera Fly-To & Search**: Instant autocomplete search in the HUD smoothly animates the camera to frame and highlight the target node.
 
 ---
 
@@ -29,114 +30,44 @@ DocVault provides an encrypted, bucket-organized document repository with versio
 - **Route Definition**: Inside `frontend/src/routes/company.routes.tsx`, protected by `ModuleGuard moduleId="docvault"`.
 - **Navigation Flow**:
   - `DocVaultPage.tsx` page header includes a **"3D Graph View"** button (with icon `Network` / `Orbit`) linking to `/app/docvault/graph`.
-  - `DocVaultGraphPage.tsx` provides a clean top-left **"Back to List"** button (`ArrowLeft` + `DocVault`) returning to `/app/docvault`.
+  - `DocVaultGraphPage.tsx` provides a clean top-left **"Back to DocVault"** button (`ArrowLeft` + `DocVault`) returning to `/app/docvault`.
 
 ```
 /app/docvault (DocVaultPage)
      │
-     └── [ "3D Graph View" Button ] ───► /app/docvault/graph (DocVaultGraphPage)
+     └── [ "3D Graph View" Button ] ───► /app/docvault/graph (DocVaultGraphPage - Fullscreen 3D)
 ```
 
 ### Component Structure & Isolation
 
 ```
 frontend/src/pages/company/docvault/graph/
-├── DocVaultGraphPage.tsx              # Main page container: queries data & orchestrates state
+├── DocVaultGraphPage.tsx              # Fullscreen container: loads data & orchestrates state
 ├── components/
 │   ├── GraphCanvas.tsx                # Three.js / 3d-force-graph WebGL canvas wrapper
 │   ├── GraphHud.tsx                   # Top floating header (Back button, Title, Search, Filters, Color mode)
 │   ├── GraphNavigationControls.tsx    # Bottom-right dock (Zoom In/Out, Reset View, Recenter, Pause physics)
-│   ├── BucketSummaryCard.tsx          # Floating inspector card when a Bucket Hub node is selected
+│   ├── GraphDocumentInspector.tsx     # Floating top-right glassmorphic inspector for clicked document
+│   ├── BucketSummaryCard.tsx          # Floating card when a Bucket Hub node is selected
 │   └── GraphLegend.tsx                # Collapsible color & shape legend
 ├── hooks/
 │   ├── useGraphData.ts                # Converts Buckets + Documents into 3D Nodes & Links graph data
 │   └── useGraphControls.ts            # Camera fly-to and physics manipulation utilities
 ├── lib/
 │   ├── palette.ts                     # Harmonic HSL color palette generator for buckets & status tokens
-│   └── textSprite.ts                  # Canvas-based high-DPI billboard text sprite generator with distance LOD
+│   └── textSprite.ts                  # Canvas-based high-DPI billboard text sprite generator with LOD
 └── types/
     └── graph.ts                       # TypeScript interfaces for GraphNode, GraphLink, and GraphConfig
 ```
 
 ---
 
-## 3. Graph Model & Topology
+## 3. Label Geometry, Elevation & LOD
 
-### Node Schema & Classifications
-
-```typescript
-export type NodeType = 'bucket' | 'document'
-
-export interface GraphNode {
-  id: string                     // Unique ID (e.g. 'bucket_<id>' or 'doc_<id>')
-  rawId: string                  // Database UUID
-  type: NodeType
-  name: string                   // Bucket name or Document title
-  bucketId: string | null        // Parent bucket UUID (null if uncategorized or if self is bucket)
-  bucketName?: string
-  status?: string                // Document status (uploaded, verified, etc.)
-  versionNo?: number             // Current version number
-  sizeBytes?: number             // File size
-  tags?: string[]                // Tags list
-  color: string                  // Current assigned color (based on active color mode)
-  size: number                   // Node sphere radius (14 for bucket hubs, 6 for documents)
-  // Simulation coordinate props managed by d3-force-3d
-  x?: number
-  y?: number
-  z?: number
-  vx?: number
-  vy?: number
-  vz?: number
-  fx?: number | null
-  fy?: number | null
-  fz?: number | null
-}
-
-export interface GraphLink {
-  source: string | GraphNode     // Source node ID or reference
-  target: string | GraphNode     // Target node ID or reference
-  kind: 'bucket-doc' | 'tag-shared' // Link category
-  strength: number
-  color: string
-}
-```
-
-### Link Relationships
-1. **Primary Cluster Links (`kind: 'bucket-doc'`)**:
-   - An edge connects every document node to its parent Bucket Hub node (or the virtual "Uncategorized" Hub node).
-   - Rendered as a glowing, translucent filament beam (`rgba(100, 160, 255, 0.45)`).
-   - High spring strength (`0.8`), resting distance `45-55 units`.
-2. **Secondary Tag Links (`kind: 'tag-shared'`)**:
-   - Subtle connecting lines between documents that share 2 or more identical tags.
-   - Rendered as faint dashed lines (`rgba(255, 255, 255, 0.15)`).
-   - Lower spring strength (`0.15`), resting distance `90-120 units`.
-
----
-
-## 4. 3D Force Physics Simulation & Cluster Drag Mechanics
-
-### Physics Setup (`d3-force-3d`)
-- **Link Force**: Sets short distance for intra-bucket connections (`distance: 50`) pulling all documents into tight spherical constellations around their bucket hub.
-- **Many-Body Repulsion (`charge`)**: Strong repulsion (`-120`) between nodes prevents overlap and pushes distinct bucket hubs away from each other into balanced 3D sectors.
-- **Collision Detection (`collide`)**: Dynamic sphere radius collision preventing geometric clipping between nodes.
-- **Center Gravity**: Gentle global gravity pulling the overall galaxy towards `(0, 0, 0)`.
-
-### Elastic Cluster-Drag Behavior
-- When dragging any document node:
-  - The dragged node is locked to the pointer ray coordinates (`fx, fy, fz`).
-  - The physics simulation warms up (`simulation.alphaTarget(0.35).restart()`).
-  - Tension transmits through the primary link to the parent bucket hub and sibling cluster documents, causing the entire bucket cluster to organically follow and pivot around the dragged document.
-- When dragging a bucket hub node:
-  - The entire constellation of documents follows the moving hub centroid.
-- Releasing the node (`onNodeDragEnd`) unfixes coordinates (`fx = null, fy = null, fz = null`) and lets the system settle smoothly into dynamic equilibrium.
-
----
-
-## 5. Distance-Based Level of Detail (LOD) for Labels
-
-### High-DPI Canvas Billboard Sprites
-- Node labels are generated via HTML5 2D Canvas textures rendered as Three.js `Sprite` objects positioned slightly above each node.
-- Sprites always face the camera billboard-style regardless of camera orbit angle.
+### Anchor & Elevation Math
+- **Sprite Anchor**: Anchor the sprite texture at its bottom-center: `sprite.center.set(0.5, 0)`.
+- **Vertical Offset**: Position the sprite at `(0, node.size + (isBucket ? 6 : 4), 0)` in the node's Three.js group.
+- **Occlusion Prevention**: Set `material.depthTest = false` and `sprite.renderOrder = 999` so labels always render above node spheres and links.
 
 ### Distance Thresholds
 During each render frame tick, the camera distance $D = \|\mathbf{P}_{\text{node}} - \mathbf{P}_{\text{camera}}\|$ determines visibility and opacity:
@@ -152,89 +83,71 @@ During each render frame tick, the camera distance $D = \|\mathbf{P}_{\text{node
 
 ---
 
-## 6. Interactivity, Selection & Camera Fly-To
+## 4. Top-Right Document Inspector (`GraphDocumentInspector.tsx`)
 
-### Pointer & Raycasting Interactions
-- **Hover**:
-  - Hovering over a node highlights the node and brightens its connected links.
-  - Non-connected clusters dim slightly to create focus depth.
-  - Cursor changes to `grab` over interactive nodes.
-- **Node Click**:
-  - **Document Node**:
-    - Triggers smooth camera tweening (`graphRef.current.cameraPosition(...)`) flying the camera to orbit around the node at distance $\approx 120\text{px}$.
-    - Opens the DocVault `DocumentDrawer` on the right edge of the screen.
-  - **Bucket Hub Node**:
-    - Camera flies to frame the bucket cluster.
-    - Opens the floating `BucketSummaryCard` displaying bucket details and document list.
+### Layout & Placement
+- Fixed to the top-right corner inside the 3D canvas viewport: `absolute top-18 right-4 w-96 max-h-[calc(100vh-6rem)] overflow-y-auto z-30`.
+- Styled as a dark glassmorphic card: `bg-bg-surface/95 backdrop-blur-md border border-border shadow-2xl rounded-2xl p-4.5`.
+- Does not block 3D canvas drag, orbit, or pan interactions outside the card.
+- Closes via the `X` button, pressing `Escape`, or clicking on empty canvas space.
 
-### Background Click
-- Clicking the empty canvas deselects active nodes, closes inspector drawers/cards, and restores full brightness to the entire graph.
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ [← Back to DocVault]  DocVault 3D Graph (12 Buckets · 84 Docs)                         │
+├─────────────────────────────────────────────────────────┬──────────────────────────────┤
+│                                                         │ 📄 Audit Report 2026     [✕] │
+│                                                         │ [Verified] · Finance · v2    │
+│                     (3D Galaxy)                         │ ──────────────────────────── │
+│                                                         │ 👤 Created by: John Doe      │
+│                                                         │ 🏷️ Name: [Audit Report 2026] │
+│                                                         │ 🔒 Editable: [On / Off]      │
+│                                                         │ 📊 Status: [Verified ▾]      │
+│                                                         │ 📁 Bucket: [Finance ▾]       │
+│                                                         │ 🏷️ Tags: [audit, 2026] [Save]│
+│                                                         │ ──────────────────────────── │
+│                                                         │ 📜 Version History:          │
+│                                                         │   • v2 (Current) [Download]  │
+│                                                         │   • v1 [Download]            │
+│                                                         │ ⬆️ Upload New Version        │
+│                                                         │ 🗑️ [ Archive Document ]     │
+└─────────────────────────────────────────────────────────┴──────────────────────────────┘
+```
 
----
-
-## 7. Real-Time Data Sync & Drawer Integration
-
-- The 3D Graph uses standard `@tanstack/react-query` hooks (`useBuckets`, `useDocuments`).
-- When a document is updated inside `DocumentDrawer` (e.g., renaming title, editing tags, changing status, changing bucket, or uploading a new version):
-  - TanStack Query invalidates cache keys `['docvault', 'documents']` and `['docvault', 'buckets']`.
-  - `useGraphData` recomputes the node/link dataset.
-  - If a document was moved from "Finance" to "Legal", its primary link dynamically reconnects to the "Legal" bucket hub, and 3D physics smoothly floats the document across space into its new cluster without page reload.
-
----
-
-## 8. Floating HUD, Search & Visual Aesthetic
-
-### Obsidian Cosmic Void Theme
-- Background: Deep graphite slate (`#0B0F17` / `#0E131F`).
-- Node Materials: Emissive MeshPhong / MeshStandard materials with inner core glow and soft outer aura.
-- Glassmorphic UI: Dark translucent panels (`bg-bg-surface/85 backdrop-blur border-border`) with subtle border highlights.
-
-### Floating Controls
-1. **Top Header HUD**:
-   - Back button (`← DocVault`) and breadcrumb title.
-   - Universe Metrics Pill: `X Buckets · Y Documents`.
-   - **Real-Time Autocomplete Search**: Search input with dropdown results. Selecting any item flies the camera directly to it and highlights the node.
-   - **Color Mode Selector**:
-     - *Color by Bucket*: Cohesive distinct hue per bucket.
-     - *Color by Status*: Kubera status colors (Verified = Green, Action Required = Red, Uploaded = Blue, etc.).
-   - **Bucket Filter Dropdown**: Toggle visibility of individual buckets.
-2. **Bottom-Right Navigation Dock**:
-   - `[+]` Zoom In / `[-]` Zoom Out.
-   - `[🎯]` Reset Camera (fits entire universe to screen).
-   - `[🧭]` Recenter View.
-   - `[⏸ / ▶]` Freeze / Resume Physics Simulation.
-3. **Collapsible Legend**: Bottom-left expandable legend showing active color mappings and interaction hints.
+### Inspector Capabilities
+1. **Header & Metadata**: Document Title, Status badge, Bucket name, Version badge, Creator, Upload date, File size.
+2. **Inline Name Edit**: Input with Save button (disabled when unchanged or locked).
+3. **Lock / Editable Toggle**: Toggle between Editable and Locked (locks rename, bucket change, tags, and new version uploads).
+4. **Status Picker**: Update document status (*Uploaded*, *Pending Approval*, *Action Required*, *Verified*, *Submitted*, *Overdue*).
+5. **Bucket Move Selector**: Move document between buckets; immediately triggers 3D physics to re-route link and float node to the new bucket cluster.
+6. **Tags Editor**: Comma-separated tags input with Save button.
+7. **Version History & Download**: Table of all versions with version number, uploaded by, size, date, and individual **Download** buttons.
+8. **Upload New Version**: Drag-and-drop / file picker area to upload replacement version files.
+9. **Archive / Restore**: Restore action if archived, or Archive button with confirmation dialog.
 
 ---
 
-## 9. Performance & Optimizations
+## 5. Fullscreen Layout & Visual Aesthetic
 
-1. **Lazy Loading**: Three.js and graph dependencies are lazy-loaded via React `lazy()` so initial DocVault list view load times remain instantaneous.
-2. **Label Texture Caching**: Canvas sprite textures are cached by node content hash to eliminate unnecessary re-renders.
-3. **Raycaster Throttling**: Raycast hover checks are throttled to 60fps animation frames without blocking the main React thread.
-4. **Adaptive Device Pixel Ratio**: Three.js renderer dynamically caps `renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))` to maintain smooth 60fps on high-DPI displays.
+### Viewport Structure
+- `DocVaultGraphPage.tsx` root container: `fixed inset-0 z-40 bg-[#0B0F17] flex flex-col w-screen h-screen overflow-hidden`.
+- Covers 100% of the browser window edge-to-edge, removing outer shell card paddings and borders.
+- Top HUD bar floats across the top edge with `Back to DocVault` button, search bar with autocomplete fly-to, color mode toggle (`By Bucket` vs `By Status`), and bucket filters.
 
 ---
 
-## 10. Verification Plan
+## 6. Verification Plan
 
-1. **Route & Navigation**:
-   - Verify clicking "3D Graph View" in `DocVaultPage` navigates to `/app/docvault/graph`.
-   - Verify clicking "Back to List" returns to `/app/docvault`.
-2. **Graph Generation & Clustering**:
-   - Verify all buckets and documents render as 3D nodes.
-   - Verify documents are tightly clustered around their respective bucket hubs.
-   - Verify uncategorized documents cluster around the Uncategorized hub.
-3. **Physics & Elastic Drag**:
-   - Verify clicking and dragging a document moves the document and elastically pulls its cluster along.
-   - Verify dragging a bucket hub moves the whole cluster.
-4. **Zoom & Distance LOD**:
-   - Verify zooming out hides document titles and keeps bucket titles visible.
-   - Verify zooming in reveals crisp titles, version tags, and status badges.
-5. **Node Selection & Drawer**:
-   - Verify clicking a document node flies the camera and opens `DocumentDrawer`.
-   - Verify actions in the drawer (status change, rename, bucket change, download) execute properly and update the 3D scene.
-6. **Search & Filters**:
-   - Verify searching for a document in the HUD finds it and smoothly centers the camera.
-   - Verify toggling color modes (by Bucket vs by Status) updates node colors dynamically.
-   - Verify toggling bucket visibility filters the nodes in 3D.
+1. **Fullscreen Layout**:
+   - Verify `/app/docvault/graph` renders edge-to-edge across the entire screen (`fixed inset-0 z-40`).
+   - Verify clicking "Back to DocVault" returns cleanly to `/app/docvault`.
+2. **Label Elevation & Visibility**:
+   - Verify text labels float visibly above the top pole of each node sphere.
+   - Verify labels are never occluded by node spheres or connection links.
+3. **Top-Right Inspector**:
+   - Verify clicking a document node opens `GraphDocumentInspector` in the top-right corner.
+   - Verify 3D canvas in the background remains interactive while the inspector is open.
+   - Verify updating title, status, bucket, tags, and uploading/downloading versions works properly and updates the 3D scene in real time.
+   - Verify clicking `X`, pressing `Escape`, or clicking empty background closes the inspector.
+4. **Tests & Build**:
+   - Verify all unit and integration tests pass with 0 errors.
+   - Verify `tsc -b && vite build` compiles cleanly with 0 errors.

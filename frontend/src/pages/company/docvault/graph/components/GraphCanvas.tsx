@@ -123,6 +123,7 @@ export function GraphCanvas({
 
         // Billboard text sprite
         const sprite = createNodeSprite(node)
+        sprite.position.set(0, node.size + (isBucket ? 6 : 4), 0)
         spritesRef.current.set(node.id, sprite)
         group.add(sprite)
 

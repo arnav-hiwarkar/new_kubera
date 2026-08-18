@@ -119,12 +119,12 @@ export function GraphHud({
         <button
           type="button"
           onClick={() => navigate('/app/docvault')}
-          aria-label="Back to List"
+          aria-label="Back to DocVault"
           data-testid="back-button"
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/85 backdrop-blur-md border border-slate-700/60 text-slate-200 hover:text-white hover:bg-slate-800/90 transition-colors shadow-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-500"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to List</span>
+          <ArrowLeft className="h-4 w-4" />
+          <span>Back to DocVault</span>
         </button>
 
         <div

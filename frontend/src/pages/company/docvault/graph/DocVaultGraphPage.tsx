@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { ForceGraph3DInstance } from '3d-force-graph'
 import { useBuckets, useDocuments } from '@/api/hooks/docvault'
 import type { ColorMode, GraphNode } from './types/graph'
@@ -9,7 +9,7 @@ import { GraphHud } from './components/GraphHud'
 import { GraphNavigationControls } from './components/GraphNavigationControls'
 import { BucketSummaryCard } from './components/BucketSummaryCard'
 import { GraphLegend } from './components/GraphLegend'
-import { DocumentDrawer } from '../DocumentDrawer'
+import { GraphDocumentInspector } from './components/GraphDocumentInspector'
 
 export function DocVaultGraphPage() {
   const { data: buckets = [] } = useBuckets()
@@ -23,6 +23,16 @@ export function DocVaultGraphPage() {
   const graphInstanceRef = useRef<ForceGraph3DInstance | null>(null)
   const graphData = useGraphData(buckets, documents, colorMode, visibleBucketIds)
   const graphControls = useGraphControls(graphInstanceRef)
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedNode(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   const handleToggleBucket = (bucketId: string) => {
     setVisibleBucketIds((prev) => {
@@ -82,7 +92,7 @@ export function DocVaultGraphPage() {
   return (
     <div
       data-testid="docvault-graph-page"
-      className="relative w-full h-[calc(100vh-8rem)] min-h-[500px] rounded-2xl overflow-hidden border border-slate-800 bg-[#0B0F17] shadow-2xl flex flex-col"
+      className="fixed inset-0 z-40 bg-[#0B0F17] flex flex-col w-screen h-screen overflow-hidden"
     >
       <GraphHud
         data={graphData}
@@ -121,7 +131,7 @@ export function DocVaultGraphPage() {
         data={graphData}
       />
 
-      <DocumentDrawer
+      <GraphDocumentInspector
         document={selectedDoc}
         open={!!selectedDoc && selectedNode?.type === 'document'}
         onClose={() => setSelectedNode(null)}

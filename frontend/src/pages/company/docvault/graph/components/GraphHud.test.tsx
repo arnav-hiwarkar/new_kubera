@@ -110,7 +110,7 @@ describe('GraphHud', () => {
 
     const backBtn = screen.getByTestId('back-button')
     expect(backBtn).toBeDefined()
-    expect(screen.getByText('Back to List')).toBeDefined()
+    expect(screen.getByText('Back to DocVault')).toBeDefined()
 
     fireEvent.click(backBtn)
     expect(mockNavigate).toHaveBeenCalledWith('/app/docvault')

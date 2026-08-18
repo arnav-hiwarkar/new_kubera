@@ -187,11 +187,23 @@ describe('DocVaultGraphPage', () => {
     vi.mocked(docvaultApi.listDocuments).mockResolvedValue(mockDocuments)
   })
 
-  it('renders graph page container, HUD, canvas, navigation controls, and legend', async () => {
+  it('renders graph page container with fullscreen layout, HUD, canvas, navigation controls, and legend', async () => {
     const { getByTestId } = renderGraphPage()
 
     await waitFor(() => {
-      expect(getByTestId('docvault-graph-page')).toBeInTheDocument()
+      const page = getByTestId('docvault-graph-page')
+      expect(page).toBeInTheDocument()
+      expect(page).toHaveClass(
+        'fixed',
+        'inset-0',
+        'z-40',
+        'bg-[#0B0F17]',
+        'flex',
+        'flex-col',
+        'w-screen',
+        'h-screen',
+        'overflow-hidden',
+      )
       expect(getByTestId('graph-canvas-container')).toBeInTheDocument()
       expect(getByTestId('graph-search-input')).toBeInTheDocument()
       expect(getByTestId('graph-legend')).toBeInTheDocument()
@@ -213,7 +225,7 @@ describe('DocVaultGraphPage', () => {
     expect(items.length).toBeGreaterThan(0)
   })
 
-  it('opens DocumentDrawer when selecting a document node from search', async () => {
+  it('opens GraphDocumentInspector when selecting a document node and closes via close button or Escape key', async () => {
     const user = userEvent.setup()
     const { findByTestId, findAllByTestId } = renderGraphPage()
 
@@ -224,13 +236,27 @@ describe('DocVaultGraphPage', () => {
     expect(items.length).toBeGreaterThan(0)
     await user.click(items[0])
 
-    // Document drawer opens with document title
-    await waitFor(() => {
-      expect(screen.getByDisplayValue('Q3 Tax Return')).toBeInTheDocument()
-    })
+    // GraphDocumentInspector opens
+    const inspector = await findByTestId('graph-document-inspector')
+    expect(inspector).toBeInTheDocument()
+    expect(screen.getByTestId('inspector-document-title')).toHaveTextContent('Q3 Tax Return')
+
+    // Close via close button
+    const closeBtn = screen.getByTestId('inspector-close-btn')
+    await user.click(closeBtn)
+    expect(screen.queryByTestId('graph-document-inspector')).not.toBeInTheDocument()
+
+    // Open again and close via Escape key
+    await user.type(searchInput, 'Q3 Tax Return')
+    const reopenedItems = await findAllByTestId('search-result-item')
+    await user.click(reopenedItems[0])
+    expect(await findByTestId('graph-document-inspector')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByTestId('graph-document-inspector')).not.toBeInTheDocument()
   })
 
-  it('opens BucketSummaryCard when selecting a bucket node from search', async () => {
+  it('opens BucketSummaryCard when selecting a bucket node from search and closes via button or Escape key', async () => {
     const user = userEvent.setup()
     const { findByTestId, findAllByTestId } = renderGraphPage()
 
@@ -246,9 +272,18 @@ describe('DocVaultGraphPage', () => {
     expect(card).toBeInTheDocument()
     expect(screen.getByTestId('bucket-summary-title')).toHaveTextContent('Finance & Tax')
 
-    // Close bucket summary card
+    // Close bucket summary card via button
     const closeBtn = screen.getByTestId('bucket-summary-close')
     await user.click(closeBtn)
+    expect(screen.queryByTestId('bucket-summary-card')).not.toBeInTheDocument()
+
+    // Open again and close via Escape key
+    await user.type(searchInput, 'Finance & Tax')
+    const reopenedItems = await findAllByTestId('search-result-item')
+    await user.click(reopenedItems[0])
+    expect(await findByTestId('bucket-summary-card')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
     expect(screen.queryByTestId('bucket-summary-card')).not.toBeInTheDocument()
   })
 
@@ -303,6 +338,19 @@ describe('DocVaultGraphPage', () => {
     const showAllBtn = await findByTestId('show-all-buckets-btn')
     await user.click(showAllBtn)
     expect(screen.queryByTestId('bucket-filter-dropdown')).not.toBeInTheDocument()
+  })
+
+  it('navigates back to /app/docvault when clicking "Back to DocVault" in HUD', async () => {
+    const user = userEvent.setup()
+    const { findByTestId } = renderGraphPage()
+
+    const backBtn = await findByTestId('back-button')
+    expect(backBtn).toHaveTextContent('Back to DocVault')
+    await user.click(backBtn)
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('docvault-graph-page')).not.toBeInTheDocument()
+    })
   })
 })
 

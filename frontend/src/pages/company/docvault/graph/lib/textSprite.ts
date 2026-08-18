@@ -188,10 +188,12 @@ export function createNodeSprite(node: GraphNode): THREE.Sprite {
     map: texture,
     transparent: true,
     depthWrite: false,
+    depthTest: false,
     opacity: 1.0,
   })
 
   const sprite = new THREE.Sprite(material)
+  sprite.renderOrder = 999
   
   // Scale sprite in 3D world space
   const isBucket = node.type === 'bucket'
@@ -200,8 +202,8 @@ export function createNodeSprite(node: GraphNode): THREE.Sprite {
   
   sprite.scale.set(spriteWidth, spriteHeight, 1)
   
-  // Position slightly above the sphere node center
-  sprite.center.set(0.5, -0.3)
+  // Anchor at bottom-center of the label pill
+  sprite.center.set(0.5, 0)
   
   // Attach metadata to sprite userData
   sprite.userData = {
