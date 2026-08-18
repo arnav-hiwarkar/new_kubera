@@ -24,9 +24,9 @@ export interface GraphNode {
   vx?: number
   vy?: number
   vz?: number
-  fx?: number | null
-  fy?: number | null
-  fz?: number | null
+  fx?: number
+  fy?: number
+  fz?: number
   __sprite?: any
 }
 
