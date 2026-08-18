@@ -220,6 +220,9 @@ export function AssetsPage() {
         description="Statutory fixed asset register — Companies Act and Income Tax"
         actions={
           <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => navigate('/app/assets/reports')}>
+              Reports
+            </Button>
             {isAdmin && (
               <Button variant="secondary" onClick={() => navigate('/app/assets/masters')}>
                 Masters

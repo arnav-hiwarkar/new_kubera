@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createIdentityAuth } from '@/auth/createIdentityAuth'
 import { auditorTokenStorage } from '@/auth/tokenStorage'
 import { auditorAuth } from '@/api/endpoints/auth'

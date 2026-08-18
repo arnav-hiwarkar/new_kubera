@@ -6,10 +6,14 @@ COPY --from=ghcr.io/astral-sh/uv:0.9.28 /uv /uvx /bin/
 WORKDIR /code
 
 # System deps: postgresql-client provides psql + pg_dump (used by the nightly
-# backup task and the operator scripts). No compiler is needed — every pinned
-# dependency ships a cp312 manylinux wheel.
+# backup task and the operator scripts). WeasyPrint requires runtime shared libraries
+# (pango, harfbuzz, gdk-pixbuf, libffi, shared-mime-info) and fonts supporting Unicode
+# and Indian currency symbols (fonts-dejavu-core, fonts-noto-core for U+20B9 ₹).
+# No compiler is needed — every pinned dependency ships a cp312 manylinux wheel.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
+    libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libgdk-pixbuf-2.0-0 \
+    libffi8 shared-mime-info fonts-dejavu-core fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Keep the project virtualenv OUTSIDE /code so the docker-compose bind-mount of

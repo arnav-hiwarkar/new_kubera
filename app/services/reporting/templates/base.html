@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ doc.title if doc is defined else (title if title is defined else "Report") }}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 18mm 14mm 16mm 14mm;
+      @top-center {
+        content: "{{ (doc.company_name ~ ' — ' ~ doc.title ~ ' — ' ~ doc.period_label) if doc is defined else company_name }}";
+        font-family: "Noto Sans", "DejaVu Sans", sans-serif;
+        font-size: 8pt;
+        color: #64748b;
+      }
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-family: "Noto Sans", "DejaVu Sans", sans-serif;
+        font-size: 8pt;
+        color: #64748b;
+      }
+    }
+
+    @page landscape {
+      size: A4 landscape;
+      margin: 16mm 14mm 16mm 14mm;
+    }
+
+    body {
+      font-family: "Noto Sans", "DejaVu Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-size: 9pt;
+      line-height: 1.35;
+      color: #0f172a;
+      margin: 0;
+      padding: 0;
+    }
+
+    .landscape-page {
+      page: landscape;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    .title-block {
+      margin-bottom: 14px;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 8px;
+    }
+
+    h1 {
+      font-size: 14pt;
+      font-weight: bold;
+      color: #0f172a;
+      margin: 0 0 2px 0;
+    }
+
+    .company-name {
+      font-size: 11pt;
+      font-weight: 600;
+      color: #334155;
+      margin: 0 0 4px 0;
+    }
+
+    .subtitle {
+      font-size: 9pt;
+      font-style: italic;
+      color: #475569;
+      margin: 0 0 4px 0;
+    }
+
+    .meta-line {
+      font-size: 8.5pt;
+      font-weight: 500;
+      color: #334155;
+      margin: 0;
+    }
+
+    table.report-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      margin-bottom: 12px;
+      font-size: 8.5pt;
+    }
+
+    thead {
+      display: table-header-group; /* Repeat headers across pages */
+    }
+
+    tr {
+      page-break-inside: avoid;
+    }
+
+    th {
+      background-color: #f1f5f9;
+      color: #0f172a;
+      font-weight: 600;
+      padding: 6px 8px;
+      border-bottom: 1.5pt solid #0f172a;
+      border-top: 1pt solid #cbd5e1;
+      text-align: left;
+    }
+
+    td {
+      padding: 4.5px 8px;
+      border-bottom: 0.5pt solid #e2e8f0;
+      vertical-align: top;
+    }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .section-header {
+      background-color: #f8fafc;
+      font-weight: 700;
+      color: #1e293b;
+      padding: 6px 8px;
+      border-bottom: 1pt solid #cbd5e1;
+      border-top: 1pt solid #cbd5e1;
+    }
+
+    .subtotal-row td {
+      font-weight: 700;
+      background-color: #f8fafc;
+      border-top: 1pt solid #0f172a;
+      border-bottom: 0.5pt solid #cbd5e1;
+    }
+
+    .grand-total-row td {
+      font-weight: 800;
+      background-color: #f8fafc;
+      border-top: 1pt solid #0f172a;
+      border-bottom: 2pt double #0f172a;
+    }
+
+    .muted {
+      color: #64748b;
+    }
+
+    .italic, .synthetic {
+      font-style: italic;
+      color: #334155;
+    }
+
+    .warnings-block {
+      margin-top: 14px;
+      padding: 8px 12px;
+      background-color: #fffbeb;
+      border-left: 3px solid #f59e0b;
+      font-size: 8pt;
+    }
+
+    .warnings-block h4 {
+      margin: 0 0 4px 0;
+      color: #92400e;
+    }
+
+    .warnings-block ul {
+      margin: 0;
+      padding-left: 16px;
+      color: #78350f;
+    }
+
+    .cover-page {
+      padding: 30mm 15mm;
+      text-align: left;
+    }
+    .cover-title {
+      font-size: 24pt;
+      font-weight: bold;
+      color: #0f172a;
+      margin-bottom: 8px;
+    }
+    .cover-company {
+      font-size: 16pt;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 24px;
+    }
+    .cover-meta {
+      font-size: 11pt;
+      color: #475569;
+      margin-bottom: 30px;
+    }
+    .toc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10pt;
+    }
+    .toc-table th, .toc-table td {
+      padding: 8px 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+  </style>
+</head>
+<body class="{{ 'landscape-page' if landscape else '' }}">
+  {% block content %}{% endblock %}
+</body>
+</html>

@@ -852,6 +852,21 @@ class GroupSubtotal:
     ledger_count: int
 
 
+@dataclass
+class GroupNode:
+    """A hierarchical tree node for multi-level ledger reporting."""
+    group_id: uuid.UUID | None
+    group_name: str
+    nature: BalanceNature | None
+    code: str | None
+    display_order: int
+    parent_id: uuid.UUID | None
+    depth: int
+    direct_figures: list[LedgerFigure]
+    children: list["GroupNode"]
+    subtotal: GroupSubtotal  # rolled-up sum of self + all descendants
+
+
 @dataclass(frozen=True)
 class TBSummary:
     groups: list[GroupSubtotal]
@@ -1036,3 +1051,125 @@ def summarize(figures: Iterable[LedgerFigure]) -> TBSummary:
         total_debit_movement=sum((f.debit_movement for f in figs), Decimal(0)),
         total_credit_movement=sum((f.credit_movement for f in figs), Decimal(0)),
     )
+
+
+class _TreeNodeBuilder:
+    def __init__(
+        self,
+        name: str,
+        depth: int,
+        nature: BalanceNature | None,
+        group_id: uuid.UUID | None = None,
+        parent_id: uuid.UUID | None = None,
+        display_order: int = 0,
+    ):
+        self.name = name
+        self.depth = depth
+        self.nature = nature
+        self.group_id = group_id
+        self.parent_id = parent_id
+        self.display_order = display_order
+        self.direct_figures: list[LedgerFigure] = []
+        self.children: dict[str, _TreeNodeBuilder] = {}
+
+    def to_group_node(self) -> GroupNode:
+        child_nodes = [c.to_group_node() for c in self.children.values()]
+        child_nodes.sort(key=lambda x: (x.display_order, x.group_name))
+
+        op_nd = sum((f.opening_net_debit for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.opening_net_debit for c in child_nodes), Decimal(0))
+        deb_mov = sum((f.debit_movement for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.debit_movement for c in child_nodes), Decimal(0))
+        cred_mov = sum((f.credit_movement for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.credit_movement for c in child_nodes), Decimal(0))
+        cl_nd = sum((f.net_debit for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.closing_net_debit for c in child_nodes), Decimal(0))
+        adj_nd = sum((f.adjustment for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.adjustment_net_debit for c in child_nodes), Decimal(0))
+        fin_nd = sum((f.final_net_debit for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.final_net_debit for c in child_nodes), Decimal(0))
+        cnt = len(self.direct_figures) + sum((c.subtotal.ledger_count for c in child_nodes), 0)
+
+        effective_nature = self.nature
+        if effective_nature is None and child_nodes:
+            child_natures = {c.nature for c in child_nodes if c.nature is not None}
+            if len(child_natures) == 1:
+                effective_nature = next(iter(child_natures))
+
+        subtot = GroupSubtotal(
+            key=self.name,
+            nature=effective_nature,
+            opening_net_debit=op_nd,
+            presented_opening=sum((present(f.opening_net_debit, f.nature or effective_nature) for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.presented_opening for c in child_nodes), Decimal(0)),
+            debit_movement=deb_mov,
+            credit_movement=cred_mov,
+            closing_net_debit=cl_nd,
+            presented_closing=sum((f.presented_closing for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.presented_closing for c in child_nodes), Decimal(0)),
+            adjustment_net_debit=adj_nd,
+            presented_adjustment=sum((present(f.adjustment, f.nature or effective_nature) for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.presented_adjustment for c in child_nodes), Decimal(0)),
+            final_net_debit=fin_nd,
+            presented_final=sum((f.presented_final for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.presented_final for c in child_nodes), Decimal(0)),
+            net_debit=fin_nd,
+            presented=sum((f.presented_final for f in self.direct_figures), Decimal(0)) + sum((c.subtotal.presented_final for c in child_nodes), Decimal(0)),
+            ledger_count=cnt,
+        )
+
+        return GroupNode(
+            group_id=self.group_id,
+            group_name=self.name,
+            nature=effective_nature,
+            code=None,
+            display_order=self.display_order,
+            parent_id=self.parent_id,
+            depth=self.depth,
+            direct_figures=list(self.direct_figures),
+            children=child_nodes,
+            subtotal=subtot,
+        )
+
+
+def build_group_tree(figures: Iterable[LedgerFigure]) -> list[GroupNode]:
+    """Build a hierarchical tree of GroupNodes with rolled up subtotals at every level."""
+    from app.services.ledger_groups import SCHEDULE_III_SEED, TOP_GROUP_NATURES
+
+    root_builders: dict[str, _TreeNodeBuilder] = {}
+
+    for fig in figures:
+        path = fig.group_path
+        if not path:
+            root_name = UNMAPPED_KEY
+            if root_name not in root_builders:
+                root_builders[root_name] = _TreeNodeBuilder(
+                    name=root_name,
+                    depth=0,
+                    nature=None,
+                    display_order=999,
+                )
+            root_builders[root_name].direct_figures.append(fig)
+            continue
+
+        # Navigate / build path
+        top_name = path[0]
+        if top_name not in root_builders:
+            top_order = TOP_GROUP_ORDER.index(top_name) if top_name in TOP_GROUP_ORDER else 100
+            root_builders[top_name] = _TreeNodeBuilder(
+                name=top_name,
+                depth=0,
+                nature=TOP_GROUP_NATURES.get(top_name, fig.nature),
+                display_order=top_order,
+            )
+
+        curr = root_builders[top_name]
+        for depth_idx, seg in enumerate(path[1:], start=1):
+            if seg not in curr.children:
+                sub_order = 100
+                if top_name in SCHEDULE_III_SEED and seg in SCHEDULE_III_SEED[top_name]:
+                    sub_order = SCHEDULE_III_SEED[top_name].index(seg)
+                curr.children[seg] = _TreeNodeBuilder(
+                    name=seg,
+                    depth=depth_idx,
+                    nature=curr.nature,
+                    display_order=sub_order,
+                )
+            curr = curr.children[seg]
+
+        curr.direct_figures.append(fig)
+
+    root_nodes = [b.to_group_node() for b in root_builders.values()]
+    root_nodes.sort(key=lambda x: (x.display_order, x.group_name))
+    return root_nodes
+

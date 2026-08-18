@@ -195,9 +195,10 @@ def view_warnings(
             "Map them, or confirm the sign convention."
         )
     if summary.unmapped_count:
+        from app.services.reporting.format import format_money
         warnings.append(
             f"{summary.unmapped_count} ledger(s) are unmapped and excluded from the "
-            f"statements (net {summary.unmapped_net_debit:,.2f})."
+            f"statements (net {format_money(summary.unmapped_net_debit)})."
         )
     if summary.unresolved_nature_count:
         warnings.append(
@@ -205,9 +206,10 @@ def view_warnings(
             "no accounting nature and cannot be placed on a statement."
         )
     if not summary.balanced and summary.ledger_count:
+        from app.services.reporting.format import format_money
         warnings.append(
             f"The mapped trial balance does not sum to zero (out by "
-            f"{summary.difference:,.2f})."
+            f"{format_money(summary.difference)})."
         )
     return warnings
 

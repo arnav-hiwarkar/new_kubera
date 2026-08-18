@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_section %}
+
+{% block content %}
+<div class="report-container">
+  <div class="title-block">
+    <div class="company-name">{{ doc.company_name }}</div>
+    <h1>{{ doc.title }}</h1>
+    {% if doc.subtitle %}
+    <div class="subtitle">{{ doc.subtitle }}</div>
+    {% endif %}
+    <div class="meta-line">
+      Period: {{ doc.period_label }} &nbsp;|&nbsp; Amounts in {{ doc.units|capitalize }}
+      {% if doc.meta.basis %} &nbsp;|&nbsp; Basis: {{ doc.meta.basis }}{% endif %}
+    </div>
+  </div>
+
+  {% if doc.sections %}
+    {% set cols = doc.sections[0].columns %}
+    <table class="report-table">
+      <thead>
+        <tr>
+          {% for col in cols %}
+          <th class="{{ 'num' if col.effective_align == 'right' else '' }}"
+              style="{{ 'width: ' ~ col.width ~ 'px;' if col.width else '' }}">
+            {{ col.header }}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for section in doc.sections %}
+          {{ render_section(section, section.columns if section.columns else cols, doc.units, 0) }}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if doc.warnings %}
+  <div class="warnings-block">
+    <h4>Audit Notes & Diagnostics</h4>
+    <ul>
+      {% for w in doc.warnings %}
+      <li>{{ w }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

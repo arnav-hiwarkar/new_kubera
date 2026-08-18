@@ -1,0 +1,38 @@
+{% macro render_section(section, columns, units, depth=0) %}
+  {% if section.title %}
+  <tr class="section-header-tr">
+    <td class="section-header" colspan="{{ columns|length }}" style="padding-left: {{ depth * 14 + 8 }}px;">
+      {{ section.title }}
+      {% if section.note_ref %}
+      <span class="muted" style="float: right; font-weight: normal;">Note {{ section.note_ref }}</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endif %}
+
+  {% for row in section.rows %}
+  <tr class="{{ row.style or '' }}">
+    {% for col in columns %}
+    <td class="{{ 'num' if col.effective_align == 'right' else '' }}"
+        style="{{ 'padding-left: ' ~ ((row.indent + depth) * 14 + 8) ~ 'px;' if loop.first and (row.indent + depth > 0) else '' }}">
+      {{ format_cell(row.cells.get(col.key), col.kind, units) }}
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+
+  {% for child in section.children %}
+    {{ render_section(child, columns, units, depth + 1) }}
+  {% endfor %}
+
+  {% if section.total %}
+  <tr class="{{ 'grand-total-row' if section.total.level == 0 else 'subtotal-row' }}">
+    <td style="padding-left: {{ depth * 14 + 8 }}px;">{{ section.total.label }}</td>
+    {% for col in columns[1:] %}
+    <td class="{{ 'num' if col.effective_align == 'right' else '' }}">
+      {{ format_cell(section.total.cells.get(col.key), col.kind, units) }}
+    </td>
+    {% endfor %}
+  </tr>
+  {% endif %}
+{% endmacro %}

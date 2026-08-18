@@ -326,6 +326,16 @@ class Asset(Base, TimestampMixin, TenantScopedMixin):
     opening_wdv: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     opening_it_wdv: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
 
+    # --- Disposals ---
+    disposal_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    disposal_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sale_proceeds: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    buyer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    disposal_invoice_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    disposal_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    disposal_gain_loss: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    disposal_it_proceeds: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+
     # --- Conditional groups ---
     registration_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     engine_number: Mapped[str | None] = mapped_column(String(50), nullable=True)

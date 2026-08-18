@@ -36,6 +36,7 @@ from app.models.custom_fields import CustomFieldModule
 from app.models.docvault import Document, DocumentVersion
 from app.schemas.assets import (
     AssetDetailResponse,
+    AssetDisposalRequest,
     AssetDocumentResponse,
     AssetQuickAddRequest,
     AssetQuickAddResponse,
@@ -746,6 +747,61 @@ async def reject_asset(
         raise HTTPException(status_code=409, detail="No asset awaiting approval")
     await db.commit()
     return TransitionResponse(updated=updated, lifecycle_status=AssetLifecycleStatus.draft)
+
+
+@router.post("/{asset_id}/dispose", response_model=AssetResponse)
+async def dispose_asset(
+    asset_id: uuid.UUID,
+    body: AssetDisposalRequest,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Db,
+):
+    """Dispose of a capitalized asset (sale, scrap, write-off, etc.)."""
+    asset = await _load_asset(asset_id, current_user.company_id, db)
+    if asset.lifecycle_status != AssetLifecycleStatus.capitalized:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only a capitalized asset can be disposed of (this asset is {asset.lifecycle_status.value})",
+        )
+
+    earliest_date = asset.capitalization_date or asset.available_for_use_date
+    if earliest_date and body.disposal_date < earliest_date:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Disposal date ({body.disposal_date}) cannot be earlier than capitalization date ({earliest_date})",
+        )
+
+    if body.sale_proceeds < 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Sale proceeds cannot be negative",
+        )
+
+    asset.lifecycle_status = AssetLifecycleStatus.disposed
+    asset.disposal_date = body.disposal_date
+    asset.disposal_type = body.disposal_type
+    asset.sale_proceeds = body.sale_proceeds
+    asset.buyer_name = body.buyer_name
+    asset.disposal_invoice_no = body.disposal_invoice_no
+    asset.disposal_remarks = body.disposal_remarks
+    asset.disposal_it_proceeds = body.disposal_it_proceeds if body.disposal_it_proceeds is not None else body.sale_proceeds
+
+    await log_activity(
+        db,
+        current_user.company_id,
+        current_user.id,
+        "asset.disposed",
+        "asset",
+        asset.id,
+        {
+            "disposal_date": str(body.disposal_date),
+            "disposal_type": body.disposal_type,
+            "sale_proceeds": str(body.sale_proceeds),
+        },
+    )
+    await db.commit()
+    await db.refresh(asset)
+    return asset
 
 
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)

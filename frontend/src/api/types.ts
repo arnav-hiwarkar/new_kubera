@@ -26,9 +26,20 @@ export type CustomFieldCreate = S['CustomFieldCreate']
 export type CustomFieldUpdate = S['CustomFieldUpdate']
 
 // Assets — fixed asset register
-export type AssetResponse = S['AssetResponse']
+export type AssetResponse = S['AssetResponse'] & {
+  disposal_type?: string | null
+  disposal_date?: string | null
+  sale_proceeds?: number | null
+  buyer_name?: string | null
+  disposal_invoice_no?: string | null
+  disposal_remarks?: string | null
+  disposal_gain_loss?: number | null
+  disposal_it_proceeds?: number | null
+}
 export type AssetUpdate = S['AssetUpdate']
-export type AssetDetailResponse = S['AssetDetailResponse']
+export type AssetDetailResponse = Omit<S['AssetDetailResponse'], 'asset'> & {
+  asset: AssetResponse
+}
 export type AssetSibling = S['AssetSibling']
 export type AssetQuickAddRequest = S['AssetQuickAddRequest']
 export type AssetQuickAddResponse = S['AssetQuickAddResponse']
@@ -152,9 +163,105 @@ export type RequirementFulfill = S['RequirementFulfill']
 export type QueryResponse = S['QueryResponse']
 export type QueryMessageResponse = S['QueryMessageResponse']
 
+// Financial Years
+export interface FinancialYearResponse {
+  id: string
+  company_id: string
+  label: string
+  start_date: string
+  end_date: string
+  status: 'open' | 'closed'
+  closed_at?: string | null
+  closed_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FinancialYearCreate {
+  label: string
+  start_date: string
+  end_date: string
+}
+
+// Disposals
+export interface AssetDisposalRequest {
+  disposal_date: string
+  disposal_type: string
+  sale_proceeds: number
+  buyer_name?: string | null
+  disposal_invoice_no?: string | null
+  disposal_remarks?: string | null
+  disposal_it_proceeds?: number | null
+}
+
+// Depreciation Runs
+export interface DepreciationRunResponse {
+  id: string
+  company_id: string
+  financial_year_id: string
+  financial_year_label?: string | null
+  run_date: string
+  status: 'draft' | 'finalized'
+  finalized_at?: string | null
+  finalized_by?: string | null
+  notes?: string | null
+  total_gross_block: number
+  total_depreciation: number
+  total_carrying_amount: number
+  total_it_depreciation: number
+  total_it_closing_wdv: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AssetDepreciationLineResponse {
+  id: string
+  run_id: string
+  asset_id: string
+  method: string
+  opening_gross_block: number
+  additions: number
+  disposals: number
+  closing_gross_block: number
+  opening_accumulated_depreciation: number
+  depreciation_for_year: number
+  disposal_accumulated_depreciation: number
+  closing_accumulated_depreciation: number
+  opening_carrying_amount: number
+  closing_carrying_amount: number
+  residual_value: number
+  remaining_useful_life_days: number
+  effective_rate_pct: number
+  is_part_year: boolean
+  is_disposed: boolean
+  gain_loss_on_disposal?: number | null
+}
+
+export interface ItBlockDepreciationLineResponse {
+  id: string
+  run_id: string
+  it_block_id?: string | null
+  block_name: string
+  prescribed_rate: number
+  opening_wdv: number
+  additions_more_than_180: number
+  additions_less_than_180: number
+  realized_from_sales: number
+  balance_before_depreciation: number
+  depreciation_full_rate: number
+  depreciation_half_rate: number
+  total_depreciation: number
+  closing_wdv: number
+  capital_gain_or_loss: number
+  has_stcg: boolean
+  has_stcl: boolean
+}
+
 // Notifications & activity
 export type NotificationOut = S['NotificationOut']
 export type ActivityLogOut = S['ActivityLogOut']
 
 // Imports
 export type ImportResult = S['ImportResult']
+
+

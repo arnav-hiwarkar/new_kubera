@@ -140,4 +140,24 @@ export const auditeaseCompanyApi = {
     companyClient.post<{ id: string; url: string }>(
       `/api/v1/auditease/engagements/${engagementId}/reports/generate`,
     ),
+  previewReportHtml: (engagementId: string, reportKey: string, units = 'absolute') =>
+    companyClient.get<{ html: string; title: string; units: string }>(
+      `/api/v1/auditease/engagements/${engagementId}/reports/${reportKey}/preview-html`,
+      { query: { units } },
+    ),
+  exportReport: (engagementId: string, reportKey: string, format: 'xlsx' | 'pdf', units = 'absolute') =>
+    companyClient.get<Blob>(
+      `/api/v1/auditease/engagements/${engagementId}/reports/${reportKey}/export`,
+      { query: { format, units }, responseType: 'blob' },
+    ),
+  exportReportPack: (engagementId: string, format: 'xlsx' | 'pdf', units = 'absolute') =>
+    companyClient.get<Blob>(
+      `/api/v1/auditease/engagements/${engagementId}/reports/pack`,
+      { query: { format, units }, responseType: 'blob' },
+    ),
+  archiveReport: (engagementId: string, reportKey = 'pack', format = 'pdf', units = 'absolute') =>
+    companyClient.post<{ id: string; url: string }>(
+      `/api/v1/auditease/engagements/${engagementId}/reports/archive`,
+      { query: { report_key: reportKey, format, units } },
+    ),
 }

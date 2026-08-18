@@ -1,13 +1,35 @@
+import { useState } from 'react'
 import { Card, Button, Spinner, useToast, EmptyState } from '@/components/ui'
-import { usePreviewReport, useGenerateReport } from '@/api/hooks/auditease'
+import { usePreviewReport, useGenerateReport, usePreviewReportHtml, useArchiveEngagementReport } from '@/api/hooks/auditease'
+import { auditeaseCompanyApi } from '@/api/endpoints/auditease'
 import { formatMoney } from '@/lib/format'
+import { saveBlob } from '@/lib/download'
 import { cn } from '@/lib/cn'
+import { ReportExportMenu } from '@/components/reports/ReportExportMenu'
 import type { ReportLine, ReportPreviewResponse } from '@/api/types'
+import { FileSpreadsheet, FileText, Archive } from 'lucide-react'
+
+const REPORT_OPTIONS = [
+  { key: 'balance_sheet', label: '1. Balance Sheet' },
+  { key: 'profit_and_loss', label: '2. Profit & Loss' },
+  { key: 'notes_to_accounts', label: '3. Notes' },
+  { key: 'trial_balance_detailed', label: '4. TB (Detailed)' },
+  { key: 'trial_balance_summary', label: '5. TB (Summary)' },
+  { key: 'extended_trial_balance', label: '6. Extended TB' },
+  { key: 'adjusting_entries', label: '7. Adjusting Entries' },
+  { key: 'ledger_mapping', label: '8. Mapping' },
+  { key: 'exceptions', label: '9. Exceptions' },
+] as const
+
+const UNIT_OPTIONS = [
+  { key: 'absolute', label: 'Absolute (₹)' },
+  { key: 'thousands', label: "Thousands (₹ '000)" },
+  { key: 'lakhs', label: 'Lakhs (₹ Lakhs)' },
+  { key: 'crores', label: 'Crores (₹ Cr)' },
+] as const
 
 const num = (v: number) => <span className="tabular-nums">{formatMoney(v)}</span>
 
-/** One statement block (e.g. Balance Sheet or P&L), listing the ledgers that fall
- * under the given top-level groups with per-section subtotals. */
 function StatementSection({
   title,
   rows,
@@ -102,7 +124,6 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Balance status + unmapped warning */}
       <div className="flex flex-wrap items-center gap-3">
         <span
           className={cn(
@@ -133,7 +154,6 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
         </div>
       )}
 
-      {/* Balance Sheet */}
       <div>
         <h4 className="mb-2 text-base font-semibold text-text-primary">Balance Sheet</h4>
         <StatementSection title="Assets" rows={assetRows} subtotal={totals.assets} />
@@ -152,13 +172,8 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
         </div>
       </div>
 
-      {/* Profit & Loss */}
       <div>
         <h4 className="mb-2 text-base font-semibold text-text-primary">Profit &amp; Loss</h4>
-        {/* Income and Expenditure are kept in SEPARATE sections (like Assets /
-         * Liabilities above). Combining them produced a section total that summed
-         * their absolute balances — a meaningless figure users mistook for the net.
-         * The real bottom line is the Net Profit / Loss difference shown below. */}
         <StatementSection title="Income" rows={incomeRows} subtotal={totals.income} />
         <div className="h-3" />
         <StatementSection title="Expenditure" rows={expenseRows} subtotal={totals.expenditure} />
@@ -226,9 +241,63 @@ function ReportBody({ report }: { report: ReportPreviewResponse }) {
 }
 
 export function ReportsTab({ engagementId }: { engagementId: string }) {
+  const [selectedReport, setSelectedReport] = useState<string>('balance_sheet')
+  const [selectedUnits, setSelectedUnits] = useState<string>('absolute')
+  const [viewMode, setViewMode] = useState<'statutory' | 'breakdown'>('breakdown')
+
   const { data: report, isLoading } = usePreviewReport(engagementId)
+  const { data: htmlPreview, isLoading: isHtmlLoading } = usePreviewReportHtml(engagementId, selectedReport, selectedUnits)
   const generate = useGenerateReport()
+  const archive = useArchiveEngagementReport()
   const toast = useToast()
+
+  const handleExportSingle = async (format: 'xlsx' | 'pdf') => {
+    try {
+      const blob = await auditeaseCompanyApi.exportReport(engagementId, selectedReport, format, selectedUnits)
+      saveBlob(blob, `${selectedReport}_${selectedUnits}.${format}`)
+      toast.success(`Downloaded ${selectedReport}.${format}`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `Failed to export ${format.toUpperCase()}`)
+    }
+  }
+
+  const handleArchiveSingle = async () => {
+    try {
+      await archive.mutateAsync({
+        engagementId,
+        reportKey: selectedReport,
+        format: 'pdf',
+        units: selectedUnits,
+      })
+      toast.success(`Saved ${selectedReport} to docVault (Final Reports)`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to archive report')
+    }
+  }
+
+  const handleExportPack = async (format: 'xlsx' | 'pdf') => {
+    try {
+      const blob = await auditeaseCompanyApi.exportReportPack(engagementId, format, selectedUnits)
+      saveBlob(blob, `Audited_Financial_Statements_Pack_${selectedUnits}.${format}`)
+      toast.success(`Downloaded Financial Statements Pack (.${format})`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to download pack')
+    }
+  }
+
+  const handleArchivePack = async () => {
+    try {
+      await archive.mutateAsync({
+        engagementId,
+        reportKey: 'pack',
+        format: 'pdf',
+        units: selectedUnits,
+      })
+      toast.success('Saved complete Report Pack to docVault (Final Reports)')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to archive report pack')
+    }
+  }
 
   const handleGenerate = async () => {
     try {
@@ -243,17 +312,55 @@ export function ReportsTab({ engagementId }: { engagementId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      {/* Top Header & Global Actions */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-text-primary">Reports</h3>
+          <h3 className="text-lg font-semibold text-text-primary">Statutory Reports &amp; Financial Statements</h3>
           <p className="text-sm text-text-muted">
-            Preview the Balance Sheet and P&amp;L (with approved audit adjustments applied) before
-            saving the final report to docVault.
+            Preview, format, export, and archive Schedule III statements and audit schedules.
           </p>
         </div>
-        <Button onClick={handleGenerate} loading={generate.isPending} disabled={!hasData}>
-          Generate &amp; Save
-        </Button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Legacy Generate & Save button maintained for test backwards compatibility */}
+          <Button onClick={handleGenerate} loading={generate.isPending} disabled={!hasData} variant="secondary" size="sm">
+            Generate &amp; Save
+          </Button>
+
+          {/* Combined Pack Actions */}
+          <div className="flex items-center gap-1.5 rounded-lg border border-border bg-bg-surface p-1 shadow-sm">
+            <button
+              type="button"
+              disabled={!hasData}
+              onClick={() => handleExportPack('xlsx')}
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-text-secondary hover:bg-bg-raised hover:text-text-primary disabled:opacity-50"
+              title="Download full multi-sheet Excel pack"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Pack (.xlsx)</span>
+            </button>
+            <button
+              type="button"
+              disabled={!hasData}
+              onClick={() => handleExportPack('pdf')}
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-text-secondary hover:bg-bg-raised hover:text-text-primary disabled:opacity-50"
+              title="Download combined statutory PDF pack"
+            >
+              <FileText className="h-3.5 w-3.5 text-rose-600" />
+              <span>Pack (.pdf)</span>
+            </button>
+            <button
+              type="button"
+              disabled={!hasData}
+              onClick={handleArchivePack}
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-text-secondary hover:bg-bg-raised hover:text-text-primary disabled:opacity-50"
+              title="Archive full pack to docVault"
+            >
+              <Archive className="h-3.5 w-3.5 text-amber-600" />
+              <span>Save Pack</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {isLoading ? (
@@ -265,11 +372,101 @@ export function ReportsTab({ engagementId }: { engagementId: string }) {
         />
       ) : (
         <>
-          <ReportBody report={report} />
+          {/* Controls Bar: Report Selector, Units, View Mode, Active Report Export */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-bg-surface p-3 shadow-sm">
+            {/* Report Selector */}
+            <div className="flex flex-wrap items-center gap-1">
+              {REPORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setSelectedReport(opt.key)}
+                  className={cn(
+                    'rounded-btn px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                    selectedReport === opt.key
+                      ? 'bg-accent text-accent-contrast shadow-sm'
+                      : 'text-text-secondary hover:bg-bg-raised hover:text-text-primary',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Units & Export Dropdown */}
+            <div className="flex items-center gap-2">
+              <select
+                aria-label="Currency Units"
+                value={selectedUnits}
+                onChange={(e) => setSelectedUnits(e.target.value)}
+                className="h-8 rounded-btn border border-border-strong bg-bg-surface px-2.5 text-xs font-medium text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                {UNIT_OPTIONS.map((u) => (
+                  <option key={u.key} value={u.key}>
+                    {u.label}
+                  </option>
+                ))}
+              </select>
+
+              <div className="flex items-center rounded-btn border border-border bg-bg-inset p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('statutory')}
+                  className={cn(
+                    'rounded-md px-2 py-1 text-xs font-semibold transition-colors',
+                    viewMode === 'statutory'
+                      ? 'bg-bg-surface text-text-primary shadow-xs'
+                      : 'text-text-muted hover:text-text-secondary',
+                  )}
+                >
+                  Statutory
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('breakdown')}
+                  className={cn(
+                    'rounded-md px-2 py-1 text-xs font-semibold transition-colors',
+                    viewMode === 'breakdown'
+                      ? 'bg-bg-surface text-text-primary shadow-xs'
+                      : 'text-text-muted hover:text-text-secondary',
+                  )}
+                >
+                  Ledger View
+                </button>
+              </div>
+
+              <ReportExportMenu
+                onExportExcel={() => handleExportSingle('xlsx')}
+                onExportPdf={() => handleExportSingle('pdf')}
+                onArchiveDocVault={handleArchiveSingle}
+              />
+            </div>
+          </div>
+
+          {/* Main Preview Area */}
+          {viewMode === 'statutory' ? (
+            <div className="rounded-card border border-border bg-bg-surface p-6 shadow-sm">
+              {isHtmlLoading ? (
+                <div className="flex h-64 items-center justify-center">
+                  <Spinner className="h-6 w-6 text-accent" />
+                </div>
+              ) : htmlPreview?.html ? (
+                <div
+                  className="report-preview-html prose max-w-none dark:prose-invert"
+                  dangerouslySetInnerHTML={{ __html: htmlPreview.html }}
+                />
+              ) : (
+                <ReportBody report={report} />
+              )}
+            </div>
+          ) : (
+            <ReportBody report={report} />
+          )}
+
           <Card>
             <p className="text-sm text-text-secondary">
-              Generated reports are saved to your <strong>docVault</strong> under the “Final Reports”
-              bucket, capturing the statements exactly as previewed above.
+              Generated reports and packs are saved to your <strong>docVault</strong> under the “Final Reports”
+              bucket, encrypted and available for audit sign-off.
             </p>
           </Card>
         </>

@@ -141,11 +141,12 @@ def _build_diagnostics(
         issues.append(TBRowIssue(
             row=d["row"], kind="dropped", reason=d["reason"], raw=d.get("raw") or None,
         ))
+    from app.services.reporting.format import format_money
     for m in v.inconsistent_rows:
         issues.append(TBRowIssue(
             row=m["row"], ledger_name=m.get("ledger_name"), kind="warning",
-            reason=(f"opening + debit - credit = {m['expected']:,.2f} but the file's "
-                    f"closing balance is {m['found']:,.2f}"),
+            reason=(f"opening + debit - credit = {format_money(m['expected'])} but the file's "
+                    f"closing balance is {format_money(m['found'])}"),
         ))
     issues.sort(key=lambda i: i.row)
 
@@ -1341,8 +1342,10 @@ async def _compute_report(db: AsyncSession, company_id: uuid.UUID, eng: AuditEng
 
 def _report_to_html(report: ReportPreviewResponse) -> str:
     """Render the computed report as a standalone HTML document for docVault."""
+    from app.services.reporting.format import format_money
+
     def money(v: float) -> str:
-        return f"{v:,.2f}"
+        return format_money(v)
 
     def is_equity_line(line: ReportLine) -> bool:
         return bool(
@@ -1433,6 +1436,27 @@ def _report_to_html(report: ReportPreviewResponse) -> str:
     )
 
 
+from fastapi.responses import Response, StreamingResponse
+from app.models.company import Company
+from app.services.reporting.auditease_reports import (
+    AUDITEASE_BUILDERS,
+    build_all_auditease_reports,
+    get_auditease_report_builder,
+)
+from app.services.reporting.pdf import render_html, render_pdf, render_pack_pdf
+from app.services.reporting.workbook import write_document, write_workbook
+from app.services.reporting.vault import archive_report
+
+
+async def _get_engagement_reporting_context(db: AsyncSession, company_id: uuid.UUID, engagement_id: uuid.UUID):
+    eng = await _get_owned_engagement(db, company_id, engagement_id)
+    company = await db.get(Company, company_id)
+    company_name = (company.legal_name if company else None) or (company.name if company else None) or "Company"
+    figures = await tbq.load_engagement_figures(db, company_id, eng.id)
+    warnings = tbq.view_warnings(figures.figures, figures.summary, eng.tb_sign_convention)
+    return eng, company_name, figures, warnings
+
+
 @router.get("/engagements/{engagement_id}/reports/preview", response_model=ReportPreviewResponse)
 async def preview_report(
     engagement_id: uuid.UUID,
@@ -1443,6 +1467,182 @@ async def preview_report(
     return await _compute_report(db, current_user.company_id, eng)
 
 
+@router.get("/engagements/{engagement_id}/reports/{report_key}/preview-html")
+async def preview_report_html(
+    engagement_id: uuid.UUID,
+    report_key: str,
+    units: str = "absolute",
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)] = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    eng, company_name, figures, warnings = await _get_engagement_reporting_context(db, current_user.company_id, engagement_id)
+    if report_key not in AUDITEASE_BUILDERS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Report '{report_key}' not found")
+    
+    builder = get_auditease_report_builder(report_key)
+    if report_key == "adjusting_entries":
+        doc = builder(figures.approved_entries, company_name, eng.period_label, units, warnings)
+    elif report_key in ("balance_sheet", "profit_and_loss", "notes_to_accounts", "trial_balance_detailed", "trial_balance_summary", "extended_trial_balance"):
+        doc = builder(figures.figures, figures.summary, company_name, eng.period_label, units, warnings)
+    elif report_key == "ledger_mapping":
+        doc = builder(figures.figures, company_name, eng.period_label, units, warnings)
+    else:  # exceptions
+        doc = builder(figures.summary, figures.figures, company_name, eng.period_label, units, warnings)
+
+    html_str = render_html(doc)
+    return {"html": html_str, "title": doc.title, "units": doc.units}
+
+
+@router.get("/engagements/{engagement_id}/reports/{report_key}/export")
+async def export_report(
+    engagement_id: uuid.UUID,
+    report_key: str,
+    format: str = "xlsx",
+    units: str = "absolute",
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)] = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    eng, company_name, figures, warnings = await _get_engagement_reporting_context(db, current_user.company_id, engagement_id)
+    if report_key not in AUDITEASE_BUILDERS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Report '{report_key}' not found")
+    
+    builder = get_auditease_report_builder(report_key)
+    if report_key == "adjusting_entries":
+        doc = builder(figures.approved_entries, company_name, eng.period_label, units, warnings)
+    elif report_key in ("balance_sheet", "profit_and_loss", "notes_to_accounts", "trial_balance_detailed", "trial_balance_summary", "extended_trial_balance"):
+        doc = builder(figures.figures, figures.summary, company_name, eng.period_label, units, warnings)
+    elif report_key == "ledger_mapping":
+        doc = builder(figures.figures, company_name, eng.period_label, units, warnings)
+    else:  # exceptions
+        doc = builder(figures.summary, figures.figures, company_name, eng.period_label, units, warnings)
+
+    safe_period = eng.period_label.replace(" ", "_").replace("/", "-")
+    if format == "pdf":
+        pdf_bytes = render_pdf(doc)
+        filename = f"{report_key}_{safe_period}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    
+    # XLSX default
+    stream = write_document(doc)
+    filename = f"{report_key}_{safe_period}.xlsx"
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/engagements/{engagement_id}/reports/pack")
+async def export_report_pack(
+    engagement_id: uuid.UUID,
+    format: str = "xlsx",
+    units: str = "absolute",
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)] = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    eng, company_name, figures, warnings = await _get_engagement_reporting_context(db, current_user.company_id, engagement_id)
+    sheets = build_all_auditease_reports(
+        figures=figures.figures,
+        summary=figures.summary,
+        approved_entries=figures.approved_entries,
+        company_name=company_name,
+        period_label=eng.period_label,
+        units=units,
+        warnings=warnings,
+    )
+
+    safe_period = eng.period_label.replace(" ", "_").replace("/", "-")
+    if format == "pdf":
+        docs = [d for _, d in sheets]
+        pdf_bytes = render_pack_pdf(docs)
+        filename = f"Audited_Financial_Statements_Pack_{safe_period}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # XLSX default
+    stream = write_workbook(sheets)
+    filename = f"Audited_Financial_Statements_Pack_{safe_period}.xlsx"
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/engagements/{engagement_id}/reports/archive")
+async def archive_engagement_report(
+    engagement_id: uuid.UUID,
+    report_key: str = "pack",
+    format: str = "pdf",
+    units: str = "absolute",
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)] = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    eng, company_name, figures, warnings = await _get_engagement_reporting_context(db, current_user.company_id, engagement_id)
+    safe_period = eng.period_label.replace(" ", "_").replace("/", "-")
+
+    if report_key == "pack":
+        sheets = build_all_auditease_reports(
+            figures=figures.figures,
+            summary=figures.summary,
+            approved_entries=figures.approved_entries,
+            company_name=company_name,
+            period_label=eng.period_label,
+            units=units,
+            warnings=warnings,
+        )
+        if format == "pdf":
+            docs = [d for _, d in sheets]
+            content = render_pack_pdf(docs)
+            filename = f"Audited_Financial_Statements_Pack_{safe_period}.pdf"
+            mime_type = "application/pdf"
+        else:
+            stream = write_workbook(sheets)
+            content = stream.getvalue()
+            filename = f"Audited_Financial_Statements_Pack_{safe_period}.xlsx"
+            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        if report_key not in AUDITEASE_BUILDERS:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Report '{report_key}' not found")
+        builder = get_auditease_report_builder(report_key)
+        if report_key == "adjusting_entries":
+            doc = builder(figures.approved_entries, company_name, eng.period_label, units, warnings)
+        elif report_key in ("balance_sheet", "profit_and_loss", "notes_to_accounts", "trial_balance_detailed", "trial_balance_summary", "extended_trial_balance"):
+            doc = builder(figures.figures, figures.summary, company_name, eng.period_label, units, warnings)
+        elif report_key == "ledger_mapping":
+            doc = builder(figures.figures, company_name, eng.period_label, units, warnings)
+        else:  # exceptions
+            doc = builder(figures.summary, figures.figures, company_name, eng.period_label, units, warnings)
+
+        if format == "pdf":
+            content = render_pdf(doc)
+            filename = f"{report_key}_{safe_period}.pdf"
+            mime_type = "application/pdf"
+        else:
+            stream = write_document(doc)
+            content = stream.getvalue()
+            filename = f"{report_key}_{safe_period}.xlsx"
+            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    doc = await archive_report(
+        db=db,
+        company_id=eng.company_id,
+        user_id=current_user.id,
+        bucket_name="Final Reports",
+        filename=filename,
+        content=content,
+        mime_type=mime_type,
+    )
+    return {"id": str(doc.id), "url": f"/api/v1/docvault/documents/{doc.id}/download"}
+
+
 @router.post("/engagements/{engagement_id}/reports/generate")
 async def generate_report(
     engagement_id: uuid.UUID,
@@ -1450,74 +1650,18 @@ async def generate_report(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
-
     report = await _compute_report(db, current_user.company_id, eng)
     html = _report_to_html(report)
     
-    # Create docVault entry
-    from app.models.docvault import Bucket, Document, DocumentVersion, DocumentStatus
-    from app.routers.docvault import handle_file_upload
-    from fastapi import UploadFile
-    from io import BytesIO
-    
-    # Find or create Final Reports bucket
-    bucket_res = await db.execute(select(Bucket).where(and_(Bucket.company_id == eng.company_id, Bucket.name == "Final Reports")))
-    bucket = bucket_res.scalar_one_or_none()
-    if not bucket:
-        bucket = Bucket(company_id=eng.company_id, name="Final Reports", created_by=current_user.id)
-        db.add(bucket)
-        await db.flush()
-        
-    # Create Document
-    doc = Document(
+    filename = f"Annual Report - {eng.period_label}.html"
+    doc = await archive_report(
+        db=db,
         company_id=eng.company_id,
-        bucket_id=bucket.id,
-        title=f"Annual Report - {eng.period_label}.html",
-        status=DocumentStatus.uploaded,
-        created_by=current_user.id,
-        is_editable=False
-    )
-    db.add(doc)
-    await db.flush()
-    
-    # Call internal method (instead of FastAPI's UploadFile directly)
-    from app.encryption import generate_dek, encrypt_dek, encrypt_file_data
-    from app.routers.docvault import get_company_kek
-    import aiofiles
-    import os
-    
-    file_data = html.encode("utf-8")
-    raw_dek, dek_nonce_for_encryption = generate_dek()
-    ciphertext, file_nonce = encrypt_file_data(file_data, raw_dek)
-    company_kek = await get_company_kek(db, eng.company_id)
-    encrypted_dek, dek_nonce_for_kek = encrypt_dek(raw_dek, company_kek)
-    
-    vault_dir = f"{get_settings().VAULT_STORAGE_PATH}/{eng.company_id}"
-    os.makedirs(vault_dir, exist_ok=True)
-    file_uuid = str(uuid.uuid4())
-    storage_path = f"{vault_dir}/{file_uuid}.enc"
-    
-    async with aiofiles.open(storage_path, "wb") as f:
-        await f.write(file_nonce + ciphertext)
-        
-    import hashlib
-    checksum = hashlib.sha256(file_data).hexdigest()
-
-    version = DocumentVersion(
-        document_id=doc.id,
-        storage_path=storage_path,
-        original_filename=f"Annual Report - {eng.period_label}.html",
+        user_id=current_user.id,
+        bucket_name="Final Reports",
+        filename=filename,
+        content=html.encode("utf-8"),
         mime_type="text/html",
-        size_bytes=len(file_data),
-        checksum=checksum,
-        encrypted_dek=encrypted_dek,
-        dek_nonce=dek_nonce_for_kek,
-        uploaded_by=current_user.id,
-        version_number=1,
     )
-    db.add(version)
-    await db.flush()
-    doc.current_version_id = version.id
-    await db.commit()
     
     return {"id": str(doc.id), "url": f"/api/v1/docvault/documents/{doc.id}/download"}

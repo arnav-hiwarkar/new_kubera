@@ -1,0 +1,166 @@
+"""Companies Act 2013 Schedule II depreciation engine.
+
+Pure Decimal calculations with ROUND_HALF_UP precision.
+Handles SLM, WDV, pro-rata additions, disposals, pre-cutover balances,
+and residual value capping.
+"""
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Optional
+
+
+def _round2(val: Decimal) -> Decimal:
+    return val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+@dataclass(frozen=True)
+class AssetDepreciationInput:
+    asset_id: str
+    asset_name: str
+    original_cost: Decimal
+    capitalization_date: Optional[date]
+    useful_life_months: int
+    residual_pct: Optional[Decimal] = Decimal("5.00")
+    residual_value: Optional[Decimal] = None
+    dep_method: str = "SLM"  # "SLM" or "WDV"
+    is_pre_cutover: bool = False
+    opening_accumulated_dep: Decimal = Decimal("0.00")
+    disposal_date: Optional[date] = None
+    disposal_type: Optional[str] = None
+    sale_proceeds: Optional[Decimal] = None
+
+
+@dataclass(frozen=True)
+class AssetDepreciationResult:
+    asset_id: str
+    method: str
+    opening_gross_block: Decimal
+    additions: Decimal
+    disposals: Decimal
+    closing_gross_block: Decimal
+    opening_accumulated_dep: Decimal
+    depreciation_for_year: Decimal
+    disposal_accumulated_dep: Decimal
+    closing_accumulated_dep: Decimal
+    opening_carrying_amount: Decimal
+    closing_carrying_amount: Decimal
+    residual_value: Decimal
+    remaining_useful_life_days: int
+    effective_rate_pct: Decimal
+    is_part_year: bool
+    is_disposed: bool
+    gain_loss_on_disposal: Optional[Decimal] = None
+
+
+def calculate_asset_depreciation(
+    inp: AssetDepreciationInput,
+    fy_start: date,
+    fy_end: date,
+) -> AssetDepreciationResult:
+    cost = inp.original_cost
+    res_pct = inp.residual_pct if inp.residual_pct is not None else Decimal("5.00")
+    res_val = inp.residual_value if inp.residual_value is not None else _round2(cost * res_pct / Decimal("100"))
+    depreciable_base = cost - res_val if cost > res_val else Decimal("0.00")
+
+    cap_date = inp.capitalization_date or fy_start
+    total_fy_days = (fy_end - fy_start).days + 1
+
+    # Check if addition during this FY
+    is_addition = cap_date > fy_start and cap_date <= fy_end
+    opening_gross = Decimal("0.00") if is_addition else cost
+    additions = cost if is_addition else Decimal("0.00")
+
+    # Check if disposed during this FY
+    is_disposed = inp.disposal_date is not None and (fy_start <= inp.disposal_date <= fy_end)
+    disposals = cost if is_disposed else Decimal("0.00")
+    closing_gross = Decimal("0.00") if is_disposed else (opening_gross + additions)
+
+    opening_acc_dep = _round2(inp.opening_accumulated_dep) if not is_addition else Decimal("0.00")
+    opening_carrying = opening_gross - opening_acc_dep if opening_gross > 0 else Decimal("0.00")
+
+    # Determine active days in the current FY
+    start_active = cap_date if is_addition else fy_start
+    end_active = inp.disposal_date if is_disposed else fy_end
+    
+    if start_active > end_active or start_active > fy_end:
+        active_days = 0
+    else:
+        active_days = (end_active - start_active).days + 1
+
+    is_part_year = active_days < total_fy_days and not is_disposed
+
+    # Annual depreciation computation
+    useful_years = Decimal(inp.useful_life_months) / Decimal("12")
+    if useful_years <= 0:
+        annual_dep = Decimal("0.00")
+        dep_for_year = Decimal("0.00")
+    else:
+        if inp.dep_method == "WDV":
+            # Schedule II WDV rate formula: 1 - (residual / cost) ** (1 / n)
+            if cost > 0 and res_val < cost:
+                ratio = float(res_val / cost)
+                wdv_rate = Decimal(str(round(1.0 - (ratio ** (1.0 / float(useful_years))), 4)))
+            else:
+                wdv_rate = Decimal("0.00")
+            carrying_for_calc = opening_carrying if opening_carrying > 0 else cost
+            raw_annual = carrying_for_calc * wdv_rate
+        else:
+            # SLM
+            raw_annual = depreciable_base / useful_years
+
+        annual_dep = _round2(raw_annual)
+
+        if active_days == total_fy_days:
+            dep_for_year = annual_dep
+        elif active_days > 0:
+            dep_for_year = _round2(raw_annual * Decimal(active_days) / Decimal(total_fy_days))
+        else:
+            dep_for_year = Decimal("0.00")
+
+    # Cap depreciation so accumulated depreciation does not exceed depreciable base
+    max_dep_allowed = depreciable_base - opening_acc_dep if depreciable_base > opening_acc_dep else Decimal("0.00")
+    if dep_for_year > max_dep_allowed:
+        dep_for_year = max_dep_allowed
+
+    # Disposal handling
+    if is_disposed:
+        disposal_acc_dep = opening_acc_dep + dep_for_year
+        closing_acc_dep = Decimal("0.00")
+        closing_carrying = Decimal("0.00")
+        # Gain/loss = Proceeds - (Cost - disposal_acc_dep)
+        nbv_at_disposal = cost - disposal_acc_dep
+        proceeds = inp.sale_proceeds if inp.sale_proceeds is not None else Decimal("0.00")
+        gain_loss = _round2(proceeds - nbv_at_disposal)
+    else:
+        disposal_acc_dep = Decimal("0.00")
+        closing_acc_dep = opening_acc_dep + dep_for_year
+        closing_carrying = (opening_gross + additions) - closing_acc_dep
+        gain_loss = None
+
+    effective_rate = (
+        _round2(dep_for_year * Decimal("100") / cost)
+        if cost > 0
+        else Decimal("0.00")
+    )
+
+    return AssetDepreciationResult(
+        asset_id=inp.asset_id,
+        method=inp.dep_method,
+        opening_gross_block=opening_gross,
+        additions=additions,
+        disposals=disposals,
+        closing_gross_block=closing_gross,
+        opening_accumulated_dep=opening_acc_dep,
+        depreciation_for_year=dep_for_year,
+        disposal_accumulated_dep=disposal_acc_dep,
+        closing_accumulated_dep=closing_acc_dep,
+        opening_carrying_amount=opening_carrying,
+        closing_carrying_amount=closing_carrying,
+        residual_value=res_val,
+        remaining_useful_life_days=max(0, (inp.useful_life_months * 30) - active_days),
+        effective_rate_pct=effective_rate,
+        is_part_year=is_part_year,
+        is_disposed=is_disposed,
+        gain_loss_on_disposal=gain_loss,
+    )

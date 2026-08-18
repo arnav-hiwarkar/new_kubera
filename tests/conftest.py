@@ -17,6 +17,10 @@ from app.models.company import Company, CompanyKey, CompanyUser  # noqa
 from app.models.auditor import Auditor  # noqa
 from app.models.activity_log import ActivityLog  # noqa
 from app.models.notification import Notification  # noqa
+from app.models.financial_year import FinancialYear  # noqa
+from app.models.depreciation import DepreciationRun, AssetDepreciationLine, ItBlockDepreciationLine  # noqa
+from app.models.assets import Asset  # noqa
+from app.models.auditease import AuditEngagement  # noqa
 
 settings = get_settings()
 

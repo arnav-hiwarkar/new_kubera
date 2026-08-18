@@ -50,6 +50,8 @@ export const assetsApi = {
     companyClient.post<TransitionResponse>(`/api/v1/assets/${id}/approve`, { body }),
   reject: (id: string, body: TransitionRequest) =>
     companyClient.post<TransitionResponse>(`/api/v1/assets/${id}/reject`, { body }),
+  dispose: (id: string, body: import('@/api/types').AssetDisposalRequest) =>
+    companyClient.post<AssetResponse>(`/api/v1/assets/${id}/dispose`, { body }),
   exportExcel: () =>
     companyClient.get<Blob>('/api/v1/assets/export/excel', { responseType: 'blob' }),
 

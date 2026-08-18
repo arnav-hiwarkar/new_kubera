@@ -119,7 +119,7 @@ export function ImportSalesModal({ open, onClose, activeFields }: ImportSalesMod
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {result.errors.map((row, i) => {
+                  {result.errors.map((row: unknown, i: number) => {
                     const rowNum = String((row as { row?: unknown }).row ?? i + 1)
                     const msgsRaw = (row as { errors?: unknown }).errors
                     const msgs = Array.isArray(msgsRaw) ? msgsRaw.map(String) : [String(msgsRaw)]

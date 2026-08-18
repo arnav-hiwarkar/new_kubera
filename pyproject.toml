@@ -22,6 +22,8 @@ dependencies = [
     "anyio==4.9.0",
     "aiofiles==23.2.1",
     "openpyxl>=3.1.0",
+    "weasyprint>=62.0",
+    "jinja2>=3.1.0",
 ]
 
 [dependency-groups]

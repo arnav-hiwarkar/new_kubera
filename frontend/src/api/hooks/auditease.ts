@@ -303,13 +303,19 @@ export function useApproveRejectEntry() {
   })
 }
 
-// --- Reports ---
-
 export function usePreviewReport(engagementId: string) {
   return useQuery({
     queryKey: ['auditease', 'report-preview', engagementId],
     queryFn: () => auditeaseCompanyApi.previewReport(engagementId),
     enabled: !!engagementId,
+  })
+}
+
+export function usePreviewReportHtml(engagementId: string, reportKey: string, units = 'absolute') {
+  return useQuery({
+    queryKey: ['auditease', 'report-preview-html', engagementId, reportKey, units],
+    queryFn: () => auditeaseCompanyApi.previewReportHtml(engagementId, reportKey, units),
+    enabled: !!engagementId && !!reportKey,
   })
 }
 
@@ -322,3 +328,24 @@ export function useGenerateReport() {
     },
   })
 }
+
+export function useArchiveEngagementReport() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      engagementId,
+      reportKey = 'pack',
+      format = 'pdf',
+      units = 'absolute',
+    }: {
+      engagementId: string
+      reportKey?: string
+      format?: string
+      units?: string
+    }) => auditeaseCompanyApi.archiveReport(engagementId, reportKey, format, units),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['docvault', 'documents'] })
+    },
+  })
+}
+

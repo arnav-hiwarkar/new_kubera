@@ -142,6 +142,9 @@ class AuditEngagement(Base, TimestampMixin, TenantScopedMixin):
     period_label: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[EngagementStatus] = mapped_column(SAEnum(EngagementStatus, name="engagement_status"), default=EngagementStatus.invited, nullable=False)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="CASCADE"), nullable=False)
+    financial_year_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("financial_years.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     # How this engagement's trial balance encoded balance signs. NULL = no TB imported
     # yet, or a legacy engagement whose convention could not be proven and is pending
     # user confirmation.

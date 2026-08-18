@@ -85,3 +85,22 @@ export function formatAmount(
 export function formatMoney(value: number | string | null | undefined): string {
   return formatSigned(value)
 }
+
+/** Indian currency / number formatting (en-IN grouping), e.g. "12,34,567.50" or "₹ 12,34,567.50". */
+export function formatIndian(
+  value: number | string | null | undefined,
+  { symbol = false, decimals = 2 }: { symbol?: boolean; decimals?: number } = {},
+): string {
+  if (value === null || value === undefined || value === '') return '—'
+  const n = numeric(value)
+  if (n === null) return '—'
+  const isNeg = n < 0
+  const absVal = Math.abs(n)
+  const formatted = absVal.toLocaleString('en-IN', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+  const prefix = symbol ? '₹ ' : ''
+  return isNeg ? `-${prefix}${formatted}` : `${prefix}${formatted}`
+}
+

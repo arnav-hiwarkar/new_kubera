@@ -308,6 +308,16 @@ class AssetResponse(BaseModel):
     parent_asset_id: Optional[uuid.UUID]
     custom_fields: Dict[str, Any] = Field(default_factory=dict)
 
+    # Disposals
+    disposal_date: Optional[date] = None
+    disposal_type: Optional[str] = None
+    sale_proceeds: Optional[Decimal] = None
+    buyer_name: Optional[str] = None
+    disposal_invoice_no: Optional[str] = None
+    disposal_remarks: Optional[str] = None
+    disposal_gain_loss: Optional[Decimal] = None
+    disposal_it_proceeds: Optional[Decimal] = None
+
     created_by: Optional[uuid.UUID]
     submitted_by: Optional[uuid.UUID]
     submitted_at: Optional[datetime]
@@ -317,6 +327,17 @@ class AssetResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AssetDisposalRequest(BaseModel):
+    disposal_date: date
+    disposal_type: str = Field(..., description="sale, scrap, write_off, loss_destruction, insurance_claim")
+    sale_proceeds: Decimal = Field(default=Decimal("0.00"), ge=0)
+    buyer_name: Optional[str] = None
+    disposal_invoice_no: Optional[str] = None
+    disposal_remarks: Optional[str] = None
+    disposal_it_proceeds: Optional[Decimal] = None
+
 
 
 class AssetDetailResponse(BaseModel):

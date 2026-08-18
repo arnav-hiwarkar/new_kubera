@@ -367,16 +367,18 @@ async def upload_document_version(
     if not doc.is_editable:
         raise HTTPException(status_code=409, detail="Document is not editable")
         
+    doc_id = doc.id
     next_version = max([v.version_number for v in doc.versions], default=0) + 1
-    version = await handle_file_upload(file, doc.id, current_user.company_id, current_user.id, next_version, db)
+    version = await handle_file_upload(file, doc_id, current_user.company_id, current_user.id, next_version, db)
     doc.current_version_id = version.id
     
-    await log_activity(db, current_user.company_id, current_user.id, "document.version_uploaded", "document", doc.id, {"version": next_version})
+    await log_activity(db, current_user.company_id, current_user.id, "document.version_uploaded", "document", doc_id, {"version": next_version})
     await db.commit()
+    db.expire_all()
 
     # Reload with versions (db.refresh does not reliably reload the collection).
     result = await db.execute(
-        select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id)
+        select(Document).options(selectinload(Document.versions)).where(Document.id == doc_id)
     )
     return (await _attach_uploader_names(db, [result.scalar_one()]))[0]
 

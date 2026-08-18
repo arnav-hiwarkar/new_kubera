@@ -92,7 +92,7 @@ export function CompanyProfileForm({
     }
     const body: CompanyProfileUpdate = {}
     for (const k of TEXT_FIELDS) {
-      ;(body as Record<string, string | null>)[k] = emptyToNull(form[k] ?? '')
+      (body as Record<string, string | null>)[k] = emptyToNull(form[k] ?? '')
     }
     // Finishing onboarding marks the profile complete even if fields were left
     // blank, so the admin isn't bounced back to this page.

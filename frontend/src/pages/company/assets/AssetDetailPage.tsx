@@ -30,6 +30,7 @@ import { humanize } from '@/api/enums'
 import type { ValidationIssueResponse } from '@/api/types'
 import { dateOrDash, money } from './assetFormat'
 import { SerialGrid } from './SerialGrid'
+import { AssetDisposalModal } from './AssetDisposalModal'
 import { AcquisitionTab } from './tabs/AcquisitionTab'
 import { AssignmentTab } from './tabs/AssignmentTab'
 import { DepreciationTab } from './tabs/DepreciationTab'
@@ -58,6 +59,7 @@ export function AssetDetailPage() {
 
   const [tab, setTab] = useState('identity')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [disposalOpen, setDisposalOpen] = useState(false)
   const [applyToBatch, setApplyToBatch] = useState(true)
 
   const submit = useAssetTransition('submit')
@@ -239,10 +241,22 @@ export function AssetDetailPage() {
             {isReady && !canApprove && (
               <span className="text-sm text-text-muted">Awaiting approval</span>
             )}
-            {locked && (
-              <span className="inline-flex items-center gap-1.5 text-sm text-status-verified">
-                <CheckCircle2 className="h-4 w-4" />
-                On the books
+            {asset.lifecycle_status === 'capitalized' && (
+              <>
+                <span className="inline-flex items-center gap-1.5 text-sm text-status-verified">
+                  <CheckCircle2 className="h-4 w-4" />
+                  On the books
+                </span>
+                {canApprove && (
+                  <Button variant="secondary" size="sm" onClick={() => setDisposalOpen(true)}>
+                    Dispose Asset
+                  </Button>
+                )}
+              </>
+            )}
+            {asset.lifecycle_status === 'disposed' && (
+              <span className="inline-flex items-center gap-1.5 text-sm text-status-rejected font-medium">
+                Disposed ({asset.disposal_type || 'sale'})
               </span>
             )}
           </div>
@@ -323,6 +337,14 @@ export function AssetDetailPage() {
         message="Drafts can be deleted outright. Once an asset is capitalized it can only leave the register through a disposal."
         confirmLabel="Delete draft"
         destructive
+      />
+
+      <AssetDisposalModal
+        open={disposalOpen}
+        onClose={() => setDisposalOpen(false)}
+        assetId={asset.id}
+        assetName={asset.asset_name}
+        capitalizationDate={asset.capitalization_date}
       />
     </div>
   )

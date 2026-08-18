@@ -15,6 +15,7 @@ import { KraPage } from '@/pages/company/kra/KraPage'
 import { AssetsPage } from '@/pages/company/assets/AssetsPage'
 import { AssetDetailPage } from '@/pages/company/assets/AssetDetailPage'
 import { AssetMastersPage } from '@/pages/company/assets/masters/AssetMastersPage'
+import { AssetReportsPage } from '@/pages/company/assets/AssetReportsPage'
 import { SalesPage } from '@/pages/company/sales/SalesPage'
 import { CustomFieldsPage } from '@/pages/company/customfields/CustomFieldsPage'
 import { EngagementsPage } from '@/pages/company/auditease/EngagementsPage'
@@ -67,8 +68,9 @@ export const companyRoutes: RouteObject = {
                   element: <ModuleGuard moduleId="assets"><Outlet /></ModuleGuard>,
                   children: [
                     { index: true, element: <AssetsPage /> },
-                    // Literal path first: ':assetId' would otherwise swallow 'masters'.
+                    // Literal paths first: ':assetId' would otherwise swallow 'masters' or 'reports'.
                     { path: 'masters', element: <AssetMastersPage /> },
+                    { path: 'reports', element: <AssetReportsPage /> },
                     { path: ':assetId', element: <AssetDetailPage /> },
                   ],
                 },

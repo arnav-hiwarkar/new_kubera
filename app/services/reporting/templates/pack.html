@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_section %}
+
+{% block content %}
+<!-- Cover Page -->
+<div class="cover-page">
+  <div class="cover-company">{{ company_name }}</div>
+  <div class="cover-title">{{ pack_title or "Financial & Statutory Reports Pack" }}</div>
+  <div class="cover-meta">
+    <strong>Period:</strong> {{ period_label }}<br>
+    <strong>Units:</strong> {{ units|capitalize }}<br>
+    <strong>Generated At:</strong> {{ generated_at }}
+  </div>
+
+  <h3 style="margin-top: 40px; margin-bottom: 12px; font-size: 12pt; border-bottom: 1.5px solid #0f172a; padding-bottom: 4px;">
+    Table of Contents
+  </h3>
+  <table class="toc-table">
+    <thead>
+      <tr>
+        <th style="width: 40px;">#</th>
+        <th>Report Title</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for doc in docs %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td><strong>{{ doc.title }}</strong></td>
+        <td class="muted">{{ doc.subtitle or doc.title }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% set all_warnings = [] %}
+  {% for doc in docs %}
+    {% for w in doc.warnings %}
+      {% set _ = all_warnings.append(w) %}
+    {% endfor %}
+  {% endfor %}
+
+  {% if all_warnings %}
+  <div class="warnings-block" style="margin-top: 40px;">
+    <h4>Audit Warnings / Exceptions Summary</h4>
+    <ul>
+      {% for w in all_warnings %}
+      <li>{{ w }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Document Sheets -->
+{% for doc in docs %}
+<div class="page-break"></div>
+<div class="report-container">
+  <div class="title-block">
+    <div class="company-name">{{ doc.company_name }}</div>
+    <h1>{{ doc.title }}</h1>
+    {% if doc.subtitle %}
+    <div class="subtitle">{{ doc.subtitle }}</div>
+    {% endif %}
+    <div class="meta-line">
+      Period: {{ doc.period_label }} &nbsp;|&nbsp; Amounts in {{ doc.units|capitalize }}
+      {% if doc.meta.basis %} &nbsp;|&nbsp; Basis: {{ doc.meta.basis }}{% endif %}
+    </div>
+  </div>
+
+  {% if doc.sections %}
+    {% set cols = doc.sections[0].columns %}
+    <table class="report-table">
+      <thead>
+        <tr>
+          {% for col in cols %}
+          <th class="{{ 'num' if col.effective_align == 'right' else '' }}"
+              style="{{ 'width: ' ~ col.width ~ 'px;' if col.width else '' }}">
+            {{ col.header }}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for section in doc.sections %}
+          {{ render_section(section, section.columns if section.columns else cols, doc.units, 0) }}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if doc.warnings %}
+  <div class="warnings-block">
+    <h4>Audit Notes & Diagnostics</h4>
+    <ul>
+      {% for w in doc.warnings %}
+      <li>{{ w }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% endblock %}
