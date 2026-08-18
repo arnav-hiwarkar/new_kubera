@@ -514,8 +514,103 @@ async def test_depreciation_null_useful_life_raises(client: AsyncClient):
         json={"financial_year_id": fy_id, "notes": "Null life test run"},
         headers=headers,
     )
-    assert run_res.status_code == 404, f"Expected 404/error, got {run_res.status_code}: {run_res.text}"
+    assert run_res.status_code == 422, f"Expected 422 for null useful life, got {run_res.status_code}: {run_res.text}"
     assert "useful life" in run_res.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_depreciation_wdv_zero_residual_raises_422(client: AsyncClient):
+    """WDV depreciation with 0% residual raises 422 Unprocessable Entity."""
+    await seed_masters()
+    email = "wdv_zero_res@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    assert fy_res.status_code == 201, fy_res.text
+    fy_id = fy_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+
+        asset = Asset(
+            company_id=user.company_id,
+            asset_name="WDV Zero Res Machine",
+            asset_code="WDV-ZRES-01",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2024, 4, 1),
+            available_for_use_date=date(2024, 4, 1),
+            useful_life_months=60,
+            residual_pct=Decimal("0.00"),
+            residual_value=Decimal("0.00"),
+            dep_method="wdv",
+            original_cost=Decimal("100000.00"),
+        )
+        session.add(asset)
+        await session.commit()
+
+    run_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "WDV Zero Res Run"},
+        headers=headers,
+    )
+    assert run_res.status_code == 422, f"Expected 422 for WDV zero residual, got {run_res.status_code}: {run_res.text}"
+
+
+@pytest.mark.asyncio
+async def test_depreciation_pre_cutover_missing_wdv_raises_422(client: AsyncClient):
+    """Pre-cutover asset without opening WDV raises 422 Unprocessable Entity."""
+    await seed_masters()
+    email = "pre_cutover_err@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    assert fy_res.status_code == 201, fy_res.text
+    fy_id = fy_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
+
+        asset = Asset(
+            company_id=user.company_id,
+            asset_name="Cutover Machine Without WDV",
+            asset_code="CUT-001",
+            category_id=cat.id if cat else None,
+            it_block_id=it_block.id if it_block else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2023, 4, 1),
+            available_for_use_date=date(2023, 4, 1),
+            useful_life_months=60,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("100000.00"),
+            is_pre_cutover=True,
+            opening_wdv=None,
+            opening_it_wdv=None,
+        )
+        session.add(asset)
+        await session.commit()
+
+    run_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "Pre cutover error run"},
+        headers=headers,
+    )
+    assert run_res.status_code == 422, f"Expected 422 for pre-cutover without WDV, got {run_res.status_code}: {run_res.text}"
+
 
 
 @pytest.mark.asyncio

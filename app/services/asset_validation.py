@@ -13,11 +13,19 @@ Returns a list of issues rather than raising on the first one, so the UI can sho
 a checklist that deep-links to the tab owning each field.
 """
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from typing import Iterable, Optional
 
 from app.models.asset_masters import ItcTreatment
-from app.models.assets import Asset, AssetAcquisition, AssetDocRole, AssetLifecycleStatus
+from app.models.assets import (
+    Asset,
+    AssetAcquisition,
+    AssetDisposalType,
+    AssetDocRole,
+    AssetLifecycleStatus,
+)
+from app.models.financial_year import FinancialYear
 
 # Tabs on the asset detail page, used to deep-link each issue.
 TAB_IDENTITY = "identity"
@@ -270,3 +278,87 @@ def validate_transition(
         )
 
     return issues
+
+
+def validate_disposal(
+    asset: Asset,
+    disposal_date: date,
+    disposal_type: str | AssetDisposalType,
+    sale_proceeds: Optional[Decimal],
+    has_company_fys: bool = False,
+    covering_fy: Optional[FinancialYear] = None,
+    has_finalized_run: bool = False,
+) -> list[ValidationIssue]:
+    """Validate asset disposal rules."""
+    issues: list[ValidationIssue] = []
+
+    if asset.lifecycle_status != AssetLifecycleStatus.capitalized:
+        issues.append(
+            ValidationIssue(
+                "lifecycle_status",
+                "Asset Status",
+                TAB_IDENTITY,
+                kind="invalid",
+                message=f"Only a capitalized asset can be disposed of (this asset is {asset.lifecycle_status.value})",
+            )
+        )
+
+    earliest_date = asset.capitalization_date or asset.available_for_use_date
+    if earliest_date and disposal_date < earliest_date:
+        issues.append(
+            ValidationIssue(
+                "disposal_date",
+                "Disposal Date",
+                TAB_DEPRECIATION,
+                kind="invalid",
+                message=f"Disposal date ({disposal_date}) cannot be earlier than capitalization date ({earliest_date})",
+            )
+        )
+
+    if has_company_fys:
+        if not covering_fy:
+            issues.append(
+                ValidationIssue(
+                    "disposal_date",
+                    "Disposal Date",
+                    TAB_DEPRECIATION,
+                    kind="invalid",
+                    message=f"Disposal date {disposal_date} does not fall within an open financial year",
+                )
+            )
+        elif covering_fy.status != "open":
+            issues.append(
+                ValidationIssue(
+                    "disposal_date",
+                    "Disposal Date",
+                    TAB_DEPRECIATION,
+                    kind="invalid",
+                    message=f"Financial year {covering_fy.label} is closed",
+                )
+            )
+        elif has_finalized_run:
+            issues.append(
+                ValidationIssue(
+                    "disposal_date",
+                    "Disposal Date",
+                    TAB_DEPRECIATION,
+                    kind="invalid",
+                    message=f"Cannot dispose asset in financial year {covering_fy.label} because depreciation has already been finalized",
+                )
+            )
+
+    disp_type_val = disposal_type.value if hasattr(disposal_type, "value") else str(disposal_type)
+    if disp_type_val in ("sale", "insurance_claim") and sale_proceeds is None:
+        issues.append(
+            ValidationIssue(
+                "sale_proceeds",
+                "Sale Proceeds",
+                TAB_DEPRECIATION,
+                kind="missing",
+                message=f"Sale proceeds is required for disposal type '{disp_type_val}'",
+            )
+        )
+
+    return issues
+
+

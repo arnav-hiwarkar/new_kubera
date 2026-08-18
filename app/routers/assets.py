@@ -14,7 +14,7 @@ from datetime import date, datetime, timezone
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,13 +27,17 @@ from app.models.assets import (
     Asset,
     AssetAcquisition,
     AssetCondition,
+    AssetDisposalType,
     AssetDocument,
     AssetLifecycleStatus,
     AssetOperationalStatus,
 )
 from app.models.company import CompanyUser, UserRole
 from app.models.custom_fields import CustomFieldModule
+from app.models.depreciation import DepreciationRun, DepreciationRunStatus
 from app.models.docvault import Document, DocumentVersion
+from app.models.financial_year import FinancialYear, FinancialYearStatus
+from app.services.asset_validation import validate_disposal
 from app.schemas.assets import (
     AssetDetailResponse,
     AssetDisposalRequest,
@@ -764,27 +768,53 @@ async def dispose_asset(
             detail=f"Only a capitalized asset can be disposed of (this asset is {asset.lifecycle_status.value})",
         )
 
-    earliest_date = asset.capitalization_date or asset.available_for_use_date
-    if earliest_date and body.disposal_date < earliest_date:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Disposal date ({body.disposal_date}) cannot be earlier than capitalization date ({earliest_date})",
-        )
+    fys_stmt = select(FinancialYear).where(FinancialYear.company_id == current_user.company_id)
+    fys_res = await db.execute(fys_stmt)
+    all_fys = list(fys_res.scalars().all())
 
-    if body.sale_proceeds < 0:
-        raise HTTPException(
-            status_code=422,
-            detail="Sale proceeds cannot be negative",
+    covering_fy = None
+    for fy in all_fys:
+        if fy.start_date <= body.disposal_date <= fy.end_date:
+            covering_fy = fy
+            break
+
+    has_finalized_run = False
+    if covering_fy:
+        run_stmt = select(DepreciationRun).where(
+            and_(
+                DepreciationRun.company_id == current_user.company_id,
+                DepreciationRun.financial_year_id == covering_fy.id,
+                DepreciationRun.status == DepreciationRunStatus.finalized.value,
+            )
         )
+        run_res = await db.execute(run_stmt)
+        if run_res.scalar_one_or_none() is not None:
+            has_finalized_run = True
+
+    issues = validate_disposal(
+        asset=asset,
+        disposal_date=body.disposal_date,
+        disposal_type=body.disposal_type,
+        sale_proceeds=body.sale_proceeds,
+        has_company_fys=len(all_fys) > 0,
+        covering_fy=covering_fy,
+        has_finalized_run=has_finalized_run,
+    )
+    if issues:
+        raise HTTPException(status_code=422, detail=issues[0].message)
+
+    disp_type_val = body.disposal_type.value if hasattr(body.disposal_type, "value") else str(body.disposal_type)
+    proceeds = body.sale_proceeds if body.sale_proceeds is not None else Decimal("0.00")
 
     asset.lifecycle_status = AssetLifecycleStatus.disposed
     asset.disposal_date = body.disposal_date
-    asset.disposal_type = body.disposal_type
-    asset.sale_proceeds = body.sale_proceeds
+    asset.disposal_type = disp_type_val
+    asset.sale_proceeds = proceeds
     asset.buyer_name = body.buyer_name
     asset.disposal_invoice_no = body.disposal_invoice_no
     asset.disposal_remarks = body.disposal_remarks
-    asset.disposal_it_proceeds = body.disposal_it_proceeds if body.disposal_it_proceeds is not None else body.sale_proceeds
+    asset.disposal_it_proceeds = body.disposal_it_proceeds if body.disposal_it_proceeds is not None else proceeds
+    asset.disposed_by = current_user.id
 
     await log_activity(
         db,
@@ -795,8 +825,8 @@ async def dispose_asset(
         asset.id,
         {
             "disposal_date": str(body.disposal_date),
-            "disposal_type": body.disposal_type,
-            "sale_proceeds": str(body.sale_proceeds),
+            "disposal_type": disp_type_val,
+            "sale_proceeds": str(proceeds),
         },
     )
     await db.commit()

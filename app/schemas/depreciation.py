@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 class DepreciationRunCreate(BaseModel):
     financial_year_id: uuid.UUID
+    book: str = "companies_act"
     notes: Optional[str] = None
 
 
@@ -64,6 +65,7 @@ class DepreciationRunResponse(BaseModel):
     company_id: uuid.UUID
     financial_year_id: uuid.UUID
     financial_year_label: Optional[str] = None
+    book: str = "companies_act"
     run_date: datetime
     status: str
     finalized_at: Optional[datetime] = None

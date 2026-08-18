@@ -360,21 +360,21 @@ async def test_asset_reports_gating_unfinalized_run(client: AsyncClient):
         f"/api/v1/asset-reports/companies_act_depreciation/export?financial_year_id={fy_id}&format=xlsx",
         headers=headers,
     )
-    assert res2.status_code == 400, f"Expected 400 for unfinalized run on companies_act_depreciation, got {res2.status_code}"
+    assert res2.status_code == 409, f"Expected 409 for unfinalized run on companies_act_depreciation, got {res2.status_code}"
 
     # Report 3: Income Tax schedule should reject unfinalized run
     res3 = await client.get(
         f"/api/v1/asset-reports/income_tax_depreciation/export?financial_year_id={fy_id}&format=xlsx",
         headers=headers,
     )
-    assert res3.status_code == 400, f"Expected 400 for unfinalized run on income_tax_depreciation, got {res3.status_code}"
+    assert res3.status_code == 409, f"Expected 409 for unfinalized run on income_tax_depreciation, got {res3.status_code}"
 
     # Report 4: IT Asset annexure should reject when no finalized run exists
     res4 = await client.get(
         f"/api/v1/asset-reports/it_asset_annexure/export?financial_year_id={fy_id}&format=xlsx",
         headers=headers,
     )
-    assert res4.status_code == 400, f"Expected 400 for unfinalized run on it_asset_annexure, got {res4.status_code}"
+    assert res4.status_code == 409, f"Expected 409 for unfinalized run on it_asset_annexure, got {res4.status_code}"
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createIdentityAuth } from '@/auth/createIdentityAuth'
 import { companyTokenStorage } from '@/auth/tokenStorage'
 import { companyAuth } from '@/api/endpoints/auth'

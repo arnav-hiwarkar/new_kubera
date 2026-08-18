@@ -6,12 +6,15 @@ and residual value capping.
 """
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Optional
 
+from app.services.asset_costing import money
 
-def _round2(val: Decimal) -> Decimal:
-    return val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+class DepreciationDataError(ValueError):
+    """Raised when asset or block input data violates statutory or computation rules (HTTP 422)."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -60,7 +63,7 @@ def calculate_asset_depreciation(
 ) -> AssetDepreciationResult:
     cost = inp.original_cost
     res_pct = inp.residual_pct if inp.residual_pct is not None else Decimal("5.00")
-    res_val = inp.residual_value if inp.residual_value is not None else _round2(cost * res_pct / Decimal("100"))
+    res_val = inp.residual_value if inp.residual_value is not None else money(cost * res_pct / Decimal("100"))
     depreciable_base = cost - res_val if cost > res_val else Decimal("0.00")
 
     cap_date = inp.capitalization_date or fy_start
@@ -76,7 +79,7 @@ def calculate_asset_depreciation(
     disposals = cost if is_disposed else Decimal("0.00")
     closing_gross = Decimal("0.00") if is_disposed else (opening_gross + additions)
 
-    opening_acc_dep = _round2(inp.opening_accumulated_dep) if not is_addition else Decimal("0.00")
+    opening_acc_dep = money(inp.opening_accumulated_dep) if not is_addition else Decimal("0.00")
     opening_carrying = opening_gross - opening_acc_dep if opening_gross > 0 else Decimal("0.00")
 
     # Determine active days in the current FY
@@ -99,14 +102,14 @@ def calculate_asset_depreciation(
         if inp.dep_method == "WDV":
             # Schedule II WDV rate formula: 1 - (residual / cost) ** (1 / n)
             if cost <= 0 or res_val <= 0:
-                raise ValueError(
+                raise DepreciationDataError(
                     f"WDV depreciation for asset {inp.asset_id} requires a residual value "
                     f"greater than zero (cost={cost}, residual={res_val}). The Schedule II rate "
                     f"1-(s/c)^(1/n) is undefined at zero residual and would write the asset off "
                     f"entirely in year one."
                 )
             if res_val >= cost:
-                raise ValueError(
+                raise DepreciationDataError(
                     f"WDV depreciation for asset {inp.asset_id}: residual value {res_val} is not "
                     f"less than cost {cost}."
                 )
@@ -118,12 +121,12 @@ def calculate_asset_depreciation(
             # SLM
             raw_annual = depreciable_base / useful_years
 
-        annual_dep = _round2(raw_annual)
+        annual_dep = money(raw_annual)
 
         if active_days == total_fy_days:
             dep_for_year = annual_dep
         elif active_days > 0:
-            dep_for_year = _round2(raw_annual * Decimal(active_days) / Decimal(total_fy_days))
+            dep_for_year = money(raw_annual * Decimal(active_days) / Decimal(total_fy_days))
         else:
             dep_for_year = Decimal("0.00")
 
@@ -140,7 +143,7 @@ def calculate_asset_depreciation(
         # Gain/loss = Proceeds - (Cost - disposal_acc_dep)
         nbv_at_disposal = cost - disposal_acc_dep
         proceeds = inp.sale_proceeds if inp.sale_proceeds is not None else Decimal("0.00")
-        gain_loss = _round2(proceeds - nbv_at_disposal)
+        gain_loss = money(proceeds - nbv_at_disposal)
     else:
         disposal_acc_dep = Decimal("0.00")
         closing_acc_dep = opening_acc_dep + dep_for_year
@@ -148,7 +151,7 @@ def calculate_asset_depreciation(
         gain_loss = None
 
     effective_rate = (
-        _round2(dep_for_year * Decimal("100") / cost)
+        money(dep_for_year * Decimal("100") / cost)
         if cost > 0
         else Decimal("0.00")
     )

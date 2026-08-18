@@ -101,3 +101,5 @@ class ReportDocument:
     sections: tuple[ReportSection, ...]
     meta: dict[str, Any] = field(default_factory=dict)  # generated_at, generated_by, basis notes
     warnings: tuple[str, ...] = ()
+    landscape: bool = False
+

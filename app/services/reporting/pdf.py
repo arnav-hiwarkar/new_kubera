@@ -9,7 +9,7 @@ from typing import Any, Sequence
 # Standard ctypes.util.find_library on macOS does not search Homebrew directories by default.
 # Providing a fallback hook allows WeasyPrint / CFFI to locate pango, gobject, harfbuzz, and cairo
 # seamlessly in local development without requiring system-wide environment variables.
-if sys.platform == "darwin":
+if sys.platform == "darwin" and not os.environ.get("DISABLE_MACOS_DYLIB_FALLBACK"):
     _orig_find_library = ctypes.util.find_library
 
     def _macos_find_library(name: str) -> str | None:
@@ -39,16 +39,8 @@ if sys.platform == "darwin":
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 import weasyprint
 
-from app.services.reporting.document import ColumnKind, ReportDocument
-from app.services.reporting.format import (
-    format_date,
-    format_money,
-    format_number,
-    format_percent,
-    scale_for_units,
-)
-
-TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+from app.services.reporting.document import ColumnKind, ColumnSpec, ReportDocument, ReportSection
+from app.services.reporting.format import format_date, format_money, format_number, format_percent, scale_for_units
 
 
 def _format_cell(val: Any, kind: ColumnKind, units: str) -> str:
@@ -67,15 +59,15 @@ def _format_cell(val: Any, kind: ColumnKind, units: str) -> str:
 
 
 def _get_jinja_env() -> Environment:
+    template_dir = os.path.join(os.path.dirname(__file__), "templates")
     env = Environment(
-        loader=FileSystemLoader(TEMPLATES_DIR),
+        loader=FileSystemLoader(template_dir),
         autoescape=select_autoescape(["html", "xml"]),
-        trim_blocks=True,
-        lstrip_blocks=True,
     )
     env.globals.update({
         "format_cell": _format_cell,
         "format_money": format_money,
+        "format_quantity": format_number,
         "format_number": format_number,
         "format_percent": format_percent,
         "format_date": format_date,
@@ -88,13 +80,14 @@ def _get_jinja_env() -> Environment:
 _ENV = _get_jinja_env()
 
 
-def render_html(doc: ReportDocument, landscape: bool = False) -> str:
+def render_html(doc: ReportDocument, landscape: bool | None = None) -> str:
     """Render a ReportDocument to a standalone HTML string."""
+    eff_landscape = doc.landscape if landscape is None else landscape
     template = _ENV.get_template("report.html")
-    return template.render(doc=doc, landscape=landscape)
+    return template.render(doc=doc, landscape=eff_landscape)
 
 
-def render_pdf(doc: ReportDocument, landscape: bool = False) -> bytes:
+def render_pdf(doc: ReportDocument, landscape: bool | None = None) -> bytes:
     """Render a ReportDocument to PDF binary bytes via WeasyPrint."""
     html_str = render_html(doc, landscape=landscape)
     html = weasyprint.HTML(string=html_str)

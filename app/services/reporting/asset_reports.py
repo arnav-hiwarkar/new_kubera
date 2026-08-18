@@ -688,6 +688,7 @@ def build_disposals_register_report(
         ColumnSpec(header="Sale Proceeds", key="proceeds", kind=ColumnKind.money, width=15),
         ColumnSpec(header="Gain / (Loss) on Sale", key="gain_loss", kind=ColumnKind.money, width=16),
         ColumnSpec(header="Buyer / Recipient", key="buyer", kind=ColumnKind.text, width=18),
+        ColumnSpec(header="Disposed By", key="disposed_by", kind=ColumnKind.text, width=18),
     )
 
     disposed = [
@@ -704,10 +705,10 @@ def build_disposals_register_report(
 
     for a in disposed:
         line = dep_lines_by_asset_id.get(str(a.id))
-        cost = a.original_cost or Decimal("0.00")
-        acc_dep = line.disposal_accumulated_depreciation if line else (a.opening_accumulated_depreciation or Decimal("0.00"))
+        cost = a.original_cost if a.original_cost is not None else Decimal("0.00")
+        acc_dep = line.disposal_accumulated_depreciation if line else (a.opening_accumulated_depreciation if a.opening_accumulated_depreciation is not None else Decimal("0.00"))
         nbv = max(Decimal("0.00"), cost - acc_dep)
-        proceeds = a.sale_proceeds or Decimal("0.00")
+        proceeds = a.sale_proceeds if a.sale_proceeds is not None else Decimal("0.00")
         gain_loss = line.gain_loss_on_disposal if line and line.gain_loss_on_disposal is not None else (proceeds - nbv)
 
         tot_cost += cost
@@ -715,6 +716,13 @@ def build_disposals_register_report(
         tot_nbv += nbv
         tot_proceeds += proceeds
         tot_gain_loss += gain_loss
+
+        disp_user_name = ""
+        if getattr(a, "disposed_by_user", None):
+            u = a.disposed_by_user
+            disp_user_name = f"{getattr(u, 'first_name', '')} {getattr(u, 'last_name', '')}".strip() or getattr(u, "email", "")
+        elif getattr(a, "disposed_by", None):
+            disp_user_name = str(a.disposed_by)
 
         rows.append(
             ReportRow(
@@ -729,6 +737,7 @@ def build_disposals_register_report(
                     "proceeds": scale(proceeds),
                     "gain_loss": scale(gain_loss),
                     "buyer": a.buyer_name or "",
+                    "disposed_by": disp_user_name,
                 }
             )
         )
@@ -1066,15 +1075,13 @@ def build_gst_itc_summary_report(
             continue
         acquisitions_seen.add(acq.id)
 
-        taxable = acq.unit_basic_price * acq.quantity if acq.unit_basic_price else Decimal("0.00")
-        gst_rate = acq.gst_rate or Decimal("18.00")
-        rate_frac = gst_rate / Decimal("100")
-        total_gst = taxable * rate_frac
+        taxable = (acq.unit_basic_price * acq.quantity) if (acq.unit_basic_price is not None and acq.quantity is not None) else Decimal("0.00")
         
-        # Split GST
-        cgst = total_gst / Decimal("2") if acq.cgst_amount is None else acq.cgst_amount
-        sgst = total_gst / Decimal("2") if acq.sgst_amount is None else acq.sgst_amount
-        igst = total_gst if acq.igst_amount is not None else Decimal("0.00")
+        # Read stored splits directly
+        cgst = acq.cgst_amount if acq.cgst_amount is not None else Decimal("0.00")
+        sgst = acq.sgst_amount if acq.sgst_amount is not None else Decimal("0.00")
+        igst = acq.igst_amount if acq.igst_amount is not None else Decimal("0.00")
+        total_gst = cgst + sgst + igst
 
         is_eligible = acq.itc_treatment and "eligible" in str(acq.itc_treatment).lower()
         itc_claimed = total_gst if is_eligible else Decimal("0.00")

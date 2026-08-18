@@ -12,6 +12,7 @@ from app.models.assets import Asset, AssetLifecycleStatus
 from app.models.asset_masters import ItAssetBlock, DepreciationMethod
 from app.models.financial_year import FinancialYear
 from app.models.depreciation import (
+    DepreciationBook,
     DepreciationRun,
     DepreciationRunStatus,
     AssetDepreciationLine,
@@ -19,6 +20,7 @@ from app.models.depreciation import (
 )
 from app.services.depreciation import (
     AssetDepreciationInput,
+    DepreciationDataError,
     calculate_asset_depreciation,
 )
 from app.services.it_depreciation import (
@@ -27,8 +29,18 @@ from app.services.it_depreciation import (
 )
 
 
+class DepreciationConflictError(ValueError):
+    """Raised when sequence/status gating rules are violated (HTTP 409)."""
+    pass
+
+
+class FinancialYearNotFoundError(ValueError):
+    """Raised when the financial year is not found (HTTP 404)."""
+    pass
+
+
 async def _load_prior_run_lines(
-    db: AsyncSession, company_id: uuid.UUID, fy_start: date
+    db: AsyncSession, company_id: uuid.UUID, fy_start: date, fy_label: str
 ):
     """Opening balances come from the prior FY's finalized run. A block's tax WDV is not
     asset-attributable after year one, so it cannot be reconstructed any other way."""
@@ -58,7 +70,44 @@ async def _load_prior_run_lines(
             .limit(1)
         )
     ).scalar_one_or_none()
+
     if prior_run is None:
+        # Check if an unfinalized (draft) run exists for prior FY
+        draft_run = (
+            await db.execute(
+                select(DepreciationRun).where(
+                    and_(
+                        DepreciationRun.company_id == company_id,
+                        DepreciationRun.financial_year_id == prior_fy.id,
+                    )
+                )
+            )
+        ).scalar_one_or_none()
+        if draft_run is not None:
+            raise DepreciationConflictError(
+                f"Depreciation for {prior_fy.label} must be finalized before running {fy_label}."
+            )
+
+        # Check if assets were capitalized before fy_start that are not pre-cutover
+        prior_assets = (
+            await db.execute(
+                select(Asset).where(
+                    and_(
+                        Asset.company_id == company_id,
+                        Asset.lifecycle_status.in_([AssetLifecycleStatus.capitalized, AssetLifecycleStatus.disposed]),
+                    )
+                )
+            )
+        ).scalars().all()
+        has_prior_cap_assets = any(
+            (a.capitalization_date and a.capitalization_date < fy_start and not a.is_pre_cutover)
+            for a in prior_assets
+        )
+        if has_prior_cap_assets:
+            raise DepreciationConflictError(
+                f"Depreciation for {prior_fy.label} must be finalized before running {fy_label}."
+            )
+
         return {}, {}
 
     asset_lines = (
@@ -85,20 +134,33 @@ async def execute_depreciation_run(
     db: AsyncSession,
     company_id: uuid.UUID,
     financial_year_id: uuid.UUID,
+    book: str = "companies_act",
     user_id: Optional[uuid.UUID] = None,
     notes: Optional[str] = None,
 ) -> DepreciationRun:
     """Executes full Companies Act and Income Tax depreciation for a financial year."""
     fy = await db.get(FinancialYear, financial_year_id)
     if not fy or fy.company_id != company_id:
-        raise ValueError("Financial year not found")
+        raise FinancialYearNotFoundError("Financial year not found")
 
     fy_start: date = fy.start_date
     fy_end: date = fy.end_date
 
-    # Load prior finalized run lines for carry-forward balances
+    # Load prior finalized run lines for carry-forward balances (with F9 gating)
     prior_asset_lines, prior_block_lines = await _load_prior_run_lines(
-        db, company_id, fy_start
+        db, company_id, fy_start, fy.label
+    )
+
+    # Supersede any existing draft run for this FY and book
+    await db.execute(
+        delete(DepreciationRun).where(
+            and_(
+                DepreciationRun.company_id == company_id,
+                DepreciationRun.financial_year_id == financial_year_id,
+                DepreciationRun.book == book,
+                DepreciationRun.status == DepreciationRunStatus.draft.value,
+            )
+        )
     )
 
     # 1. Query all assets eligible for depreciation:
@@ -121,6 +183,7 @@ async def execute_depreciation_run(
     run = DepreciationRun(
         company_id=company_id,
         financial_year_id=financial_year_id,
+        book=book,
         run_date=datetime.now(timezone.utc),
         status=DepreciationRunStatus.draft.value,
         notes=notes,
@@ -140,7 +203,7 @@ async def execute_depreciation_run(
             continue
 
         if asset.useful_life_months is None:
-            raise ValueError(
+            raise DepreciationDataError(
                 f"Asset {asset.id} ({asset.asset_name}) has no useful life specified"
             )
         months = asset.useful_life_months
@@ -169,7 +232,6 @@ async def execute_depreciation_run(
             residual_pct=residual_pct,
             residual_value=asset.residual_value,
             dep_method=method,
-            is_pre_cutover=asset.is_pre_cutover,
             opening_accumulated_dep=opening_acc,
             disposal_date=asset.disposal_date,
             disposal_type=asset.disposal_type,
@@ -233,6 +295,8 @@ async def execute_depreciation_run(
         else:
             opening_wdv = Decimal("0.00")
             for a in block_assets:
+                if a.disposal_date and a.disposal_date < fy_start:
+                    continue
                 cap_date = a.it_put_to_use_date or a.capitalization_date or a.available_for_use_date
                 if cap_date and cap_date < fy_start:
                     if a.opening_it_wdv is not None:
@@ -240,11 +304,16 @@ async def execute_depreciation_run(
                     elif a.opening_wdv is not None:
                         opening_wdv += a.opening_wdv
                     elif a.is_pre_cutover:
-                        raise ValueError(
+                        raise DepreciationDataError(
                             f"Asset {a.id} ({a.asset_name}) is pre-cutover but has no opening_it_wdv or opening_wdv set"
                         )
 
-        for a in block_assets:
+        active_or_current_assets = [
+            a for a in block_assets
+            if not (a.disposal_date and a.disposal_date < fy_start)
+        ]
+
+        for a in active_or_current_assets:
             cap_date = a.it_put_to_use_date or a.capitalization_date or a.available_for_use_date
 
             # Check additions during FY
@@ -263,7 +332,7 @@ async def execute_depreciation_run(
             elif not a.disposal_date or a.disposal_date > fy_end:
                 has_active_assets = True
 
-        all_disposed = (len(block_assets) > 0) and (not has_active_assets)
+        all_disposed = (len(active_or_current_assets) > 0) and (not has_active_assets)
 
         it_inp = ItBlockDepreciationInput(
             block_id=str(block.id),
@@ -315,9 +384,29 @@ async def finalize_depreciation_run(
     if not run or run.company_id != company_id:
         raise ValueError("Depreciation run not found")
 
+    # Check partial uniqueness before finalizing
+    existing_finalized = (
+        await db.execute(
+            select(DepreciationRun).where(
+                and_(
+                    DepreciationRun.company_id == company_id,
+                    DepreciationRun.financial_year_id == run.financial_year_id,
+                    DepreciationRun.book == run.book,
+                    DepreciationRun.status == DepreciationRunStatus.finalized.value,
+                    DepreciationRun.id != run.id,
+                )
+            )
+        )
+    ).scalar_one_or_none()
+    if existing_finalized:
+        raise DepreciationConflictError(
+            f"A finalized depreciation run already exists for this financial year and book."
+        )
+
     run.status = DepreciationRunStatus.finalized.value
     run.finalized_at = datetime.now(timezone.utc)
     run.finalized_by = user_id
     await db.commit()
     await db.refresh(run)
     return run
+

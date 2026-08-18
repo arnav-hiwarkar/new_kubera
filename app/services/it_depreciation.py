@@ -8,12 +8,10 @@ Computes block-level depreciation with:
 """
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Optional
 
-
-def _round2(val: Decimal) -> Decimal:
-    return val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+from app.services.asset_costing import money
 
 
 @dataclass(frozen=True)
@@ -25,6 +23,7 @@ class ItAssetInput:
     put_to_use_date: Optional[date]
     is_disposed: bool
     sale_proceeds: Decimal = Decimal("0.00")
+
 
 
 @dataclass(frozen=True)
@@ -65,10 +64,10 @@ def calculate_it_block_depreciation(
     rate_fraction = rate / Decimal("100")
     half_rate_fraction = rate_fraction / Decimal("2")
 
-    opening = _round2(inp.opening_wdv)
-    add_full = _round2(inp.additions_more_than_180)
-    add_half = _round2(inp.additions_less_than_180)
-    sales = _round2(inp.realized_from_sales)
+    opening = money(inp.opening_wdv)
+    add_full = money(inp.additions_more_than_180)
+    add_half = money(inp.additions_less_than_180)
+    sales = money(inp.realized_from_sales)
 
     total_pool = opening + add_full + add_half
     balance_before_dep = total_pool - sales
@@ -126,8 +125,8 @@ def calculate_it_block_depreciation(
         excess_sales = sales - full_pool
         remaining_half_pool = max(Decimal("0.00"), add_half - excess_sales)
 
-    dep_full = _round2(remaining_full_pool * rate_fraction)
-    dep_half = _round2(remaining_half_pool * half_rate_fraction)
+    dep_full = money(remaining_full_pool * rate_fraction)
+    dep_half = money(remaining_half_pool * half_rate_fraction)
     total_dep = dep_full + dep_half
 
     # Closing WDV cannot be negative

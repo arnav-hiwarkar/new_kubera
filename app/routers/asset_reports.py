@@ -14,6 +14,7 @@ Generates XLSX, PDF, and HTML statutory fixed-asset and depreciation reports:
 """
 import io
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Annotated, Any, Dict, List, Optional
 
@@ -26,7 +27,7 @@ from sqlalchemy.orm import selectinload
 from app.auth import get_current_company_user, require_assets_module
 from app.database import get_db
 from app.models.assets import Asset, AssetLifecycleStatus
-from app.models.asset_masters import AssetLookup, ItAssetBlock
+from app.models.asset_masters import AssetCategory, AssetLookup, ItAssetBlock
 from app.models.company import Company, CompanyUser
 from app.models.depreciation import DepreciationRun, AssetDepreciationLine
 from app.models.financial_year import FinancialYear
@@ -62,8 +63,19 @@ router = APIRouter(prefix="/api/v1/asset-reports", tags=["asset-reports"])
 
 
 async def _load_asset_context(
-    db: AsyncSession, company_id: uuid.UUID, financial_year_id: uuid.UUID
-):
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    financial_year_id: uuid.UUID,
+    report_key: Optional[str] = None,
+    lifecycle_status: Optional[str] = None,
+    operational_status: Optional[str] = None,
+    condition: Optional[str] = None,
+    category_id: Optional[uuid.UUID] = None,
+    location_id: Optional[uuid.UUID] = None,
+    branch_id: Optional[uuid.UUID] = None,
+    custodian_id: Optional[uuid.UUID] = None,
+    acquisition_id: Optional[uuid.UUID] = None,
+) -> Dict[str, Any]:
     fy = await db.get(FinancialYear, financial_year_id)
     if not fy or fy.company_id != company_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Financial year not found")
@@ -71,7 +83,17 @@ async def _load_asset_context(
     company = await db.get(Company, company_id)
     company_name = company.name if company else "Company"
 
-    # Query all company assets with full relations
+    # Default Fixed Asset Register and Dimension Summary to capitalized unless overridden
+    effective_lifecycle_status = lifecycle_status
+    if effective_lifecycle_status is None and report_key in (REPORT_FIXED_ASSET_REGISTER, REPORT_DIMENSION_SUMMARY):
+        effective_lifecycle_status = AssetLifecycleStatus.capitalized.value
+
+    # Query lookups (locations, departments, etc.)
+    lookup_stmt = select(AssetLookup).where(AssetLookup.company_id == company_id)
+    lookup_res = await db.execute(lookup_stmt)
+    lookups_by_id = {str(l.id): l.name for l in lookup_res.scalars().all()}
+
+    # Build asset query with filters
     stmt = (
         select(Asset)
         .where(Asset.company_id == company_id)
@@ -79,31 +101,41 @@ async def _load_asset_context(
             selectinload(Asset.category),
             selectinload(Asset.acquisition),
             selectinload(Asset.it_block),
+            selectinload(Asset.disposed_by_user),
         )
     )
+    for column, value in (
+        (Asset.lifecycle_status, effective_lifecycle_status),
+        (Asset.operational_status, operational_status),
+        (Asset.condition, condition),
+        (Asset.category_id, category_id),
+        (Asset.location_id, location_id),
+        (Asset.branch_id, branch_id),
+        (Asset.custodian_id, custodian_id),
+        (Asset.acquisition_id, acquisition_id),
+    ):
+        if value is not None:
+            stmt = stmt.where(column == value)
+
     res = await db.execute(stmt)
     assets = list(res.scalars().all())
     assets_by_id = {str(a.id): a for a in assets}
 
-    # Query lookups (locations, departments, etc.)
-    lookup_stmt = select(AssetLookup).where(AssetLookup.company_id == company_id)
-    lookup_res = await db.execute(lookup_stmt)
-    lookups_by_id = {str(l.id): l.name for l in lookup_res.scalars().all()}
-
-    # Query latest depreciation run for this FY
+    # Query latest finalized depreciation run for this FY
     run_stmt = (
         select(DepreciationRun)
         .where(
             and_(
                 DepreciationRun.company_id == company_id,
                 DepreciationRun.financial_year_id == financial_year_id,
+                DepreciationRun.status == "finalized",
             )
         )
         .options(
             selectinload(DepreciationRun.lines),
             selectinload(DepreciationRun.it_lines),
         )
-        .order_by(DepreciationRun.run_date.desc())
+        .order_by(DepreciationRun.finalized_at.desc())
     )
     run_res = await db.execute(run_stmt)
     run = run_res.scalars().first()
@@ -120,6 +152,34 @@ async def _load_asset_context(
     block_res = await db.execute(block_stmt)
     blocks_by_id = {str(b.id): b for b in block_res.scalars().all()}
 
+    # Format applied filters summary for subtitle
+    filters_applied = []
+    if effective_lifecycle_status:
+        filters_applied.append(f"Status: {effective_lifecycle_status}")
+    if operational_status:
+        filters_applied.append(f"Operation: {operational_status}")
+    if condition:
+        filters_applied.append(f"Condition: {condition}")
+    if category_id:
+        cat_name = next((a.category.name for a in assets if a.category and a.category_id == category_id), None)
+        if not cat_name:
+            cat_obj = await db.get(AssetCategory, category_id)
+            cat_name = cat_obj.name if cat_obj else str(category_id)
+        filters_applied.append(f"Category: {cat_name}")
+    if location_id:
+        loc_name = lookups_by_id.get(str(location_id), str(location_id))
+        filters_applied.append(f"Location: {loc_name}")
+    if branch_id:
+        br_name = lookups_by_id.get(str(branch_id), str(branch_id))
+        filters_applied.append(f"Branch: {br_name}")
+    if custodian_id:
+        cust_name = lookups_by_id.get(str(custodian_id), str(custodian_id))
+        filters_applied.append(f"Custodian: {cust_name}")
+    if acquisition_id:
+        filters_applied.append(f"Acquisition: {acquisition_id}")
+
+    filter_desc = ", ".join(filters_applied) if filters_applied else None
+
     return {
         "fy": fy,
         "company_name": company_name,
@@ -129,6 +189,7 @@ async def _load_asset_context(
         "run": run,
         "dep_lines_by_asset_id": dep_lines_by_asset_id,
         "blocks_by_id": blocks_by_id,
+        "filter_desc": filter_desc,
     }
 
 
@@ -141,52 +202,66 @@ def _build_doc_by_key(report_key: str, ctx: Dict[str, Any], units: str = "absolu
     run: Optional[DepreciationRun] = ctx["run"]
     dep_lines = ctx["dep_lines_by_asset_id"]
     blocks_by_id = ctx["blocks_by_id"]
+    filter_desc: Optional[str] = ctx.get("filter_desc")
+
+    doc: ReportDocument
 
     if report_key == REPORT_FIXED_ASSET_REGISTER:
-        return build_fixed_asset_register_report(assets, dep_lines, co_name, fy.label, units, lookups_by_id=lookups_by_id)
+        doc = build_fixed_asset_register_report(assets, dep_lines, co_name, fy.label, units, lookups_by_id=lookups_by_id)
 
     elif report_key == REPORT_COMPANIES_ACT_DEPRECIATION:
         if not run:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="A depreciation run must be executed before generating the Companies Act Schedule II report.",
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"No finalized depreciation run exists for {fy.label}. Run and finalize depreciation before generating this report.",
             )
-        return build_companies_act_schedule_ii_report(run, assets_by_id, co_name, fy.label, units)
+        doc = build_companies_act_schedule_ii_report(run, assets_by_id, co_name, fy.label, units)
 
     elif report_key == REPORT_INCOME_TAX_DEPRECIATION:
         if not run:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="A depreciation run must be executed before generating the Income Tax Section 32 report.",
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"No finalized depreciation run exists for {fy.label}. Run and finalize depreciation before generating this report.",
             )
-        return build_income_tax_appendix_i_report(run, co_name, fy.label, units)
+        doc = build_income_tax_appendix_i_report(run, co_name, fy.label, units)
 
     elif report_key == REPORT_IT_ASSET_ANNEXURE:
-        return build_it_asset_annexure_report(assets, blocks_by_id, co_name, fy.label, fy.end_date, units)
+        if not run:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"No finalized depreciation run exists for {fy.label}. Run and finalize depreciation before generating this report.",
+            )
+        doc = build_it_asset_annexure_report(assets, blocks_by_id, co_name, fy.label, fy.end_date, units)
 
     elif report_key == REPORT_ADDITIONS_REGISTER:
-        return build_additions_register_report(assets, co_name, fy.label, fy.start_date, fy.end_date, units)
+        doc = build_additions_register_report(assets, co_name, fy.label, fy.start_date, fy.end_date, units)
 
     elif report_key == REPORT_DISPOSALS_REGISTER:
-        return build_disposals_register_report(assets, dep_lines, co_name, fy.label, fy.start_date, fy.end_date, units)
+        doc = build_disposals_register_report(assets, dep_lines, co_name, fy.label, fy.start_date, fy.end_date, units)
 
     elif report_key == REPORT_CWIP_REGISTER:
-        return build_cwip_register_report(assets, co_name, fy.label, units)
+        doc = build_cwip_register_report(assets, co_name, fy.label, units)
 
     elif report_key == REPORT_DIMENSION_SUMMARY:
-        return build_dimension_summary_report(assets, dep_lines, co_name, fy.label, units, lookups_by_id=lookups_by_id)
+        doc = build_dimension_summary_report(assets, dep_lines, co_name, fy.label, units, lookups_by_id=lookups_by_id)
 
     elif report_key == REPORT_PHYSICAL_VERIFICATION:
-        return build_physical_verification_report(assets, co_name, fy.label, lookups_by_id=lookups_by_id)
+        doc = build_physical_verification_report(assets, co_name, fy.label, lookups_by_id=lookups_by_id)
 
     elif report_key == REPORT_GST_ITC_SUMMARY:
-        return build_gst_itc_summary_report(assets, co_name, fy.label, units)
+        doc = build_gst_itc_summary_report(assets, co_name, fy.label, units)
 
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Unknown asset report key '{report_key}'",
         )
+
+    if filter_desc and report_key in (REPORT_FIXED_ASSET_REGISTER, REPORT_DIMENSION_SUMMARY):
+        new_subtitle = f"{doc.subtitle} | Filters: {filter_desc}" if doc.subtitle else f"Filters: {filter_desc}"
+        doc = replace(doc, subtitle=new_subtitle)
+
+    return doc
 
 
 @router.get("", response_model=List[Dict[str, str]])
@@ -208,8 +283,29 @@ async def export_asset_report(
     db: Annotated[AsyncSession, Depends(get_db)],
     format: str = Query("xlsx", pattern="^(xlsx|pdf|html)$"),
     unit: str = Query("absolute", pattern="^(absolute|thousands|lakhs|crores)$"),
+    lifecycle_status: Optional[str] = None,
+    operational_status: Optional[str] = None,
+    condition: Optional[str] = None,
+    category_id: Optional[uuid.UUID] = None,
+    location_id: Optional[uuid.UUID] = None,
+    branch_id: Optional[uuid.UUID] = None,
+    custodian_id: Optional[uuid.UUID] = None,
+    acquisition_id: Optional[uuid.UUID] = None,
 ):
-    ctx = await _load_asset_context(db, current_user.company_id, financial_year_id)
+    ctx = await _load_asset_context(
+        db,
+        current_user.company_id,
+        financial_year_id,
+        report_key=report_key,
+        lifecycle_status=lifecycle_status,
+        operational_status=operational_status,
+        condition=condition,
+        category_id=category_id,
+        location_id=location_id,
+        branch_id=branch_id,
+        custodian_id=custodian_id,
+        acquisition_id=acquisition_id,
+    )
     doc = _build_doc_by_key(report_key, ctx, units=unit)
 
     filename_base = f"{report_key}_{ctx['fy'].label.replace('/', '_')}"
@@ -240,8 +336,29 @@ async def preview_asset_report_html(
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     unit: str = Query("absolute", pattern="^(absolute|thousands|lakhs|crores)$"),
+    lifecycle_status: Optional[str] = None,
+    operational_status: Optional[str] = None,
+    condition: Optional[str] = None,
+    category_id: Optional[uuid.UUID] = None,
+    location_id: Optional[uuid.UUID] = None,
+    branch_id: Optional[uuid.UUID] = None,
+    custodian_id: Optional[uuid.UUID] = None,
+    acquisition_id: Optional[uuid.UUID] = None,
 ):
-    ctx = await _load_asset_context(db, current_user.company_id, financial_year_id)
+    ctx = await _load_asset_context(
+        db,
+        current_user.company_id,
+        financial_year_id,
+        report_key=report_key,
+        lifecycle_status=lifecycle_status,
+        operational_status=operational_status,
+        condition=condition,
+        category_id=category_id,
+        location_id=location_id,
+        branch_id=branch_id,
+        custodian_id=custodian_id,
+        acquisition_id=acquisition_id,
+    )
     doc = _build_doc_by_key(report_key, ctx, units=unit)
     return HTMLResponse(content=render_html(doc))
 
@@ -257,15 +374,23 @@ async def export_asset_report_pack(
     ctx = await _load_asset_context(db, current_user.company_id, financial_year_id)
 
     docs: List[ReportDocument] = []
-    for key, _, _ in ALL_ASSET_REPORTS:
+    omissions: List[str] = []
+    for key, title, _ in ALL_ASSET_REPORTS:
         try:
             docs.append(_build_doc_by_key(key, ctx, units=unit))
-        except HTTPException:
-            # If a report (like Companies Act without a run) cannot be computed, skip gracefully in pack
-            continue
+        except HTTPException as e:
+            if e.status_code == status.HTTP_409_CONFLICT:
+                omissions.append(f"{title}: {e.detail}")
+            else:
+                raise
 
     if not docs:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No reports available for this pack")
+
+    if omissions and docs:
+        first_doc = docs[0]
+        new_warnings = tuple(list(first_doc.warnings) + [f"Omitted from pack — {om}" for om in omissions])
+        docs[0] = replace(first_doc, warnings=new_warnings)
 
     filename_base = f"Asset_Register_Pack_{ctx['fy'].label.replace('/', '_')}"
 
@@ -294,8 +419,29 @@ async def archive_asset_report(
     db: Annotated[AsyncSession, Depends(get_db)],
     format: str = Query("pdf", pattern="^(xlsx|pdf)$"),
     unit: str = Query("absolute", pattern="^(absolute|thousands|lakhs|crores)$"),
+    lifecycle_status: Optional[str] = None,
+    operational_status: Optional[str] = None,
+    condition: Optional[str] = None,
+    category_id: Optional[uuid.UUID] = None,
+    location_id: Optional[uuid.UUID] = None,
+    branch_id: Optional[uuid.UUID] = None,
+    custodian_id: Optional[uuid.UUID] = None,
+    acquisition_id: Optional[uuid.UUID] = None,
 ):
-    ctx = await _load_asset_context(db, current_user.company_id, financial_year_id)
+    ctx = await _load_asset_context(
+        db,
+        current_user.company_id,
+        financial_year_id,
+        report_key=report_key,
+        lifecycle_status=lifecycle_status,
+        operational_status=operational_status,
+        condition=condition,
+        category_id=category_id,
+        location_id=location_id,
+        branch_id=branch_id,
+        custodian_id=custodian_id,
+        acquisition_id=acquisition_id,
+    )
     doc = _build_doc_by_key(report_key, ctx, units=unit)
 
     safe_period = ctx["fy"].label.replace("/", "_").replace(" ", "_")
@@ -319,3 +465,4 @@ async def archive_asset_report(
         mime_type=mime_type,
     )
     return {"status": "archived", "document_id": str(record.id), "title": record.title}
+

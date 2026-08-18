@@ -1341,7 +1341,7 @@ async def _compute_report(db: AsyncSession, company_id: uuid.UUID, eng: AuditEng
 
 
 def _report_to_html(report: ReportPreviewResponse) -> str:
-    """Render the computed report as a standalone HTML document for docVault."""
+    """Render the computed report as a standalone HTML document."""
     from app.services.reporting.format import format_money
 
     def money(v: float) -> str:
@@ -1408,10 +1408,6 @@ def _report_to_html(report: ReportPreviewResponse) -> str:
         "</style></head><body>"
         f"<h1>Financial Statements — {report.period_label}</h1>"
         f"{unmapped_note}"
-        # Assets and Liabilities stay in SEPARATE sections so each gets its own
-        # meaningful subtotal. The Liabilities section includes the synthetic
-        # "Profit for the period" row, which is what makes the rendered Liabilities
-        # subtotal equal Total Assets instead of only matching a footer scalar.
         "<h2>Balance Sheet</h2>"
         f"{section('Assets', lambda line: line.top_group == 'Assets', t.assets)}"
         f"{section('Other Liabilities', lambda line: line.top_group == 'Liabilities' and not is_equity_line(line), t.other_liabilities)}"
@@ -1419,9 +1415,6 @@ def _report_to_html(report: ReportPreviewResponse) -> str:
         f"<p class='total'>Total Assets: {money(t.assets)} &nbsp;|&nbsp; "
         f"Total Liabilities: {money(t.liabilities)} &nbsp;|&nbsp; "
         f"Total Liabilities and Equity: {money(bc.liabilities_plus_equity)} &nbsp;|&nbsp; {balance_note}</p>"
-        # P&L: keep Income and Expenditure in SEPARATE sections. They have opposite
-        # accounting natures, so lumping them into one block invites a meaningless
-        # abs(Income)+abs(Expenditure) "total"; the net is the explicit difference below.
         f"<h2>Profit &amp; Loss</h2>"
         f"{section('Income', lambda line: line.top_group == 'Income', t.income)}"
         f"{section('Expenditure', lambda line: line.top_group == 'Expenditure', t.expenditure)}"
@@ -1441,6 +1434,7 @@ from app.models.company import Company
 from app.services.reporting.auditease_reports import (
     AUDITEASE_BUILDERS,
     build_all_auditease_reports,
+    build_balance_sheet,
     get_auditease_report_builder,
 )
 from app.services.reporting.pdf import render_html, render_pdf, render_pack_pdf
@@ -1649,9 +1643,9 @@ async def generate_report(
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
-    report = await _compute_report(db, current_user.company_id, eng)
-    html = _report_to_html(report)
+    eng, company_name, figures, warnings = await _get_engagement_reporting_context(db, current_user.company_id, engagement_id)
+    doc_model = build_balance_sheet(figures.figures, figures.summary, company_name, eng.period_label, "absolute", warnings)
+    html = render_html(doc_model)
     
     filename = f"Annual Report - {eng.period_label}.html"
     doc = await archive_report(
@@ -1665,3 +1659,4 @@ async def generate_report(
     )
     
     return {"id": str(doc.id), "url": f"/api/v1/docvault/documents/{doc.id}/download"}
+

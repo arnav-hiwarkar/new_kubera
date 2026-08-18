@@ -329,14 +329,18 @@ class AssetResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+from app.models.assets import AssetDisposalType
+
+
 class AssetDisposalRequest(BaseModel):
     disposal_date: date
-    disposal_type: str = Field(..., description="sale, scrap, write_off, loss_destruction, insurance_claim")
-    sale_proceeds: Decimal = Field(default=Decimal("0.00"), ge=0)
+    disposal_type: AssetDisposalType
+    sale_proceeds: Optional[Decimal] = None
     buyer_name: Optional[str] = None
     disposal_invoice_no: Optional[str] = None
     disposal_remarks: Optional[str] = None
     disposal_it_proceeds: Optional[Decimal] = None
+
 
 
 

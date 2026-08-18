@@ -141,15 +141,24 @@ def build_balance_sheet(
     st_provisions = _get_group_node_amount(tree, "Liabilities", "Short-term Provisions")
     total_curr_liab = st_borrowings + trade_payables + other_curr_liab + st_provisions
 
+    rows_curr_liab = [
+        ReportRow(cells={"particulars": "Short-term borrowings", "note_ref": "", "amount": st_borrowings}, indent=1),
+        ReportRow(cells={"particulars": "Trade payables", "note_ref": "4", "amount": trade_payables}, indent=1),
+        ReportRow(cells={"particulars": "Other current liabilities", "note_ref": "", "amount": other_curr_liab}, indent=1),
+        ReportRow(cells={"particulars": "Short-term provisions", "note_ref": "", "amount": st_provisions}, indent=1),
+    ]
+    total_liab_calc = (share_cap_amt + reserves_amt + warrants_amt) + app_money_amt + total_non_curr_liab + total_curr_liab
+    diff_liab = summary.liabilities_plus_equity - total_liab_calc
+    if diff_liab != Decimal("0.00"):
+        rows_curr_liab.append(
+            ReportRow(cells={"particulars": "Other / unallocated liabilities and equity", "note_ref": "", "amount": diff_liab}, indent=1)
+        )
+        total_curr_liab += diff_liab
+
     sec_curr_liab = ReportSection(
         title="4. Current Liabilities",
         columns=cols,
-        rows=(
-            ReportRow(cells={"particulars": "Short-term borrowings", "note_ref": "", "amount": st_borrowings}, indent=1),
-            ReportRow(cells={"particulars": "Trade payables", "note_ref": "4", "amount": trade_payables}, indent=1),
-            ReportRow(cells={"particulars": "Other current liabilities", "note_ref": "", "amount": other_curr_liab}, indent=1),
-            ReportRow(cells={"particulars": "Short-term provisions", "note_ref": "", "amount": st_provisions}, indent=1),
-        ),
+        rows=tuple(rows_curr_liab),
         total=ReportTotal(label="Total Current Liabilities", cells={"amount": total_curr_liab}, level=2),
     )
 
@@ -174,21 +183,6 @@ def build_balance_sheet(
     other_nc_assets = _get_group_node_amount(tree, "Assets", "Other Non-current Assets")
     total_non_curr_assets = ppe + cwip + inv_prop + goodwill + intangibles + non_curr_inv + lt_loans + other_nc_assets
 
-    sec_non_curr_assets = ReportSection(
-        title="1. Non-Current Assets",
-        columns=cols,
-        rows=(
-            ReportRow(cells={"particulars": "Property, Plant and Equipment", "note_ref": "5", "amount": ppe}, indent=1),
-            ReportRow(cells={"particulars": "Capital work-in-progress", "note_ref": "", "amount": cwip}, indent=1),
-            ReportRow(cells={"particulars": "Investment Property", "note_ref": "", "amount": inv_prop}, indent=1),
-            ReportRow(cells={"particulars": "Goodwill / Intangible assets", "note_ref": "", "amount": goodwill + intangibles}, indent=1),
-            ReportRow(cells={"particulars": "Non-current investments", "note_ref": "", "amount": non_curr_inv}, indent=1),
-            ReportRow(cells={"particulars": "Long-term loans and advances", "note_ref": "", "amount": lt_loans}, indent=1),
-            ReportRow(cells={"particulars": "Other non-current assets", "note_ref": "", "amount": other_nc_assets}, indent=1),
-        ),
-        total=ReportTotal(label="Total Non-Current Assets", cells={"amount": total_non_curr_assets}, level=2),
-    )
-
     # 2. Current Assets
     curr_inv = _get_group_node_amount(tree, "Assets", "Current Investments")
     inventories = _get_group_node_amount(tree, "Assets", "Inventories")
@@ -197,6 +191,31 @@ def build_balance_sheet(
     st_loans = _get_group_node_amount(tree, "Assets", "Short-term Loans and Advances")
     other_curr_assets = _get_group_node_amount(tree, "Assets", "Other Current Assets")
     total_curr_assets = curr_inv + inventories + trade_rec + cash_equiv + st_loans + other_curr_assets
+
+    rows_nc_assets = [
+        ReportRow(cells={"particulars": "Property, Plant and Equipment", "note_ref": "5", "amount": ppe}, indent=1),
+        ReportRow(cells={"particulars": "Capital work-in-progress", "note_ref": "", "amount": cwip}, indent=1),
+        ReportRow(cells={"particulars": "Investment Property", "note_ref": "", "amount": inv_prop}, indent=1),
+        ReportRow(cells={"particulars": "Goodwill / Intangible assets", "note_ref": "", "amount": goodwill + intangibles}, indent=1),
+        ReportRow(cells={"particulars": "Non-current investments", "note_ref": "", "amount": non_curr_inv}, indent=1),
+        ReportRow(cells={"particulars": "Long-term loans and advances", "note_ref": "", "amount": lt_loans}, indent=1),
+        ReportRow(cells={"particulars": "Other non-current assets", "note_ref": "", "amount": other_nc_assets}, indent=1),
+    ]
+
+    total_assets_calc = total_non_curr_assets + total_curr_assets
+    diff_assets = summary.assets - total_assets_calc
+    if diff_assets != Decimal("0.00"):
+        rows_nc_assets.append(
+            ReportRow(cells={"particulars": "Other / unallocated assets", "note_ref": "", "amount": diff_assets}, indent=1)
+        )
+        total_non_curr_assets += diff_assets
+
+    sec_non_curr_assets = ReportSection(
+        title="1. Non-Current Assets",
+        columns=cols,
+        rows=tuple(rows_nc_assets),
+        total=ReportTotal(label="Total Non-Current Assets", cells={"amount": total_non_curr_assets}, level=2),
+    )
 
     sec_curr_assets = ReportSection(
         title="2. Current Assets",
@@ -564,6 +583,13 @@ def build_extended_trial_balance(
     tot_bs_dr = Decimal(0)
     tot_bs_cr = Decimal(0)
 
+    warnings_list = list(warnings)
+    unmapped_ledgers = [f for f in figures if not f.top_group]
+    if unmapped_ledgers:
+        warnings_list.append(
+            f"{len(unmapped_ledgers)} ledger(s) are unmapped to Schedule III groups and require mapping before final statutory presentation."
+        )
+
     for f in figures:
         # Unadjusted
         u_dr = f.net_debit if f.net_debit > 0 else Decimal(0)
@@ -605,7 +631,7 @@ def build_extended_trial_balance(
         rows.append(
             ReportRow(
                 cells={
-                    "name": f.ledger_name,
+                    "name": f.ledger_name if f.top_group else f"{f.ledger_name} (Unmapped)",
                     "unadj_dr": u_dr,
                     "unadj_cr": u_cr,
                     "adj_dr": a_dr,
@@ -651,7 +677,8 @@ def build_extended_trial_balance(
         period_label=period_label,
         units=units,
         sections=(section,),
-        warnings=tuple(warnings),
+        warnings=tuple(warnings_list),
+        landscape=True,
     )
 
 
@@ -692,7 +719,7 @@ def build_adjusting_entries(
                     cells={
                         "code": e_code,
                         "desc": e_desc,
-                        "ledger": getattr(line, "ledger_name", None) or str(getattr(line, "ledger_id", "")),
+                        "ledger": line.ledger.ledger_name,
                         "debit": dr,
                         "credit": cr,
                     }

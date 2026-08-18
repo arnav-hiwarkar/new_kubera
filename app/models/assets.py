@@ -63,6 +63,16 @@ class AssetLifecycleStatus(str, enum.Enum):
     disposed = "disposed"
 
 
+class AssetDisposalType(str, enum.Enum):
+    """Statutory disposal types for Fixed Assets."""
+
+    sale = "sale"
+    scrap = "scrap"
+    write_off = "write_off"
+    loss_destruction = "loss_destruction"
+    insurance_claim = "insurance_claim"
+
+
 class AssetOperationalStatus(str, enum.Enum):
     """Where the asset is in its working life — orthogonal to lifecycle_status."""
 
@@ -335,6 +345,9 @@ class Asset(Base, TimestampMixin, TenantScopedMixin):
     disposal_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     disposal_gain_loss: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     disposal_it_proceeds: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    disposed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True
+    )
 
     # --- Conditional groups ---
     registration_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -369,6 +382,7 @@ class Asset(Base, TimestampMixin, TenantScopedMixin):
     acquisition = relationship("AssetAcquisition", back_populates="units")
     category = relationship("AssetCategory", lazy="joined")
     it_block = relationship("ItAssetBlock", lazy="joined")
+    disposed_by_user = relationship("CompanyUser", foreign_keys=[disposed_by], lazy="joined")
 
 
 # Asset codes are unique per company, case-insensitively. Partial (WHERE NOT NULL)

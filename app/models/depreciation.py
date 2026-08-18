@@ -1,7 +1,7 @@
 """Depreciation runs and calculation result tables for Companies Act and Income Tax."""
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -13,6 +13,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -27,17 +28,35 @@ class DepreciationRunStatus(str, enum.Enum):
     finalized = "finalized"
 
 
+class DepreciationBook(str, enum.Enum):
+    companies_act = "companies_act"
+    income_tax = "income_tax"
+
+
 class DepreciationRun(Base, TimestampMixin, TenantScopedMixin):
     """Execution run of depreciation calculation for a financial year."""
 
     __tablename__ = "depreciation_runs"
+    __table_args__ = (
+        Index(
+            "uq_depreciation_runs_company_fy_book_finalized",
+            "company_id",
+            "financial_year_id",
+            "book",
+            unique=True,
+            postgresql_where=text("status = 'finalized'"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     financial_year_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("financial_years.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    book: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=DepreciationBook.companies_act.value, server_default="companies_act"
+    )
     run_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=DepreciationRunStatus.draft.value, server_default="draft", index=True

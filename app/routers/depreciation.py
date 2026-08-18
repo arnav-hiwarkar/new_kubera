@@ -24,7 +24,10 @@ from app.schemas.depreciation import (
     AssetDepreciationLineResponse,
     ItBlockDepreciationLineResponse,
 )
+from app.services.depreciation import DepreciationDataError
 from app.services.depreciation_query import (
+    DepreciationConflictError,
+    FinancialYearNotFoundError,
     execute_depreciation_run,
     finalize_depreciation_run,
 )
@@ -47,6 +50,7 @@ def _populate_run_summary(run: DepreciationRun) -> DepreciationRunResponse:
         company_id=run.company_id,
         financial_year_id=run.financial_year_id,
         financial_year_label=fy_label,
+        book=run.book,
         run_date=run.run_date,
         status=run.status,
         finalized_at=run.finalized_at,
@@ -93,11 +97,20 @@ async def create_depreciation_run(
             db=db,
             company_id=current_user.company_id,
             financial_year_id=body.financial_year_id,
+            book=body.book,
             user_id=current_user.id,
             notes=body.notes,
         )
-    except ValueError as e:
+    except FinancialYearNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except DepreciationConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except DepreciationDataError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
     # Reload with relations
     stmt = (
@@ -192,6 +205,8 @@ async def finalize_run(
             run_id=run_id,
             user_id=current_user.id,
         )
+    except DepreciationConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 

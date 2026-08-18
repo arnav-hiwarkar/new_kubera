@@ -43,7 +43,7 @@ async def load_adjustments(
     """Net-debit adjustment per ledger from APPROVED entries only."""
     res = await db.execute(
         select(AuditEntry)
-        .options(selectinload(AuditEntry.lines))
+        .options(selectinload(AuditEntry.lines).selectinload(AuditEntryLine.ledger))
         .where(and_(AuditEntry.engagement_id == engagement_id,
                     AuditEntry.status == AuditEntryStatus.approved))
         .order_by(AuditEntry.created_at.asc())

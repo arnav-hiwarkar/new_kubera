@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, FileSpreadsheet, FileText, Download } from 'lucide-react'
 import { PageHeader, Card, Button, Spinner, useToast, EmptyState } from '@/components/ui'
 import { useFinancialYears } from '@/api/hooks/financialYears'
+import { useAssetCategories } from '@/api/hooks/assetMasters'
 import { useAssetReportsList, useAssetReportPreview, useArchiveAssetReport } from '@/api/hooks/assetReports'
 import { assetReportsApi } from '@/api/endpoints/assetReports'
 import { ReportExportMenu } from '@/components/reports/ReportExportMenu'
@@ -16,30 +17,46 @@ const UNIT_OPTIONS = [
   { key: 'crores', label: 'Crores (₹ Cr)' },
 ] as const
 
+const STATUS_OPTIONS = [
+  { key: '', label: 'Default / All Statuses' },
+  { key: 'capitalized', label: 'Capitalized' },
+  { key: 'draft', label: 'Draft' },
+  { key: 'ready', label: 'Ready' },
+  { key: 'disposed', label: 'Disposed' },
+] as const
+
 export function AssetReportsPage() {
   const { data: fys = [], isLoading: fysLoading } = useFinancialYears()
+  const { data: categories = [] } = useAssetCategories()
   const { data: reports = [] } = useAssetReportsList()
   const toast = useToast()
 
   const [selectedFyId, setSelectedFyId] = useState<string>('')
   const [selectedReportKey, setSelectedReportKey] = useState<string>('fixed_asset_register')
   const [unit, setUnit] = useState<'absolute' | 'thousands' | 'lakhs' | 'crores'>('absolute')
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('')
+  const [selectedStatus, setSelectedStatus] = useState<string>('')
   const [downloadingPack, setDownloadingPack] = useState(false)
 
   const activeFyId = selectedFyId || (fys.length > 0 ? fys[0].id : '')
   const activeFy = fys.find((f) => f.id === activeFyId)
 
+  const activeFilters = {
+    category_id: selectedCategoryId || undefined,
+    lifecycle_status: selectedStatus || undefined,
+  }
+
   const {
     data: previewHtml,
     isLoading: previewLoading,
     error: previewError,
-  } = useAssetReportPreview(selectedReportKey, activeFyId, unit)
+  } = useAssetReportPreview(selectedReportKey, activeFyId, unit, activeFilters)
 
   const archiveMutation = useArchiveAssetReport()
 
   const handleExport = async (format: 'xlsx' | 'pdf' | 'html') => {
     if (!activeFyId) return
-    const url = assetReportsApi.exportUrl(selectedReportKey, activeFyId, format, unit)
+    const url = assetReportsApi.exportUrl(selectedReportKey, activeFyId, format, unit, activeFilters)
     const token = localStorage.getItem('company_token') || ''
     try {
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -62,6 +79,7 @@ export function AssetReportsPage() {
         financialYearId: activeFyId,
         format: 'pdf',
         unit,
+        filters: activeFilters,
       })
       toast.success('Report archived to docVault')
     } catch (e) {
@@ -150,6 +168,43 @@ export function AssetReportsPage() {
                   {UNIT_OPTIONS.map((u) => (
                     <option key={u.key} value={u.key}>
                       {u.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  Category
+                </label>
+                <select
+                  value={selectedCategoryId}
+                  onChange={(e) => setSelectedCategoryId(e.target.value)}
+                  className="h-9 rounded-btn border border-border-strong bg-bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  <option value="">All Categories</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  Lifecycle Status
+                </label>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="h-9 rounded-btn border border-border-strong bg-bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
                     </option>
                   ))}
                 </select>
