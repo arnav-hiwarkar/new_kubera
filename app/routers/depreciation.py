@@ -97,7 +97,6 @@ async def create_depreciation_run(
             db=db,
             company_id=current_user.company_id,
             financial_year_id=body.financial_year_id,
-            book=body.book,
             user_id=current_user.id,
             notes=body.notes,
         )

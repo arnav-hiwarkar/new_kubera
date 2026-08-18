@@ -8,8 +8,12 @@ from pydantic import BaseModel, ConfigDict
 
 
 class DepreciationRunCreate(BaseModel):
+    # No `book` field: one run computes both the Companies Act and the Income Tax
+    # book in a single pass, and finalized runs are now unique per (company,
+    # financial year) regardless of book. Accepting a `book` here invited callers
+    # into a distinction the engine does not make — an unvalidated string that
+    # changed nothing but could slip a second "finalized" run past the old index.
     financial_year_id: uuid.UUID
-    book: str = "companies_act"
     notes: Optional[str] = None
 
 

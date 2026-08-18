@@ -12,6 +12,7 @@ Generates XLSX, PDF, and HTML statutory fixed-asset and depreciation reports:
 - Physical verification sheet
 - GST & ITC summary
 """
+import enum
 import io
 import uuid
 from dataclasses import replace
@@ -26,7 +27,12 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_company_user, require_assets_module
 from app.database import get_db
-from app.models.assets import Asset, AssetLifecycleStatus
+from app.models.assets import (
+    Asset,
+    AssetCondition,
+    AssetLifecycleStatus,
+    AssetOperationalStatus,
+)
 from app.models.asset_masters import AssetCategory, AssetLookup, ItAssetBlock
 from app.models.company import Company, CompanyUser
 from app.models.depreciation import DepreciationRun, AssetDepreciationLine
@@ -62,6 +68,27 @@ from app.services.reporting.workbook import write_document, write_workbook
 router = APIRouter(prefix="/api/v1/asset-reports", tags=["asset-reports"])
 
 
+def _coerce_enum_filter(value: Optional[str], enum_cls, param_name: str):
+    """Turn a raw query-string filter into its enum member, or 422.
+
+    These filters arrive as bare strings. Handing an unknown one straight to
+    `Asset.condition == "excellent"` does not raise a tidy validation error — it
+    reaches the Postgres enum comparison and blows up with an uncaught ValueError,
+    so the whole report 500s. Coercing here converts that into a 422 that names the
+    values the caller may actually use.
+    """
+    if value is None:
+        return None
+    try:
+        return enum_cls(value)
+    except ValueError:
+        allowed = ", ".join(m.value for m in enum_cls)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid {param_name} '{value}'. Allowed values: {allowed}.",
+        )
+
+
 async def _load_asset_context(
     db: AsyncSession,
     company_id: uuid.UUID,
@@ -84,11 +111,25 @@ async def _load_asset_context(
     company_name = company.name if company else "Company"
 
     # Default Fixed Asset Register and Dimension Summary to capitalized unless overridden
-    effective_lifecycle_status = lifecycle_status
-    if effective_lifecycle_status == "all":
+    # "all" is an explicit request to drop the default, not a lifecycle value — so it
+    # is handled before coercion, which would reject it.
+    if lifecycle_status == "all":
         effective_lifecycle_status = None
-    elif effective_lifecycle_status is None and report_key in (REPORT_FIXED_ASSET_REGISTER, REPORT_DIMENSION_SUMMARY):
-        effective_lifecycle_status = AssetLifecycleStatus.capitalized.value
+    elif lifecycle_status is None:
+        effective_lifecycle_status = (
+            AssetLifecycleStatus.capitalized
+            if report_key in (REPORT_FIXED_ASSET_REGISTER, REPORT_DIMENSION_SUMMARY)
+            else None
+        )
+    else:
+        effective_lifecycle_status = _coerce_enum_filter(
+            lifecycle_status, AssetLifecycleStatus, "lifecycle_status"
+        )
+
+    operational_status = _coerce_enum_filter(
+        operational_status, AssetOperationalStatus, "operational_status"
+    )
+    condition = _coerce_enum_filter(condition, AssetCondition, "condition")
 
     # Query lookups (locations, departments, etc.)
     lookup_stmt = select(AssetLookup).where(AssetLookup.company_id == company_id)
@@ -154,14 +195,19 @@ async def _load_asset_context(
     block_res = await db.execute(block_stmt)
     blocks_by_id = {str(b.id): b for b in block_res.scalars().all()}
 
-    # Format applied filters summary for subtitle
+    # Format applied filters summary for subtitle. The three enum filters are coerced
+    # to enum members above, and str(SomeEnum.member) renders as
+    # "AssetCondition.good" — so take .value for a label a reader would recognise.
+    def _label(v) -> str:
+        return v.value if isinstance(v, enum.Enum) else str(v)
+
     filters_applied = []
     if effective_lifecycle_status:
-        filters_applied.append(f"Status: {effective_lifecycle_status}")
+        filters_applied.append(f"Status: {_label(effective_lifecycle_status)}")
     if operational_status:
-        filters_applied.append(f"Operation: {operational_status}")
+        filters_applied.append(f"Operation: {_label(operational_status)}")
     if condition:
-        filters_applied.append(f"Condition: {condition}")
+        filters_applied.append(f"Condition: {_label(condition)}")
     if category_id:
         cat_name = next((a.category.name for a in assets if a.category and a.category_id == category_id), None)
         if not cat_name:
@@ -384,13 +430,21 @@ async def export_asset_report_pack(
     docs: List[ReportDocument] = []
     omissions: List[str] = []
     fy_label = ""
-    for key, title, _ in ALL_ASSET_REPORTS:
-        try:
-            ctx = await _load_asset_context(
+
+    # Across the ten reports the loaded context varies in exactly one way: whether
+    # report_key makes the lifecycle filter default to capitalized. So there are at
+    # most two distinct contexts, and loading one per report cost ten full asset
+    # materialisations (plus their eager loads) to produce two result sets.
+    ctx_cache: Dict[bool, Dict[str, Any]] = {}
+
+    async def _context_for(report_key: str) -> Dict[str, Any]:
+        defaults_to_capitalized = report_key in (REPORT_FIXED_ASSET_REGISTER, REPORT_DIMENSION_SUMMARY)
+        if defaults_to_capitalized not in ctx_cache:
+            ctx_cache[defaults_to_capitalized] = await _load_asset_context(
                 db,
                 current_user.company_id,
                 financial_year_id,
-                report_key=key,
+                report_key=report_key,
                 lifecycle_status=lifecycle_status,
                 operational_status=operational_status,
                 condition=condition,
@@ -400,6 +454,11 @@ async def export_asset_report_pack(
                 custodian_id=custodian_id,
                 acquisition_id=acquisition_id,
             )
+        return ctx_cache[defaults_to_capitalized]
+
+    for key, title, _ in ALL_ASSET_REPORTS:
+        try:
+            ctx = await _context_for(key)
             fy_label = ctx["fy"].label
             docs.append(_build_doc_by_key(key, ctx, units=unit))
         except HTTPException as e:

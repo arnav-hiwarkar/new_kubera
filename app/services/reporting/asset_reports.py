@@ -717,11 +717,14 @@ def build_disposals_register_report(
         tot_proceeds += proceeds
         tot_gain_loss += gain_loss
 
+        # CompanyUser carries a single `full_name`, not first_name/last_name. Reading
+        # the latter always yielded "" and silently fell through to the email, so this
+        # column never once showed a person's name.
         disp_user_name = ""
-        if getattr(a, "disposed_by_user", None):
+        if a.disposed_by_user is not None:
             u = a.disposed_by_user
-            disp_user_name = f"{getattr(u, 'first_name', '')} {getattr(u, 'last_name', '')}".strip() or getattr(u, "email", "")
-        elif getattr(a, "disposed_by", None):
+            disp_user_name = (u.full_name or "").strip() or u.email
+        elif a.disposed_by is not None:
             disp_user_name = str(a.disposed_by)
 
         rows.append(

@@ -990,11 +990,27 @@ async def test_f9_gate_scenario_2_fy1_finalized_then_fy2_succeeds(client: AsyncC
     # Finalize FY1
     r1 = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy1_id}, headers=headers)
     assert r1.status_code == 201
-    await client.post(f"/api/v1/depreciation/runs/{r1.json()['id']}/finalize", headers=headers)
+    fin1 = await client.post(f"/api/v1/depreciation/runs/{r1.json()['id']}/finalize", headers=headers)
+    assert fin1.status_code == 200, fin1.text
 
     # Run FY2 -> succeeds (201)
     r2 = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy2_id}, headers=headers)
     assert r2.status_code == 201
+
+    # ...and actually carries forward. The docstring claimed this; nothing checked it.
+    # 60000 cost, 5% residual (3000) => 57000 base over 60 months = 11400/yr.
+    lines1 = await client.get(f"/api/v1/depreciation/runs/{r1.json()['id']}/lines", headers=headers)
+    assert lines1.status_code == 200, lines1.text
+    line1 = lines1.json()[0]
+    assert float(line1["closing_accumulated_depreciation"]) == 11400.00
+
+    lines2 = await client.get(f"/api/v1/depreciation/runs/{r2.json()['id']}/lines", headers=headers)
+    assert lines2.status_code == 200, lines2.text
+    line2 = lines2.json()[0]
+    assert float(line2["opening_accumulated_depreciation"]) == float(
+        line1["closing_accumulated_depreciation"]
+    ), "FY2 must open where FY1 closed"
+    assert float(line2["closing_accumulated_depreciation"]) == 22800.00
 
 
 @pytest.mark.asyncio
@@ -1032,6 +1048,15 @@ async def test_f9_gate_scenario_3_first_ever_fy_runs_cleanly(client: AsyncClient
     # Run FY -> 201 created without errors
     r = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy_id}, headers=headers)
     assert r.status_code == 201
+
+    # A 201 alone would also be returned by a run that silently computed nothing.
+    # Assert it actually depreciated, and opened at zero as a first year must.
+    lines = await client.get(f"/api/v1/depreciation/runs/{r.json()['id']}/lines", headers=headers)
+    assert lines.status_code == 200, lines.text
+    assert len(lines.json()) == 1, "expected one asset line"
+    line = lines.json()[0]
+    assert float(line["opening_accumulated_depreciation"]) == 0.00
+    assert float(line["depreciation_for_year"]) > 0
 
 
 @pytest.mark.asyncio
@@ -1078,5 +1103,15 @@ async def test_f9_gate_scenario_4_pre_cutover_asset_runs_cleanly(client: AsyncCl
     # Running FY2 should succeed (201) because asset is pre-cutover
     r = await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy2_id}, headers=headers)
     assert r.status_code == 201, f"Expected 201, got {r.status_code}: {r.text}"
+
+    # The point of a pre-cutover asset is that its opening balance is *used* rather
+    # than recomputed. A run that ignored it would also return 201, so check the
+    # figure actually carried in.
+    lines = await client.get(f"/api/v1/depreciation/runs/{r.json()['id']}/lines", headers=headers)
+    assert lines.status_code == 200, lines.text
+    line = lines.json()[0]
+    assert float(line["opening_accumulated_depreciation"]) == 20000.00, (
+        "pre-cutover opening accumulated depreciation was not honoured"
+    )
 
 

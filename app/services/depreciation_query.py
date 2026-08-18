@@ -143,7 +143,6 @@ async def execute_depreciation_run(
     db: AsyncSession,
     company_id: uuid.UUID,
     financial_year_id: uuid.UUID,
-    book: str = "companies_act",
     user_id: Optional[uuid.UUID] = None,
     notes: Optional[str] = None,
 ) -> DepreciationRun:
@@ -160,13 +159,15 @@ async def execute_depreciation_run(
         db, company_id, fy_start, fy.label
     )
 
-    # Supersede any existing draft run for this FY and book
+    # Supersede every existing draft run for this FY. Filtering by book here left
+    # same-FY drafts alive whenever the book label differed, which is how a caller
+    # could stack up drafts the one-run-per-FY model does not expect. Finalized runs
+    # are never touched.
     await db.execute(
         delete(DepreciationRun).where(
             and_(
                 DepreciationRun.company_id == company_id,
                 DepreciationRun.financial_year_id == financial_year_id,
-                DepreciationRun.book == book,
                 DepreciationRun.status == DepreciationRunStatus.draft.value,
             )
         )
@@ -192,7 +193,6 @@ async def execute_depreciation_run(
     run = DepreciationRun(
         company_id=company_id,
         financial_year_id=financial_year_id,
-        book=book,
         run_date=datetime.now(timezone.utc),
         status=DepreciationRunStatus.draft.value,
         notes=notes,

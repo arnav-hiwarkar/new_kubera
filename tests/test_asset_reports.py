@@ -656,6 +656,107 @@ async def test_gst_itc_summary_interstate_igst(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_gst_itc_summary_missing_rate_is_not_invented(client: AsyncClient):
+    """A missing GST rate must stay missing — never fall back to a hardcoded 18%.
+
+    The original report defaulted `gst_rate` to 18% when the acquisition had none,
+    which prints an invented statutory rate on a tax document. Every other GST test
+    seeds a real rate, so without this one a reinstated fallback would pass the whole
+    suite unnoticed.
+    """
+    await seed_masters()
+    headers = await admin_headers(client, "norate_gst@testco.com")
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == "norate_gst@testco.com"))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+
+        acq = AssetAcquisition(
+            company_id=user.company_id,
+            invoice_number="INV-NORATE-1",
+            invoice_date=date(2024, 5, 20),
+            quantity=1,
+            unit_basic_price=Decimal("100000.00"),
+            discount_type=DiscountType.amount,
+            gst_rate=None,
+            cgst_amount=None,
+            sgst_amount=None,
+            igst_amount=None,
+            itc_treatment=ItcTreatment.eligible,
+        )
+        session.add(acq)
+        await session.flush()
+
+        asset = Asset(
+            company_id=user.company_id,
+            acquisition_id=acq.id,
+            asset_name="Rateless Rig",
+            asset_code="RIG-001",
+            category_id=cat.id if cat else None,
+            lifecycle_status=AssetLifecycleStatus.capitalized,
+            operational_status=AssetOperationalStatus.in_use,
+            capitalization_date=date(2024, 6, 1),
+            available_for_use_date=date(2024, 6, 1),
+            useful_life_months=36,
+            residual_pct=Decimal("5.00"),
+            dep_method="slm",
+            original_cost=Decimal("100000.00"),
+        )
+        session.add(asset)
+        await session.commit()
+
+        from app.services.reporting.asset_reports import build_gst_itc_summary_report
+        from app.services.reporting.pdf import render_html
+
+        doc = build_gst_itc_summary_report([asset], "No Rate Co", "2024-25", "absolute")
+        row = doc.sections[0].rows[0].cells
+
+        assert row["gst_rate"] is None, f"Expected no rate, got {row['gst_rate']!r}"
+        assert row["cgst"] == Decimal("0.00")
+        assert row["sgst"] == Decimal("0.00")
+        assert row["igst"] == Decimal("0.00")
+        assert row["total_tax"] == Decimal("0.00")
+
+        # And it must not surface as a number anywhere in the rendered output.
+        html = render_html(doc)
+        assert "18.00%" not in html
+
+
+@pytest.mark.asyncio
+async def test_asset_reports_invalid_enum_filter_is_422_not_500(client: AsyncClient):
+    """An unknown condition/operational_status must be refused, not blow up.
+
+    These filters arrive as bare strings and are compared against Postgres enum
+    columns. Before validation, a value the enum did not know raised deep inside
+    SQLAlchemy and surfaced as a 500 — which is exactly what happened when the
+    frontend offered 'excellent' and 'scrap', neither of which AssetCondition has.
+    """
+    ctx = await setup_asset_reports_environment(client, email="badenum@testco.com")
+    fy_id, headers = ctx["fy_id"], ctx["headers"]
+
+    for param, bad_value in (("condition", "excellent"), ("operational_status", "decommissioned")):
+        res = await client.get(
+            f"/api/v1/asset-reports/fixed_asset_register/export"
+            f"?financial_year_id={fy_id}&format=xlsx&{param}={bad_value}",
+            headers=headers,
+        )
+        assert res.status_code == 422, (
+            f"Expected 422 for {param}={bad_value}, got {res.status_code}: {res.text}"
+        )
+        # The error must name the values the caller may actually use.
+        assert param in res.text
+        assert "Allowed values" in res.text
+
+    # A valid value on the same parameter still works.
+    ok = await client.get(
+        f"/api/v1/asset-reports/fixed_asset_register/export"
+        f"?financial_year_id={fy_id}&format=xlsx&condition=good",
+        headers=headers,
+    )
+    assert ok.status_code == 200, ok.text
+
+
+@pytest.mark.asyncio
 async def test_disposals_register_includes_disposed_by_attribution(client: AsyncClient):
     """H1: Disposals Register output includes Disposed By column and the acting user name/email."""
     await seed_masters()
@@ -713,7 +814,11 @@ async def test_disposals_register_includes_disposed_by_attribution(client: Async
     assert rep_res.status_code == 200
     html = rep_res.text
     assert "Disposed By" in html
-    assert "disp_reg_user@testco.com" in html or "Admin" in html
+    # The acting user's NAME, not their email. The report used to read first_name /
+    # last_name, which CompanyUser does not have, so it always fell through to the
+    # email — and the original `or "Admin"` hedge let that pass unnoticed.
+    assert "Test Admin" in html, "Disposed By should render the user's full_name"
+    assert "disp_reg_user@testco.com" not in html
 
 
 @pytest.mark.asyncio

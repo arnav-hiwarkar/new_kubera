@@ -26,22 +26,26 @@ const STATUS_OPTIONS = [
   { key: 'disposed', label: 'Disposed' },
 ] as const
 
+// These must mirror AssetOperationalStatus and AssetCondition in
+// app/models/assets.py exactly. A value the backend enum does not know is not a
+// 422 — it reaches the Postgres enum comparison and raises, so the whole report
+// 500s. The backend now validates too, but keeping the lists in step is what
+// stops a user ever seeing that error.
 const OP_STATUS_OPTIONS = [
   { key: '', label: 'All Operations' },
   { key: 'in_use', label: 'In Use' },
-  { key: 'in_storage', label: 'In Storage' },
-  { key: 'under_maintenance', label: 'Under Maintenance' },
-  { key: 'decommissioned', label: 'Decommissioned' },
   { key: 'idle', label: 'Idle' },
+  { key: 'under_maintenance', label: 'Under Maintenance' },
+  { key: 'in_storage', label: 'In Storage' },
 ] as const
 
 const CONDITION_OPTIONS = [
   { key: '', label: 'All Conditions' },
-  { key: 'excellent', label: 'Excellent' },
+  { key: 'new', label: 'New' },
   { key: 'good', label: 'Good' },
   { key: 'fair', label: 'Fair' },
   { key: 'poor', label: 'Poor' },
-  { key: 'scrap', label: 'Scrap' },
+  { key: 'unusable', label: 'Unusable' },
 ] as const
 
 export function AssetReportsPage() {
@@ -49,7 +53,6 @@ export function AssetReportsPage() {
   const { data: categories = [] } = useAssetCategories()
   const { data: locations = [] } = useAssetLookups('location')
   const { data: branches = [] } = useAssetLookups('branch')
-  const { data: departments = [] } = useAssetLookups('department')
   const { data: reports = [] } = useAssetReportsList()
   const toast = useToast()
 
@@ -62,7 +65,6 @@ export function AssetReportsPage() {
   const [selectedCondition, setSelectedCondition] = useState<string>('')
   const [selectedLocationId, setSelectedLocationId] = useState<string>('')
   const [selectedBranchId, setSelectedBranchId] = useState<string>('')
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('')
   const [downloadingPack, setDownloadingPack] = useState(false)
 
   const activeFyId = selectedFyId || (fys.length > 0 ? fys[0].id : '')
@@ -319,26 +321,8 @@ export function AssetReportsPage() {
                 </div>
               )}
 
-              {/* Department */}
-              {departments.length > 0 && (
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-text-muted">
-                    Department
-                  </label>
-                  <select
-                    value={selectedDepartmentId}
-                    onChange={(e) => setSelectedDepartmentId(e.target.value)}
-                    className="h-9 rounded-btn border border-border-strong bg-bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
-                  >
-                    <option value="">All Departments</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* No Department filter: the asset-report endpoints expose no
+                  department_id parameter, so a control here would be inert. */}
             </div>
 
             {/* Actions & Export */}
