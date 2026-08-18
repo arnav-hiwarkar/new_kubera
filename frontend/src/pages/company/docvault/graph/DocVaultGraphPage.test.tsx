@@ -183,8 +183,8 @@ function renderGraphPage(initialEntries = ['/app/docvault/graph']) {
 describe('DocVaultGraphPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(docvaultApi.listBuckets as any).mockResolvedValue(mockBuckets)
-    ;(docvaultApi.listDocuments as any).mockResolvedValue(mockDocuments)
+    vi.mocked(docvaultApi.listBuckets).mockResolvedValue(mockBuckets)
+    vi.mocked(docvaultApi.listDocuments).mockResolvedValue(mockDocuments)
   })
 
   it('renders graph page container, HUD, canvas, navigation controls, and legend', async () => {
@@ -309,8 +309,8 @@ describe('DocVaultGraphPage', () => {
 describe('DocVaultPage -> Graph Page navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(docvaultApi.listBuckets as any).mockResolvedValue(mockBuckets)
-    ;(docvaultApi.listDocuments as any).mockResolvedValue(mockDocuments)
+    vi.mocked(docvaultApi.listBuckets).mockResolvedValue(mockBuckets)
+    vi.mocked(docvaultApi.listDocuments).mockResolvedValue(mockDocuments)
   })
 
   it('renders "3D Graph View" button in DocVaultPage header and navigates to graph view', async () => {

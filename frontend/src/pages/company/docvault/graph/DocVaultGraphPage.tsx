@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import type { ForceGraph3DInstance } from '3d-force-graph'
 import { useBuckets, useDocuments } from '@/api/hooks/docvault'
 import type { ColorMode, GraphNode } from './types/graph'
 import { useGraphData } from './hooks/useGraphData'
@@ -19,7 +20,7 @@ export function DocVaultGraphPage() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
 
-  const graphInstanceRef = useRef<any>(null)
+  const graphInstanceRef = useRef<ForceGraph3DInstance | null>(null)
   const graphData = useGraphData(buckets, documents, colorMode, visibleBucketIds)
   const graphControls = useGraphControls(graphInstanceRef)
 

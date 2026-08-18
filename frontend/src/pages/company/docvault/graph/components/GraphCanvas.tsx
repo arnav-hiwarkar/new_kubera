@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import ForceGraph3D, { type ForceGraph3DInstance } from '3d-force-graph'
-import type { GraphData, GraphNode } from '../types/graph'
+import type { GraphData, GraphLink, GraphNode } from '../types/graph'
 import { createNodeSprite, updateSpriteLOD } from '../lib/textSprite'
 
 export interface GraphCanvasProps {
@@ -10,8 +10,15 @@ export interface GraphCanvasProps {
   onSelectNode?: (node: GraphNode | null) => void
   hoveredNodeId?: string | null
   onHoverNode?: (node: GraphNode | null) => void
-  graphInstanceRef?: React.MutableRefObject<ForceGraph3DInstance | null> | React.RefObject<ForceGraph3DInstance | null> | { current: any }
+  graphInstanceRef?: React.MutableRefObject<ForceGraph3DInstance | null> | React.RefObject<ForceGraph3DInstance | null> | { current: ForceGraph3DInstance | null }
   className?: string
+}
+
+interface ForceSimulationLike {
+  alphaTarget?: (alpha: number) => ForceSimulationLike
+  restart?: () => ForceSimulationLike
+  distance?: (fn: (link: GraphLink) => number) => ForceSimulationLike
+  strength?: (fnOrVal: number | ((link: GraphLink) => number)) => ForceSimulationLike
 }
 
 export function GraphCanvas({
@@ -24,7 +31,7 @@ export function GraphCanvas({
   className = '',
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const graphObjRef = useRef<any>(null)
+  const graphObjRef = useRef<ForceGraph3DInstance | null>(null)
   const spritesRef = useRef<Map<string, THREE.Sprite>>(new Map())
   const dataRef = useRef<GraphData>(data)
   dataRef.current = data
@@ -49,24 +56,23 @@ export function GraphCanvas({
     spritesRef.current.clear()
 
     // Initialize 3d-force-graph
-    const ForceGraphFactory = (ForceGraph3D as any).default || ForceGraph3D
-    const graph = (typeof ForceGraphFactory === 'function' && ForceGraphFactory.prototype
-      ? new ForceGraphFactory(containerRef.current)
-      : (ForceGraphFactory as any)()(containerRef.current)) as ForceGraph3DInstance
+    const ForceGraphFactory = (ForceGraph3D as unknown as { default?: () => (elem: HTMLElement) => ForceGraph3DInstance }).default || (ForceGraph3D as unknown as () => (elem: HTMLElement) => ForceGraph3DInstance)
+    const initFn = typeof ForceGraphFactory === 'function' ? ForceGraphFactory() : ForceGraphFactory
+    const graph = (typeof initFn === 'function' ? initFn(containerRef.current) : initFn) as ForceGraph3DInstance
 
     graph
       .backgroundColor('#0B0F17')
       .showNavInfo(false)
       .nodeRelSize(4)
-      .nodeVal((node: any) => (node.type === 'bucket' ? 16 : 6))
-      .linkWidth((link: any) => (link.kind === 'bucket-doc' ? 1.5 : 0.8))
+      .nodeVal((node) => ((node as GraphNode).type === 'bucket' ? 16 : 6))
+      .linkWidth((link) => ((link as GraphLink).kind === 'bucket-doc' ? 1.5 : 0.8))
       .linkOpacity(0.4)
-      .linkColor((link: any) => link.color || 'rgba(100, 160, 255, 0.35)')
-      .linkDirectionalParticles((link: any) => (link.kind === 'bucket-doc' ? 2 : 0))
+      .linkColor((link) => (link as GraphLink).color || 'rgba(100, 160, 255, 0.35)')
+      .linkDirectionalParticles((link) => ((link as GraphLink).kind === 'bucket-doc' ? 2 : 0))
       .linkDirectionalParticleWidth(1.2)
       .linkDirectionalParticleSpeed(0.004)
-      .linkDirectionalParticleColor((link: any) => link.color || 'rgba(147, 197, 253, 0.8)')
-      .nodeThreeObject((nodeObj: any) => {
+      .linkDirectionalParticleColor((link) => (link as GraphLink).color || 'rgba(147, 197, 253, 0.8)')
+      .nodeThreeObject((nodeObj) => {
         const node = nodeObj as GraphNode
         const group = new THREE.Group()
         const isBucket = node.type === 'bucket'
@@ -122,61 +128,64 @@ export function GraphCanvas({
 
         return group
       })
-      .onNodeHover((node: any) => {
+      .onNodeHover((node) => {
         if (containerRef.current) {
           containerRef.current.style.cursor = node ? 'grab' : 'default'
         }
-        onHoverNodeRef.current?.(node || null)
+        onHoverNodeRef.current?.((node as GraphNode) || null)
       })
-      .onNodeClick((node: any) => {
-        onSelectNodeRef.current?.(node || null)
+      .onNodeClick((node) => {
+        onSelectNodeRef.current?.((node as GraphNode) || null)
       })
       .onBackgroundClick(() => {
         onSelectNodeRef.current?.(null)
       })
       // Elastic cluster drag
-      .onNodeDrag((_node: any) => {
+      .onNodeDrag(() => {
         if (containerRef.current) {
           containerRef.current.style.cursor = 'grabbing'
         }
         // Keep physics simulation warm so connected cluster nodes follow organically
-        if (typeof (graph as any).d3AlphaTarget === 'function') {
-          ;(graph as any).d3AlphaTarget(0.35)
-          ;(graph as any).d3ReheatSimulation?.()
+        const graphAny = graph as unknown as { d3AlphaTarget?: (a: number) => void; d3ReheatSimulation?: () => void }
+        if (typeof graphAny.d3AlphaTarget === 'function') {
+          graphAny.d3AlphaTarget(0.35)
+          graphAny.d3ReheatSimulation?.()
         }
-        const sim = (graph as any).d3Force?.('simulation')
+        const sim = graph.d3Force('simulation') as ForceSimulationLike | undefined
         if (sim && typeof sim.alphaTarget === 'function') {
           sim.alphaTarget(0.35)
           if (typeof sim.restart === 'function') sim.restart()
         }
       })
-      .onNodeDragEnd((node: any) => {
+      .onNodeDragEnd((node) => {
         if (containerRef.current) {
           containerRef.current.style.cursor = 'grab'
         }
-        if (typeof (graph as any).d3AlphaTarget === 'function') {
-          ;(graph as any).d3AlphaTarget(0)
+        const graphAny = graph as unknown as { d3AlphaTarget?: (a: number) => void }
+        if (typeof graphAny.d3AlphaTarget === 'function') {
+          graphAny.d3AlphaTarget(0)
         }
-        const sim = (graph as any).d3Force?.('simulation')
+        const sim = graph.d3Force('simulation') as ForceSimulationLike | undefined
         if (sim && typeof sim.alphaTarget === 'function') {
           sim.alphaTarget(0)
         }
         // Clear fixed coordinates so node participates freely in physics
         if (node) {
-          node.fx = undefined
-          node.fy = undefined
-          node.fz = undefined
+          const gNode = node as GraphNode
+          gNode.fx = undefined
+          gNode.fy = undefined
+          gNode.fz = undefined
         }
       })
 
     // Custom d3 forces for clustering
-    const linkForce = graph.d3Force('link')
-    if (linkForce && typeof linkForce.distance === 'function') {
-      linkForce.distance((link: any) => (link.kind === 'bucket-doc' ? 45 : 100))
-      linkForce.strength((link: any) => (link.kind === 'bucket-doc' ? 0.85 : 0.12))
+    const linkForce = graph.d3Force('link') as ForceSimulationLike | undefined
+    if (linkForce && typeof linkForce.distance === 'function' && typeof linkForce.strength === 'function') {
+      linkForce.distance((link: GraphLink) => (link.kind === 'bucket-doc' ? 45 : 100))
+      linkForce.strength((link: GraphLink) => (link.kind === 'bucket-doc' ? 0.85 : 0.12))
     }
 
-    const chargeForce = graph.d3Force('charge')
+    const chargeForce = graph.d3Force('charge') as ForceSimulationLike | undefined
     if (chargeForce && typeof chargeForce.strength === 'function') {
       chargeForce.strength(-110)
     }
@@ -220,7 +229,7 @@ export function GraphCanvas({
 
     graphObjRef.current = graph
     if (graphInstanceRef) {
-      ;(graphInstanceRef as any).current = graph
+      (graphInstanceRef as React.MutableRefObject<ForceGraph3DInstance | null>).current = graph
     }
 
     const handleResize = () => {
@@ -237,10 +246,10 @@ export function GraphCanvas({
         graph._destructor?.()
       }
       if (graphInstanceRef) {
-        ;(graphInstanceRef as any).current = null
+        (graphInstanceRef as React.MutableRefObject<ForceGraph3DInstance | null>).current = null
       }
     }
-  }, []) // Mount once
+  }, [graphInstanceRef])
 
   // Update graph data when data prop updates
   useEffect(() => {

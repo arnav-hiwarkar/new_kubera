@@ -27,7 +27,7 @@ export interface GraphNode {
   fx?: number
   fy?: number
   fz?: number
-  __sprite?: any
+  __sprite?: unknown
 }
 
 export interface GraphLink {

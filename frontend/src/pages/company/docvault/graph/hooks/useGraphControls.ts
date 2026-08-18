@@ -11,8 +11,19 @@ export interface GraphControlsApi {
   isPaused: boolean
 }
 
+export interface GraphInstanceLike {
+  cameraPosition?: (
+    pos?: { x: number; y: number; z: number },
+    lookAt?: { x: number; y: number; z: number },
+    transitionMs?: number,
+  ) => { x: number; y: number; z: number }
+  zoomToFit?: (durationMs?: number, padding?: number) => void
+  pauseAnimation?: () => void
+  resumeAnimation?: () => void
+}
+
 export function useGraphControls(
-  graphRef: React.RefObject<any> | React.MutableRefObject<any> | { current: any } | null | undefined,
+  graphRef: React.RefObject<GraphInstanceLike> | React.MutableRefObject<GraphInstanceLike | null> | { current: GraphInstanceLike | null } | null | undefined,
 ): GraphControlsApi {
   const [isPaused, setIsPaused] = useState(false)
 
@@ -25,7 +36,7 @@ export function useGraphControls(
       const currentDist = Math.hypot(node.x, node.y, node.z || 0) || 1
       const distRatio = 1 + distance / currentDist
 
-      graph.cameraPosition(
+      graph.cameraPosition?.(
         {
           x: node.x * distRatio,
           y: node.y * distRatio,
@@ -45,13 +56,13 @@ export function useGraphControls(
   const resetCamera = useCallback(() => {
     const graph = graphRef?.current
     if (!graph) return
-    graph.zoomToFit(1000, 80)
+    graph.zoomToFit?.(1000, 80)
   }, [graphRef])
 
   const recenter = useCallback(() => {
     const graph = graphRef?.current
     if (!graph) return
-    graph.cameraPosition({ x: 0, y: 0, z: 350 }, { x: 0, y: 0, z: 0 }, 1000)
+    graph.cameraPosition?.({ x: 0, y: 0, z: 350 }, { x: 0, y: 0, z: 0 }, 1000)
   }, [graphRef])
 
   const zoomIn = useCallback(() => {
@@ -59,7 +70,7 @@ export function useGraphControls(
     if (!graph) return
     const current = graph.cameraPosition?.()
     if (!current) return
-    graph.cameraPosition(
+    graph.cameraPosition?.(
       {
         x: current.x * 0.75,
         y: current.y * 0.75,
@@ -75,7 +86,7 @@ export function useGraphControls(
     if (!graph) return
     const current = graph.cameraPosition?.()
     if (!current) return
-    graph.cameraPosition(
+    graph.cameraPosition?.(
       {
         x: current.x * 1.35,
         y: current.y * 1.35,
