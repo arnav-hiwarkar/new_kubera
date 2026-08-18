@@ -27,6 +27,14 @@ if (!globalThis.localStorage) {
   })
 }
 
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as any
+}
+
 afterEach(() => {
   cleanup()
   localStorage.clear()

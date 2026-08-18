@@ -29,6 +29,7 @@ function BucketName({ label }: { label: string }) {
       setDistance(diff > 1 ? diff : 0)
     }
     measure()
+    if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(measure)
     ro.observe(outer)
     return () => ro.disconnect()

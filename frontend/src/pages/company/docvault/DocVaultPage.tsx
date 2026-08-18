@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Archive, Upload } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Archive, Network, Upload } from 'lucide-react'
 import {
   PageHeader,
   Button,
@@ -21,6 +22,7 @@ import { DocumentDrawer } from './DocumentDrawer'
 const LIVE_STATUSES = DOCUMENT_STATUS.filter((s) => s !== 'archived')
 
 export function DocVaultPage() {
+  const navigate = useNavigate()
   const toast = useToast()
   const { data: buckets = [] } = useBuckets()
   const { data: documents = [], isLoading } = useDocuments()
@@ -133,10 +135,16 @@ export function DocVaultPage() {
         title="DocVault"
         description="Encrypted company document library with buckets and version history"
         actions={
-          <Button onClick={() => setUploadOpen(true)}>
-            <Upload />
-            Upload
-          </Button>
+          <>
+            <Button variant="secondary" onClick={() => navigate('/app/docvault/graph')}>
+              <Network />
+              3D Graph View
+            </Button>
+            <Button onClick={() => setUploadOpen(true)}>
+              <Upload />
+              Upload
+            </Button>
+          </>
         }
       />
 

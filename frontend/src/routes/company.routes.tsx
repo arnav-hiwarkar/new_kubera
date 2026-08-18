@@ -11,6 +11,7 @@ import { CompanyProfilePage } from '@/pages/company/settings/CompanyProfilePage'
 import { Dashboard } from '@/pages/company/Dashboard'
 import { UsersDirectory } from '@/pages/company/UsersDirectory'
 import { DocVaultPage } from '@/pages/company/docvault/DocVaultPage'
+import { DocVaultGraphPage } from '@/pages/company/docvault/graph/DocVaultGraphPage'
 import { KraPage } from '@/pages/company/kra/KraPage'
 import { AssetsPage } from '@/pages/company/assets/AssetsPage'
 import { AssetDetailPage } from '@/pages/company/assets/AssetDetailPage'
@@ -77,6 +78,7 @@ export const companyRoutes: RouteObject = {
                 { path: 'sales', element: <ModuleGuard moduleId="sales"><SalesPage /></ModuleGuard> },
                 { path: 'custom-fields', element: <CustomFieldsPage /> },
                 { path: 'docvault', element: <ModuleGuard moduleId="docvault"><DocVaultPage /></ModuleGuard> },
+                { path: 'docvault/graph', element: <ModuleGuard moduleId="docvault"><DocVaultGraphPage /></ModuleGuard> },
                 { path: 'compliance/roc', element: <ModuleGuard moduleId="roc"><CompliancePage domain="roc" /></ModuleGuard> },
                 { path: 'compliance/secretarial', element: <ModuleGuard moduleId="secretarial"><CompliancePage domain="secretarial" /></ModuleGuard> },
                 {

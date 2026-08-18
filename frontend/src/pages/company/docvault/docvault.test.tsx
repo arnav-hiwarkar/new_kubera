@@ -3,10 +3,21 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '@/components/ui/Toast'
+import { MemoryRouter } from 'react-router-dom'
 import { UploadDocumentModal } from './UploadDocumentModal'
 import { DocumentDrawer } from './DocumentDrawer'
+import { DocVaultPage } from './DocVaultPage'
 import type { DocumentResponse } from '@/api/types'
 import { docvaultApi } from '@/api/endpoints/docvault'
+
+vi.mock('@/auth/company', () => ({
+  useCompanyAuth: () => ({
+    profile: { id: 'u-1', role: 'admin', email: 'admin@acme.test', full_name: 'Ada Admin' },
+    status: 'authenticated',
+    signIn: vi.fn(),
+    signOut: vi.fn(),
+  }),
+}))
 
 // Mock the API client layer — tests assert the module calls it correctly,
 // not the network itself.
@@ -100,3 +111,18 @@ describe('DocumentDrawer archive flow', () => {
     await waitFor(() => expect(docvaultApi.deleteDocument).toHaveBeenCalledWith('doc-1'))
   })
 })
+
+describe('DocVaultPage', () => {
+  it('renders header actions including 3D Graph View and Upload buttons', async () => {
+    wrap(
+      <MemoryRouter>
+        <DocVaultPage />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('heading', { name: 'DocVault' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /3D Graph View/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Upload/i })).toBeInTheDocument()
+  })
+})
+
