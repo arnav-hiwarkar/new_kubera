@@ -305,8 +305,10 @@ export function DepreciationTab({
           <span>
             This asset was already owned before the company started using the register.
             <span className="block text-xs text-text-muted">
-              Depreciation then continues from the balances below instead of being
-              recomputed from the capitalization date.
+              Depreciation continues from the balances below instead of being recomputed
+              from the capitalization date. The opening WDV you enter is what the asset
+              depreciates from — enter the real carrying amount, which may differ from
+              cost less accumulated depreciation if the asset was impaired or revalued.
             </span>
           </span>
         </label>
@@ -341,7 +343,11 @@ export function DepreciationTab({
                 }}
               />
             </Field>
-            <Field label="Opening WDV (tax)">
+            <Field
+              label="Opening WDV (tax)"
+              required
+              hint="The tax written-down value differs from the book value and cannot be derived from it"
+            >
               <Input
                 type="number"
                 min={0}

@@ -232,6 +232,14 @@ async def execute_depreciation_run(
         else:
             opening_acc = Decimal("0.00")
 
+        # Opening carrying amount follows the same precedence. Once a prior run exists
+        # its closing figure is the truth and the cutover value is history, so the
+        # stated opening WDV only applies until the asset has been run once.
+        if asset.id in prior_asset_lines:
+            opening_wdv_in = prior_asset_lines[asset.id].closing_carrying_amount
+        else:
+            opening_wdv_in = asset.opening_wdv
+
         inp = AssetDepreciationInput(
             asset_id=str(asset.id),
             asset_name=asset.asset_name,
@@ -242,6 +250,7 @@ async def execute_depreciation_run(
             residual_value=asset.residual_value,
             dep_method=method,
             opening_accumulated_dep=opening_acc,
+            opening_wdv=opening_wdv_in,
             disposal_date=asset.disposal_date,
             disposal_type=asset.disposal_type,
             sale_proceeds=asset.sale_proceeds,
@@ -303,20 +312,32 @@ async def execute_depreciation_run(
         if block.id in prior_block_lines:
             opening_wdv = prior_block_lines[block.id].closing_wdv
         else:
+            # First run for this block: rebuild its opening WDV from the assets'
+            # cutover figures. Only the TAX figure will do. Book WDV was previously
+            # accepted as a substitute, but the two essentially never agree in India —
+            # different rates, block-wise rather than asset-wise, additional
+            # depreciation — so borrowing it produced a wrong block base and therefore
+            # a wrong deduction, silently.
             opening_wdv = Decimal("0.00")
             for a in block_assets:
                 if a.disposal_date and a.disposal_date < fy_start:
                     continue
                 cap_date = a.it_put_to_use_date or a.capitalization_date or a.available_for_use_date
-                if cap_date and cap_date < fy_start:
-                    if a.opening_it_wdv is not None:
-                        opening_wdv += a.opening_it_wdv
-                    elif a.opening_wdv is not None:
-                        opening_wdv += a.opening_wdv
-                    elif a.is_pre_cutover:
+                if cap_date is None:
+                    # Undatable asset: it cannot be classed as opening or as an
+                    # addition, so it would vanish from the block entirely.
+                    raise DepreciationDataError(
+                        f"Asset {a.id} ({a.asset_name}) has no put-to-use, capitalization or "
+                        f"available-for-use date, so it cannot be placed in an Income Tax block."
+                    )
+                if cap_date < fy_start:
+                    if a.opening_it_wdv is None:
                         raise DepreciationDataError(
-                            f"Asset {a.id} ({a.asset_name}) is pre-cutover but has no opening_it_wdv or opening_wdv set"
+                            f"Asset {a.id} ({a.asset_name}) was in use before {fy_start} but has no "
+                            f"opening Income Tax WDV. Set 'Opening WDV (tax)' — the book WDV is not "
+                            f"a valid substitute for the tax written-down value."
                         )
+                    opening_wdv += a.opening_it_wdv
 
         active_or_current_assets = [
             a for a in block_assets

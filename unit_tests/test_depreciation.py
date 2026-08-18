@@ -92,6 +92,84 @@ def test_pre_cutover_asset_with_opening_dep():
     assert result.closing_carrying_amount == Decimal("262500.00")
 
 
+def test_pre_cutover_wdv_depreciates_from_opening_wdv_not_cost():
+    """A pre-owned WDV asset must depreciate from the WDV carried in, not from cost.
+
+    `opening_wdv` was collected on the form, required by validation, and then never
+    passed to the engine — which derived the carrying amount from cost instead and,
+    when that came to zero, fell back to full original cost.
+    """
+    inp = AssetDepreciationInput(
+        asset_id="pc-wdv",
+        asset_name="Pre-owned Press",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2021, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="WDV",
+        is_pre_cutover=True,
+        opening_accumulated_dep=Decimal("45070.00"),
+        opening_wdv=Decimal("54930.00"),
+    )
+    result = calculate_asset_depreciation(inp, date(2025, 4, 1), date(2026, 3, 31))
+
+    # Rate 0.4507 on the carried-in WDV of 54,930 = 24,756.95.
+    # Depreciating from cost would have charged 45,070.
+    assert result.opening_carrying_amount == Decimal("54930.00")
+    assert result.depreciation_for_year == Decimal("24756.95")
+
+
+def test_opening_wdv_wins_when_it_diverges_from_cost_less_accumulated():
+    """An impaired asset's stated WDV is authoritative over the derived figure.
+
+    cost - accumulated = 100000 - 40000 = 60000, but the asset was impaired to
+    50000. The engine must depreciate the 50000 the user stated.
+    """
+    inp = AssetDepreciationInput(
+        asset_id="pc-impaired",
+        asset_name="Impaired Plant",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2021, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="WDV",
+        is_pre_cutover=True,
+        opening_accumulated_dep=Decimal("40000.00"),
+        opening_wdv=Decimal("50000.00"),
+    )
+    result = calculate_asset_depreciation(inp, date(2025, 4, 1), date(2026, 3, 31))
+
+    assert result.opening_carrying_amount == Decimal("50000.00")
+    # 50,000 * 0.4507 = 22,535.00 (not 60,000 * 0.4507 = 27,042.00)
+    assert result.depreciation_for_year == Decimal("22535.00")
+
+
+def test_fully_depreciated_asset_does_not_restart_from_cost():
+    """A carrying amount of zero means written down, not 'start again'.
+
+    `carrying_for_calc = opening_carrying if opening_carrying > 0 else cost` sent any
+    fully-depreciated WDV asset back to full original cost every year, held in check
+    only by the residual cap.
+    """
+    inp = AssetDepreciationInput(
+        asset_id="pc-spent",
+        asset_name="Spent Machine",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2015, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="WDV",
+        is_pre_cutover=True,
+        opening_accumulated_dep=Decimal("95000.00"),
+        opening_wdv=Decimal("5000.00"),
+    )
+    result = calculate_asset_depreciation(inp, date(2025, 4, 1), date(2026, 3, 31))
+
+    # Already at residual: nothing further may be charged.
+    assert result.depreciation_for_year == Decimal("0.00")
+    assert result.closing_accumulated_dep == Decimal("95000.00")
+
+
 def test_disposed_asset_mid_year():
     """Test asset disposed mid-year with depreciation up to disposal date and gain/loss."""
     inp = AssetDepreciationInput(

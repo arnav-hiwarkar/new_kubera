@@ -246,6 +246,21 @@ def validate_transition(
                     message="Required for assets acquired before the register cutover date",
                 )
             )
+        # The Income Tax block refuses to open without this, and the book WDV is not a
+        # valid stand-in. Ask for it here rather than failing the depreciation run.
+        if asset.opening_it_wdv is None:
+            issues.append(
+                ValidationIssue(
+                    "opening_it_wdv",
+                    "Opening written-down value (tax)",
+                    TAB_DEPRECIATION,
+                    message=(
+                        "Required for assets acquired before the register cutover date. "
+                        "The Income Tax written-down value differs from the book value and "
+                        "cannot be derived from it."
+                    ),
+                )
+            )
 
     purchase_date = getattr(acquisition, "purchase_date", None) if acquisition else None
     if (

@@ -284,4 +284,11 @@ def test_pre_cutover_assets_must_declare_opening_balances():
     issues = validate_transition(
         asset, _complete_acquisition(), AssetLifecycleStatus.capitalized, present_doc_roles=_ALL_DOCS
     )
-    assert {"opening_accumulated_depreciation", "opening_wdv"} <= _fields(issues)
+    # opening_it_wdv is required too: the Income Tax block refuses to open without it,
+    # and the book WDV is not a valid substitute for the tax written-down value. Asking
+    # here means the user learns at edit time rather than when a run fails.
+    assert {
+        "opening_accumulated_depreciation",
+        "opening_wdv",
+        "opening_it_wdv",
+    } <= _fields(issues)

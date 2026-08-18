@@ -32,6 +32,13 @@ function buildFilterQuery(filters?: AssetReportFilters): string {
   return q ? `&${q}` : ''
 }
 
+/**
+ * Every call goes through `companyClient`, which reads the access token from
+ * `companyTokenStorage` and refreshes it on 401. Earlier versions of this module
+ * returned bare URL strings for export/pack, which forced the page to hand-roll a
+ * `fetch` and read the token from a localStorage key that did not exist — so every
+ * asset report came back 403 "Not authenticated".
+ */
 export const assetReportsApi = {
   list: () => companyClient.get<AssetReportDescriptor[]>('/api/v1/asset-reports'),
   previewHtml: (
@@ -44,31 +51,37 @@ export const assetReportsApi = {
       `/api/v1/asset-reports/${reportKey}/preview-html?financial_year_id=${encodeURIComponent(
         financialYearId,
       )}&unit=${encodeURIComponent(unit)}${buildFilterQuery(filters)}`,
-      { responseType: 'text' as unknown as undefined },
+      { responseType: 'text' },
     ),
-  exportUrl: (
+  exportBlob: (
     reportKey: string,
     financialYearId: string,
     format: 'xlsx' | 'pdf' | 'html',
     unit: string = 'absolute',
     filters?: AssetReportFilters,
   ) =>
-    `/api/v1/asset-reports/${reportKey}/export?financial_year_id=${encodeURIComponent(
-      financialYearId,
-    )}&format=${encodeURIComponent(format)}&unit=${encodeURIComponent(unit)}${buildFilterQuery(
-      filters,
-    )}`,
-  packUrl: (
+    companyClient.get<Blob>(
+      `/api/v1/asset-reports/${reportKey}/export?financial_year_id=${encodeURIComponent(
+        financialYearId,
+      )}&format=${encodeURIComponent(format)}&unit=${encodeURIComponent(unit)}${buildFilterQuery(
+        filters,
+      )}`,
+      { responseType: 'blob' },
+    ),
+  packBlob: (
     financialYearId: string,
     format: 'xlsx' | 'pdf',
     unit: string = 'absolute',
     filters?: AssetReportFilters,
   ) =>
-    `/api/v1/asset-reports/pack?financial_year_id=${encodeURIComponent(
-      financialYearId,
-    )}&format=${encodeURIComponent(format)}&unit=${encodeURIComponent(unit)}${buildFilterQuery(
-      filters,
-    )}`,
+    companyClient.post<Blob>(
+      `/api/v1/asset-reports/pack?financial_year_id=${encodeURIComponent(
+        financialYearId,
+      )}&format=${encodeURIComponent(format)}&unit=${encodeURIComponent(unit)}${buildFilterQuery(
+        filters,
+      )}`,
+      { responseType: 'blob' },
+    ),
   archive: (
     reportKey: string,
     financialYearId: string,

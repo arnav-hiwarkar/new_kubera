@@ -21,8 +21,12 @@ export interface RequestOptions {
   /** For multipart uploads (imports, document uploads). */
   formData?: FormData
   signal?: AbortSignal
-  /** Set for file downloads — returns a Blob instead of parsed JSON. */
-  responseType?: 'json' | 'blob'
+  /**
+   * `blob` for file downloads, `text` for endpoints that return a rendered document
+   * (the report preview returns HTML). Without `text` the client would run
+   * `JSON.parse` over an HTML body and throw.
+   */
+  responseType?: 'json' | 'blob' | 'text'
 }
 
 /**
@@ -125,6 +129,7 @@ export class HttpClient {
     const res = await this.execute(method, path, opts)
     if (!res.ok) throw await parseError(res)
     if (opts.responseType === 'blob') return (await res.blob()) as T
+    if (opts.responseType === 'text') return (await res.text()) as T
     if (res.status === 204) return undefined as T
     const text = await res.text()
     return (text ? JSON.parse(text) : undefined) as T

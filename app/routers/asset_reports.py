@@ -25,7 +25,7 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth import get_current_company_user, require_assets_module
+from app.auth import require_assets_module
 from app.database import get_db
 from app.models.assets import (
     Asset,
@@ -314,7 +314,7 @@ def _build_doc_by_key(report_key: str, ctx: Dict[str, Any], units: str = "absolu
 
 @router.get("", response_model=List[Dict[str, str]])
 async def list_available_asset_reports(
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_assets_module)],
 ):
     """Returns the list of 10 available asset register reports and descriptions."""
     return [
@@ -327,7 +327,7 @@ async def list_available_asset_reports(
 async def export_asset_report(
     report_key: str,
     financial_year_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_assets_module)],
     db: Annotated[AsyncSession, Depends(get_db)],
     format: str = Query("xlsx", pattern="^(xlsx|pdf|html)$"),
     unit: str = Query("absolute", pattern="^(absolute|thousands|lakhs|crores)$"),
@@ -381,7 +381,7 @@ async def export_asset_report(
 async def preview_asset_report_html(
     report_key: str,
     financial_year_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_assets_module)],
     db: Annotated[AsyncSession, Depends(get_db)],
     unit: str = Query("absolute", pattern="^(absolute|thousands|lakhs|crores)$"),
     lifecycle_status: Optional[str] = None,
@@ -414,7 +414,7 @@ async def preview_asset_report_html(
 @router.post("/pack")
 async def export_asset_report_pack(
     financial_year_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_assets_module)],
     db: Annotated[AsyncSession, Depends(get_db)],
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     unit: str = Query("absolute", pattern="^(absolute|thousands|lakhs|crores)$"),
@@ -498,7 +498,7 @@ async def export_asset_report_pack(
 async def archive_asset_report(
     report_key: str,
     financial_year_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_assets_module)],
     db: Annotated[AsyncSession, Depends(get_db)],
     format: str = Query("pdf", pattern="^(xlsx|pdf)$"),
     unit: str = Query("absolute", pattern="^(absolute|thousands|lakhs|crores)$"),

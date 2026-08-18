@@ -89,12 +89,14 @@ export function AssetReportsPage() {
 
   const handleExport = async (format: 'xlsx' | 'pdf' | 'html') => {
     if (!activeFyId) return
-    const url = assetReportsApi.exportUrl(selectedReportKey, activeFyId, format, unit, activeFilters)
-    const token = localStorage.getItem('company_token') || ''
     try {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      if (!res.ok) throw new Error('Export failed')
-      const blob = await res.blob()
+      const blob = await assetReportsApi.exportBlob(
+        selectedReportKey,
+        activeFyId,
+        format,
+        unit,
+        activeFilters,
+      )
       const ext = format === 'xlsx' ? 'xlsx' : format === 'pdf' ? 'pdf' : 'html'
       const filename = `${selectedReportKey}_${activeFy?.label || 'report'}.${ext}`
       saveBlob(blob, filename)
@@ -123,12 +125,8 @@ export function AssetReportsPage() {
   const handleDownloadPack = async (format: 'xlsx' | 'pdf') => {
     if (!activeFyId) return
     setDownloadingPack(true)
-    const url = assetReportsApi.packUrl(activeFyId, format, unit, activeFilters)
-    const token = localStorage.getItem('company_token') || ''
     try {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      if (!res.ok) throw new Error('Pack generation failed')
-      const blob = await res.blob()
+      const blob = await assetReportsApi.packBlob(activeFyId, format, unit, activeFilters)
       const filename = `Asset_Register_Pack_${activeFy?.label || 'FY'}.${format}`
       saveBlob(blob, filename)
       toast.success(`Downloaded ${filename}`)

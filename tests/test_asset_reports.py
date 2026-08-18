@@ -20,7 +20,7 @@ from app.services.reporting.asset_reports import (
     build_income_tax_appendix_i_report,
     build_gst_itc_summary_report,
 )
-from tests.asset_helpers import admin_headers, seed_masters
+from tests.asset_helpers import admin_headers, seed_masters, user_headers
 from tests.conftest import TestSessionLocal, create_test_company, get_company_token
 
 
@@ -720,6 +720,49 @@ async def test_gst_itc_summary_missing_rate_is_not_invented(client: AsyncClient)
         # And it must not surface as a number anywhere in the rendered output.
         html = render_html(doc)
         assert "18.00%" not in html
+
+
+@pytest.mark.asyncio
+async def test_asset_reports_require_the_assets_module(client: AsyncClient):
+    """Module access must be enforced server-side, not only by ModuleGuard.
+
+    Every asset-report endpoint previously depended on `get_current_company_user`
+    alone, so any authenticated company user could pull the whole fixed-asset
+    register, the depreciation schedules and the GST data over the API regardless of
+    their module grants. The UI hid the page; the API served it.
+    """
+    ctx = await setup_asset_reports_environment(client, email="mod_admin@testco.com")
+    fy_id, admin_h = ctx["fy_id"], ctx["headers"]
+
+    created = await client.post(
+        "/api/v1/users",
+        json={
+            "email": "mod_denied@testco.com",
+            "password": "pass1234",
+            "full_name": "No Assets Module",
+            "role": "employee",
+            "accessible_modules": [],  # deliberately not granted 'assets'
+        },
+        headers=admin_h,
+    )
+    assert created.status_code == 201, created.text
+    denied_h = await user_headers(client, "mod_denied@testco.com")
+
+    endpoints = [
+        ("get", "/api/v1/asset-reports"),
+        ("get", f"/api/v1/asset-reports/fixed_asset_register/export?financial_year_id={fy_id}&format=xlsx"),
+        ("get", f"/api/v1/asset-reports/fixed_asset_register/preview-html?financial_year_id={fy_id}"),
+        ("post", f"/api/v1/asset-reports/pack?financial_year_id={fy_id}&format=xlsx"),
+        ("post", f"/api/v1/asset-reports/archive?report_key=fixed_asset_register&financial_year_id={fy_id}"),
+    ]
+    for method, url in endpoints:
+        res = await getattr(client, method)(url, headers=denied_h)
+        assert res.status_code == 403, f"{method.upper()} {url} returned {res.status_code}, expected 403"
+        assert "assets module" in res.text
+
+    # The admin, who does have the module, is unaffected.
+    ok = await client.get("/api/v1/asset-reports", headers=admin_h)
+    assert ok.status_code == 200, ok.text
 
 
 @pytest.mark.asyncio

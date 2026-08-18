@@ -613,6 +613,137 @@ async def test_depreciation_pre_cutover_missing_wdv_raises_422(client: AsyncClie
     assert run_res.status_code == 422, f"Expected 422 for pre-cutover without WDV, got {run_res.status_code}: {run_res.text}"
 
 
+@pytest.mark.asyncio
+async def test_income_tax_block_will_not_borrow_the_book_wdv(client: AsyncClient):
+    """A missing tax WDV must fail, not fall back to the books figure.
+
+    Book and tax written-down values essentially never agree in India — different
+    rates, block-wise rather than asset-wise, additional depreciation. Substituting
+    one for the other produced a wrong block opening base, and therefore a wrong
+    deduction, with nothing on the report to say so.
+    """
+    await seed_masters()
+    email = "it_no_borrow@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    assert fy_res.status_code == 201, fy_res.text
+    fy_id = fy_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
+
+        session.add(
+            Asset(
+                company_id=user.company_id,
+                asset_name="Books WDV Only",
+                asset_code="BWO-001",
+                category_id=cat.id if cat else None,
+                it_block_id=it_block.id if it_block else None,
+                lifecycle_status=AssetLifecycleStatus.capitalized,
+                operational_status=AssetOperationalStatus.in_use,
+                capitalization_date=date(2023, 4, 1),
+                available_for_use_date=date(2023, 4, 1),
+                it_put_to_use_date=date(2023, 4, 1),
+                useful_life_months=60,
+                residual_pct=Decimal("5.00"),
+                dep_method="slm",
+                original_cost=Decimal("100000.00"),
+                is_pre_cutover=True,
+                opening_accumulated_depreciation=Decimal("19000.00"),
+                opening_wdv=Decimal("81000.00"),   # books figure present
+                opening_it_wdv=None,               # tax figure absent
+            )
+        )
+        await session.commit()
+
+    run_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id},
+        headers=headers,
+    )
+    assert run_res.status_code == 422, (
+        f"Expected 422 rather than silently using the book WDV, got "
+        f"{run_res.status_code}: {run_res.text}"
+    )
+    assert "Opening WDV (tax)" in run_res.text or "opening Income Tax WDV" in run_res.text
+
+
+@pytest.mark.asyncio
+async def test_pre_cutover_run_uses_the_entered_opening_wdv(client: AsyncClient):
+    """End to end: the WDV entered on the form is what the asset depreciates from.
+
+    The field was required by validation and then discarded — the engine derived the
+    carrying amount from cost instead. Here the asset was impaired, so the two
+    deliberately disagree: cost 100,000 less accumulated 40,000 would give 60,000,
+    but the stated carrying amount is 50,000.
+    """
+    await seed_masters()
+    email = "cutover_wdv_used@testco.com"
+    headers = await admin_headers(client, email)
+
+    fy_res = await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
+        headers=headers,
+    )
+    assert fy_res.status_code == 201, fy_res.text
+    fy_id = fy_res.json()["id"]
+
+    async with TestSessionLocal() as session:
+        user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
+        cat = (await session.execute(select(AssetCategory))).scalars().first()
+        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
+
+        session.add(
+            Asset(
+                company_id=user.company_id,
+                asset_name="Impaired Press",
+                asset_code="IMP-001",
+                category_id=cat.id if cat else None,
+                it_block_id=it_block.id if it_block else None,
+                lifecycle_status=AssetLifecycleStatus.capitalized,
+                operational_status=AssetOperationalStatus.in_use,
+                capitalization_date=date(2021, 4, 1),
+                available_for_use_date=date(2021, 4, 1),
+                it_put_to_use_date=date(2021, 4, 1),
+                useful_life_months=60,
+                residual_pct=Decimal("5.00"),
+                dep_method="wdv",
+                original_cost=Decimal("100000.00"),
+                is_pre_cutover=True,
+                opening_accumulated_depreciation=Decimal("40000.00"),
+                opening_wdv=Decimal("50000.00"),
+                opening_it_wdv=Decimal("48000.00"),
+            )
+        )
+        await session.commit()
+
+    run_res = await client.post(
+        "/api/v1/depreciation/runs", json={"financial_year_id": fy_id}, headers=headers
+    )
+    assert run_res.status_code == 201, run_res.text
+
+    lines = await client.get(
+        f"/api/v1/depreciation/runs/{run_res.json()['id']}/lines", headers=headers
+    )
+    assert lines.status_code == 200, lines.text
+    line = lines.json()[0]
+
+    assert float(line["opening_carrying_amount"]) == 50000.00, (
+        "the entered opening WDV must be the carrying amount, not cost less accumulated"
+    )
+    # 50,000 x 0.4507 = 22,535.00. Deriving from cost would have charged 27,042.00.
+    assert float(line["depreciation_for_year"]) == 22535.00
+    assert float(line["closing_carrying_amount"]) == 27465.00
+
+
 
 @pytest.mark.asyncio
 async def test_depreciation_zero_residual_pct(client: AsyncClient):

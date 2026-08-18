@@ -29,6 +29,10 @@ class AssetDepreciationInput:
     dep_method: str = "SLM"  # "SLM" or "WDV"
     is_pre_cutover: bool = False
     opening_accumulated_dep: Decimal = Decimal("0.00")
+    # Carrying amount carried in at cutover. Authoritative when supplied: an impaired
+    # or revalued asset's true written-down value is not cost less accumulated
+    # depreciation, and deriving it would silently discard the figure the user stated.
+    opening_wdv: Optional[Decimal] = None
     disposal_date: Optional[date] = None
     disposal_type: Optional[str] = None
     sale_proceeds: Optional[Decimal] = None
@@ -56,6 +60,25 @@ class AssetDepreciationResult:
     gain_loss_on_disposal: Optional[Decimal] = None
 
 
+def _remaining_life_days(
+    useful_life_months: int, depreciable_base: Decimal, closing_acc_dep: Decimal
+) -> int:
+    """Remaining life implied by how much of the depreciable base is left.
+
+    The previous form subtracted only the CURRENT year's active days from the total
+    life, so it ignored every prior year and the whole of a pre-cutover asset's
+    elapsed life — a four-year-old asset carried in at cutover reported its full
+    original life minus one year. Reading it off accumulated depreciation instead is
+    correct for pre-cutover assets and for assets with prior runs alike.
+    """
+    total_life_days = useful_life_months * 30
+    if depreciable_base <= 0:
+        return 0
+    consumed = min(closing_acc_dep, depreciable_base)
+    remaining = (depreciable_base - consumed) / depreciable_base
+    return max(0, int(Decimal(total_life_days) * remaining))
+
+
 def calculate_asset_depreciation(
     inp: AssetDepreciationInput,
     fy_start: date,
@@ -72,6 +95,21 @@ def calculate_asset_depreciation(
     # Check if addition during this FY
     is_addition = cap_date > fy_start and cap_date <= fy_end
     opening_gross = Decimal("0.00") if is_addition else cost
+
+    # A pre-owned asset exists to carry its history in. Arriving with neither a WDV
+    # nor accumulated depreciation means that history was lost, and depreciating from
+    # full cost would silently restate an already part-worn asset as new.
+    if (
+        inp.is_pre_cutover
+        and not is_addition
+        and inp.opening_wdv is None
+        and money(inp.opening_accumulated_dep) == Decimal("0.00")
+    ):
+        raise DepreciationDataError(
+            f"Asset {inp.asset_id} ({inp.asset_name}) is marked pre-cutover but carries "
+            f"neither an opening WDV nor opening accumulated depreciation. Depreciating "
+            f"it from full original cost would overstate the charge."
+        )
     additions = cost if is_addition else Decimal("0.00")
 
     # Check if disposed during this FY
@@ -80,7 +118,14 @@ def calculate_asset_depreciation(
     closing_gross = Decimal("0.00") if is_disposed else (opening_gross + additions)
 
     opening_acc_dep = money(inp.opening_accumulated_dep) if not is_addition else Decimal("0.00")
-    opening_carrying = opening_gross - opening_acc_dep if opening_gross > 0 else Decimal("0.00")
+    if is_addition:
+        opening_carrying = Decimal("0.00")
+    elif inp.opening_wdv is not None:
+        # A stated carrying amount wins over the derived one. They differ whenever the
+        # asset was impaired, revalued, or carried in from a different rate regime.
+        opening_carrying = money(inp.opening_wdv)
+    else:
+        opening_carrying = opening_gross - opening_acc_dep if opening_gross > 0 else Decimal("0.00")
 
     # Determine active days in the current FY
     start_active = cap_date if is_addition else fy_start
@@ -115,7 +160,11 @@ def calculate_asset_depreciation(
                 )
             ratio = float(res_val / cost)
             wdv_rate = Decimal(str(round(1.0 - (ratio ** (1.0 / float(useful_years))), 4)))
-            carrying_for_calc = opening_carrying if opening_carrying > 0 else cost
+            # An asset in its first year has no opening carrying amount yet, so it
+            # depreciates from cost. Any other zero means the asset is written down —
+            # falling back to cost there restarted a spent asset from scratch every
+            # year, checked only by the residual cap.
+            carrying_for_calc = cost if is_addition else opening_carrying
             raw_annual = carrying_for_calc * wdv_rate
         else:
             # SLM
@@ -135,19 +184,21 @@ def calculate_asset_depreciation(
     if dep_for_year > max_dep_allowed:
         dep_for_year = max_dep_allowed
 
-    # Disposal handling
+    # Carrying amounts roll forward from the OPENING carrying amount, not from gross
+    # cost less accumulated depreciation. The two agree for an ordinary asset, but
+    # diverge whenever a cutover WDV was stated for an impaired or revalued asset —
+    # and deriving from cost there would contradict the opening figure on the same row.
     if is_disposed:
         disposal_acc_dep = opening_acc_dep + dep_for_year
         closing_acc_dep = Decimal("0.00")
         closing_carrying = Decimal("0.00")
-        # Gain/loss = Proceeds - (Cost - disposal_acc_dep)
-        nbv_at_disposal = cost - disposal_acc_dep
+        nbv_at_disposal = opening_carrying + additions - dep_for_year
         proceeds = inp.sale_proceeds if inp.sale_proceeds is not None else Decimal("0.00")
         gain_loss = money(proceeds - nbv_at_disposal)
     else:
         disposal_acc_dep = Decimal("0.00")
         closing_acc_dep = opening_acc_dep + dep_for_year
-        closing_carrying = (opening_gross + additions) - closing_acc_dep
+        closing_carrying = opening_carrying + additions - dep_for_year
         gain_loss = None
 
     effective_rate = (
@@ -170,7 +221,9 @@ def calculate_asset_depreciation(
         opening_carrying_amount=opening_carrying,
         closing_carrying_amount=closing_carrying,
         residual_value=res_val,
-        remaining_useful_life_days=max(0, (inp.useful_life_months * 30) - active_days),
+        remaining_useful_life_days=_remaining_life_days(
+            inp.useful_life_months, depreciable_base, closing_acc_dep
+        ),
         effective_rate_pct=effective_rate,
         is_part_year=is_part_year,
         is_disposed=is_disposed,
