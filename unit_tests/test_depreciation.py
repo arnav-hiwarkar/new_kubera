@@ -150,3 +150,127 @@ def test_residual_value_cap():
     assert result.depreciation_for_year == Decimal("2000.00")
     assert result.closing_accumulated_dep == Decimal("95000.00")
     assert result.closing_carrying_amount == Decimal("5000.00")
+
+
+def test_wdv_rate_derivation():
+    """Test WDV rate derivation for 100k cost, 5k residual, 60 months life."""
+    inp = AssetDepreciationInput(
+        asset_id="w1",
+        asset_name="WDV Machine",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2024, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="WDV",
+    )
+    fy_start = date(2024, 4, 1)
+    fy_end = date(2025, 3, 31)
+
+    result = calculate_asset_depreciation(inp, fy_start, fy_end)
+    # Effective rate 45.07% corresponding to wdv_rate 0.4507
+    assert result.effective_rate_pct == Decimal("45.07")
+    assert result.depreciation_for_year == Decimal("45070.00")
+
+
+def test_wdv_first_year_full():
+    """Test full first year WDV charge."""
+    inp = AssetDepreciationInput(
+        asset_id="w2",
+        asset_name="WDV Machine 2",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2024, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="WDV",
+        opening_accumulated_dep=Decimal("0.00"),
+    )
+    fy_start = date(2024, 4, 1)
+    fy_end = date(2025, 3, 31)
+
+    result = calculate_asset_depreciation(inp, fy_start, fy_end)
+
+    assert result.depreciation_for_year == Decimal("45070.00")
+    assert result.closing_accumulated_dep == Decimal("45070.00")
+    assert result.closing_carrying_amount == Decimal("54930.00")
+
+
+def test_wdv_multi_year():
+    """Test second year WDV charge opening at 54930.00."""
+    inp = AssetDepreciationInput(
+        asset_id="w3",
+        asset_name="WDV Machine 3",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2023, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="WDV",
+        opening_accumulated_dep=Decimal("45070.00"),
+    )
+    fy_start = date(2024, 4, 1)
+    fy_end = date(2025, 3, 31)
+
+    result = calculate_asset_depreciation(inp, fy_start, fy_end)
+
+    assert result.opening_carrying_amount == Decimal("54930.00")
+    # 54930 * 0.4507 = 24756.951 -> 24756.95
+    assert result.depreciation_for_year == Decimal("24756.95")
+    assert result.closing_accumulated_dep == Decimal("69826.95")
+    assert result.closing_carrying_amount == Decimal("30173.05")
+
+
+def test_wdv_zero_residual_raises():
+    """WDV with zero residual value must raise ValueError."""
+    inp = AssetDepreciationInput(
+        asset_id="w_zero",
+        asset_name="Zero Residual Machine",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2024, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("0.00"),
+        dep_method="WDV",
+    )
+    fy_start = date(2024, 4, 1)
+    fy_end = date(2025, 3, 31)
+
+    with pytest.raises(ValueError, match="residual"):
+        calculate_asset_depreciation(inp, fy_start, fy_end)
+
+
+def test_wdv_residual_not_less_than_cost_raises():
+    """WDV with residual >= cost must raise ValueError."""
+    inp = AssetDepreciationInput(
+        asset_id="w_high_res",
+        asset_name="High Residual Machine",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2024, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("100.00"),
+        dep_method="WDV",
+    )
+    fy_start = date(2024, 4, 1)
+    fy_end = date(2025, 3, 31)
+
+    with pytest.raises(ValueError, match="residual"):
+        calculate_asset_depreciation(inp, fy_start, fy_end)
+
+
+def test_slm_zero_residual_depreciates_to_zero():
+    """SLM with 0% residual depreciates to zero (100% depreciable)."""
+    inp = AssetDepreciationInput(
+        asset_id="slm_zero",
+        asset_name="Zero Residual SLM",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2024, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("0.00"),
+        dep_method="SLM",
+    )
+    fy_start = date(2024, 4, 1)
+    fy_end = date(2025, 3, 31)
+
+    result = calculate_asset_depreciation(inp, fy_start, fy_end)
+
+    assert result.residual_value == Decimal("0.00")
+    assert result.depreciation_for_year == Decimal("20000.00")
+    assert result.closing_carrying_amount == Decimal("80000.00")
+

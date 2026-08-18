@@ -212,7 +212,8 @@ async def test_auditease_adjusting_entries_ledger_name(client: AsyncClient):
 
     # Register and invite auditor to propose adjusting entry
     aud_email = "aud_adj@testco.com"
-    await client.post("/api/v1/auth/auditor/register", json={"email": aud_email, "password": "pass1234", "name": "Auditor Adj"})
+    reg_res = await client.post("/api/v1/auth/auditor/register", json={"email": aud_email, "password": "pass1234", "name": "Auditor Adj"})
+    assert reg_res.status_code == 201, reg_res.text
     resp_login = await client.post("/api/v1/auth/auditor/login", json={"email": aud_email, "password": "pass1234"})
     assert resp_login.status_code == 200, resp_login.text
     aud_headers = {"Authorization": f"Bearer {resp_login.json()['access_token']}"}

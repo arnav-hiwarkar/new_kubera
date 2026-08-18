@@ -151,8 +151,14 @@ async def test_fixed_asset_register_invariants(client: AsyncClient):
     )
 
     root = doc.sections[0]
+    assert len(root.children) > 0
+    assert root.total.cells["original_cost"] > 0
+    assert root.total.cells["net_book_value"] > 0
+
     # Each category subtotal equals sum of rows
     for cat_sec in root.children:
+        assert len(cat_sec.rows) > 0
+        assert cat_sec.total.cells["original_cost"] > 0
         assert cat_sec.total.cells["original_cost"] == sum(r.cells["original_cost"] for r in cat_sec.rows)
         assert cat_sec.total.cells["opening_acc_dep"] == sum(r.cells["opening_acc_dep"] for r in cat_sec.rows)
         assert cat_sec.total.cells["dep_for_year"] == sum(r.cells["dep_for_year"] for r in cat_sec.rows)
@@ -186,7 +192,13 @@ async def test_companies_act_schedule_invariants(client: AsyncClient):
     )
 
     root = doc.sections[0]
+    assert len(root.children) > 0
+    gt = root.total.cells
+    assert gt["closing_gross"] > 0
+    assert gt["closing_nbv"] > 0
+
     for cat_sec in root.children:
+        assert len(cat_sec.rows) > 0
         # Per row invariants
         for r in cat_sec.rows:
             closing_gross = r.cells["closing_gross"]
@@ -201,11 +213,11 @@ async def test_companies_act_schedule_invariants(client: AsyncClient):
 
         # Per category total invariants
         cat_tot = cat_sec.total.cells
+        assert cat_tot["closing_gross"] > 0
         assert cat_tot["closing_gross"] == cat_tot["opening_gross"] + cat_tot["additions"] - cat_tot["disposals"]
         assert cat_tot["closing_nbv"] == cat_tot["closing_gross"] - cat_tot["closing_dep"]
 
     # Grand total invariants
-    gt = root.total.cells
     assert gt["closing_gross"] == gt["opening_gross"] + gt["additions"] - gt["disposals"]
     assert gt["closing_nbv"] == gt["closing_gross"] - gt["closing_dep"]
 
@@ -228,6 +240,10 @@ async def test_income_tax_schedule_invariants(client: AsyncClient):
     )
 
     sec = doc.sections[0]
+    assert len(sec.rows) > 0
+    gt = sec.total.cells
+    assert gt["closing_wdv"] > 0
+
     for r in sec.rows:
         closing_wdv = r.cells["closing_wdv"]
         opening_wdv = r.cells["opening_wdv"]
@@ -238,7 +254,6 @@ async def test_income_tax_schedule_invariants(client: AsyncClient):
         assert closing_wdv == (opening_wdv + add_180 + add_less_180 - sales - total_dep)
 
     # Grand total invariants
-    gt = sec.total.cells
     assert gt["closing_wdv"] == (gt["opening_wdv"] + gt["add_180"] + gt["add_less_180"] - gt["sales"] - gt["total_dep"])
 
 
@@ -288,6 +303,8 @@ async def test_asset_reports_units_scaling(client: AsyncClient):
 
     abs_cost = doc_abs.sections[0].total.cells["original_cost"]
     lakhs_cost = doc_lakhs.sections[0].total.cells["original_cost"]
+    assert abs_cost > 0
+    assert lakhs_cost > 0
     assert lakhs_cost == abs_cost / Decimal("100000")
 
 

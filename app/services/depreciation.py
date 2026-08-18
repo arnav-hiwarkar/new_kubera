@@ -98,11 +98,20 @@ def calculate_asset_depreciation(
     else:
         if inp.dep_method == "WDV":
             # Schedule II WDV rate formula: 1 - (residual / cost) ** (1 / n)
-            if cost > 0 and res_val < cost:
-                ratio = float(res_val / cost)
-                wdv_rate = Decimal(str(round(1.0 - (ratio ** (1.0 / float(useful_years))), 4)))
-            else:
-                wdv_rate = Decimal("0.00")
+            if cost <= 0 or res_val <= 0:
+                raise ValueError(
+                    f"WDV depreciation for asset {inp.asset_id} requires a residual value "
+                    f"greater than zero (cost={cost}, residual={res_val}). The Schedule II rate "
+                    f"1-(s/c)^(1/n) is undefined at zero residual and would write the asset off "
+                    f"entirely in year one."
+                )
+            if res_val >= cost:
+                raise ValueError(
+                    f"WDV depreciation for asset {inp.asset_id}: residual value {res_val} is not "
+                    f"less than cost {cost}."
+                )
+            ratio = float(res_val / cost)
+            wdv_rate = Decimal(str(round(1.0 - (ratio ** (1.0 / float(useful_years))), 4)))
             carrying_for_calc = opening_carrying if opening_carrying > 0 else cost
             raw_annual = carrying_for_calc * wdv_rate
         else:
