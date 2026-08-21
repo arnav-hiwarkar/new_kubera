@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { useState } from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { GraphHud } from './GraphHud'
 import type { GraphData, GraphNode } from '../types/graph'
@@ -86,7 +88,7 @@ describe('GraphHud', () => {
     totalBuckets: 2,
   }
 
-  const defaultProps = {
+  const baseProps = {
     data: mockData,
     buckets: mockBuckets,
     colorMode: 'bucket' as const,
@@ -95,6 +97,23 @@ describe('GraphHud', () => {
     onToggleBucket: vi.fn(),
     onShowAllBuckets: vi.fn(),
     onSelectNode: vi.fn(),
+    searchQuery: '',
+    onSearchQueryChange: vi.fn(),
+  }
+
+  // Controlled wrapper simulating the page-owned query state
+  function ControlledGraphHud(props: Partial<typeof baseProps> & { onSelectNode?: (n: GraphNode) => void }) {
+    const [query, setQuery] = useState('')
+    return (
+      <MemoryRouter>
+        <GraphHud
+          {...baseProps}
+          {...props}
+          searchQuery={query}
+          onSearchQueryChange={setQuery}
+        />
+      </MemoryRouter>
+    )
   }
 
   beforeEach(() => {
@@ -104,7 +123,7 @@ describe('GraphHud', () => {
   it('renders back button and navigates to /app/docvault on click', () => {
     render(
       <MemoryRouter>
-        <GraphHud {...defaultProps} />
+        <GraphHud {...baseProps} />
       </MemoryRouter>,
     )
 
@@ -119,7 +138,7 @@ describe('GraphHud', () => {
   it('renders breadcrumb badge with correct counts', () => {
     render(
       <MemoryRouter>
-        <GraphHud {...defaultProps} />
+        <GraphHud {...baseProps} />
       </MemoryRouter>,
     )
 
@@ -130,11 +149,7 @@ describe('GraphHud', () => {
   })
 
   it('filters nodes in autocomplete search and calls onSelectNode when clicked', () => {
-    render(
-      <MemoryRouter>
-        <GraphHud {...defaultProps} />
-      </MemoryRouter>,
-    )
+    render(<ControlledGraphHud />)
 
     const searchInput = screen.getByTestId('graph-search-input')
     fireEvent.change(searchInput, { target: { value: 'Balance' } })
@@ -147,15 +162,11 @@ describe('GraphHud', () => {
     expect(resultItems[0].textContent).toContain('Q3 Balance Sheet.pdf')
 
     fireEvent.click(resultItems[0])
-    expect(defaultProps.onSelectNode).toHaveBeenCalledWith(mockNodes[1])
+    expect(baseProps.onSelectNode).toHaveBeenCalledWith(mockNodes[1])
   })
 
   it('filters nodes by tag in autocomplete search', () => {
-    render(
-      <MemoryRouter>
-        <GraphHud {...defaultProps} />
-      </MemoryRouter>,
-    )
+    render(<ControlledGraphHud />)
 
     const searchInput = screen.getByTestId('graph-search-input')
     fireEvent.change(searchInput, { target: { value: 'quarterly' } })
@@ -166,11 +177,7 @@ describe('GraphHud', () => {
   })
 
   it('shows no results message when search has no matches', () => {
-    render(
-      <MemoryRouter>
-        <GraphHud {...defaultProps} />
-      </MemoryRouter>,
-    )
+    render(<ControlledGraphHud />)
 
     const searchInput = screen.getByTestId('graph-search-input')
     fireEvent.change(searchInput, { target: { value: 'NonexistentDoc' } })
@@ -179,26 +186,45 @@ describe('GraphHud', () => {
     expect(noResults.textContent).toContain('No matching documents or buckets found')
   })
 
+  it('lifts typed query to parent and selects first result on Enter', async () => {
+    const user = userEvent.setup()
+    const onSelectNode = vi.fn()
+    render(<ControlledGraphHud onSelectNode={onSelectNode} />)
+    const input = screen.getByTestId('graph-search-input')
+    await user.type(input, 'tax')
+    await user.keyboard('{Enter}')
+    expect(onSelectNode).toHaveBeenCalled()
+  })
+
+  it('clears the query via Escape key', async () => {
+    const user = userEvent.setup()
+    render(<ControlledGraphHud />)
+    const input = screen.getByTestId('graph-search-input')
+    await user.type(input, 'tax')
+    await user.keyboard('{Escape}')
+    expect((input as HTMLInputElement).value).toBe('')
+  })
+
   it('switches color mode when clicking mode buttons', () => {
     render(
       <MemoryRouter>
-        <GraphHud {...defaultProps} />
+        <GraphHud {...baseProps} />
       </MemoryRouter>,
     )
 
     const statusBtn = screen.getByTestId('color-mode-status')
     fireEvent.click(statusBtn)
-    expect(defaultProps.onColorModeChange).toHaveBeenCalledWith('status')
+    expect(baseProps.onColorModeChange).toHaveBeenCalledWith('status')
 
     const bucketBtn = screen.getByTestId('color-mode-bucket')
     fireEvent.click(bucketBtn)
-    expect(defaultProps.onColorModeChange).toHaveBeenCalledWith('bucket')
+    expect(baseProps.onColorModeChange).toHaveBeenCalledWith('bucket')
   })
 
   it('opens bucket filter dropdown and toggles bucket checkboxes', () => {
     render(
       <MemoryRouter>
-        <GraphHud {...defaultProps} />
+        <GraphHud {...baseProps} />
       </MemoryRouter>,
     )
 
@@ -210,13 +236,13 @@ describe('GraphHud', () => {
 
     const b1Checkbox = screen.getByTestId('bucket-checkbox-b1')
     fireEvent.click(b1Checkbox)
-    expect(defaultProps.onToggleBucket).toHaveBeenCalledWith('b1')
+    expect(baseProps.onToggleBucket).toHaveBeenCalledWith('b1')
   })
 
   it('calls onShowAllBuckets when Show All button is clicked', () => {
     render(
       <MemoryRouter>
-        <GraphHud {...defaultProps} visibleBucketIds={new Set(['b1'])} />
+        <GraphHud {...baseProps} visibleBucketIds={new Set(['b1'])} />
       </MemoryRouter>,
     )
 
@@ -225,6 +251,6 @@ describe('GraphHud', () => {
 
     const showAllBtn = screen.getByTestId('show-all-buckets-btn')
     fireEvent.click(showAllBtn)
-    expect(defaultProps.onShowAllBuckets).toHaveBeenCalledTimes(1)
+    expect(baseProps.onShowAllBuckets).toHaveBeenCalledTimes(1)
   })
 })

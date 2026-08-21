@@ -12,6 +12,24 @@ vi.mock('@/lib/download', () => ({
   saveBlob: vi.fn(),
 }))
 
+// Render tabs instantly — skip enter/exit animations in jsdom
+vi.mock('framer-motion', () => ({
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  motion: {
+    div: ({
+      children,
+      initial: _initial,
+      animate: _animate,
+      exit: _exit,
+      transition: _transition,
+      layout: _layout,
+      ...rest
+    }: React.HTMLAttributes<HTMLDivElement> & Record<string, unknown>) => (
+      <div {...rest}>{children}</div>
+    ),
+  },
+}))
+
 vi.mock('@/api/endpoints/docvault', () => ({
   docvaultApi: {
     uploadDocument: vi.fn().mockResolvedValue({}),
@@ -23,6 +41,12 @@ vi.mock('@/api/endpoints/docvault', () => ({
     listBuckets: vi.fn().mockResolvedValue([]),
   },
 }))
+
+type UserEvent = ReturnType<typeof userEvent.setup>
+
+async function goToTab(user: UserEvent, tab: 'edit' | 'versions') {
+  await user.click(screen.getByTestId(`inspector-tab-${tab}`))
+}
 
 function renderComponent(ui: React.ReactElement) {
   const qc = new QueryClient({
@@ -151,9 +175,9 @@ describe('GraphDocumentInspector', () => {
     expect(within(inspector).getAllByText('v2').length).toBeGreaterThanOrEqual(1)
 
     // Metadata
-    expect(within(inspector).getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(within(inspector).getAllByText('Ada Lovelace').length).toBeGreaterThanOrEqual(1)
     expect(within(inspector).getByText('Charles Babbage')).toBeInTheDocument()
-    expect(within(inspector).getByText('2 Jun 2026')).toBeInTheDocument()
+    expect(within(inspector).getAllByText('2 Jun 2026').length).toBeGreaterThanOrEqual(1)
   })
 
   it('calls onClose when close button is clicked', async () => {
@@ -183,6 +207,8 @@ describe('GraphDocumentInspector', () => {
         onClose={vi.fn()}
       />,
     )
+
+    await goToTab(user, 'edit')
 
     const nameInput = screen.getByDisplayValue('Q3 Board Minutes')
     const nameSection = nameInput.closest('div')!
@@ -214,6 +240,8 @@ describe('GraphDocumentInspector', () => {
       />,
     )
 
+    await goToTab(user, 'edit')
+
     const switchInput = screen.getByRole('checkbox')
     expect(switchInput).toBeChecked()
 
@@ -236,6 +264,8 @@ describe('GraphDocumentInspector', () => {
       />,
     )
 
+    await goToTab(user, 'edit')
+
     // Find the status select
     const statusSelect = screen.getByDisplayValue('Uploaded')
     await user.selectOptions(statusSelect, 'pending_approval')
@@ -257,6 +287,8 @@ describe('GraphDocumentInspector', () => {
         onClose={vi.fn()}
       />,
     )
+
+    await goToTab(user, 'edit')
 
     const bucketSelect = screen.getByDisplayValue('Finance & Tax')
     await user.selectOptions(bucketSelect, 'bucket-2')
@@ -287,6 +319,8 @@ describe('GraphDocumentInspector', () => {
       />,
     )
 
+    await goToTab(user, 'edit')
+
     const tagsInput = screen.getByDisplayValue('board, minutes')
     const tagsSection = tagsInput.closest('div')!
     const saveTagsBtn = within(tagsSection).getByRole('button', { name: 'Save' })
@@ -313,6 +347,8 @@ describe('GraphDocumentInspector', () => {
       />,
     )
 
+    await goToTab(user, 'versions')
+
     expect(screen.getByText('v1')).toBeInTheDocument()
     expect(screen.getAllByText('v2')).toHaveLength(2) // in header badge and in list
     expect(screen.getByText('current')).toBeInTheDocument()
@@ -338,6 +374,8 @@ describe('GraphDocumentInspector', () => {
         onClose={vi.fn()}
       />,
     )
+
+    await goToTab(user, 'versions')
 
     const file = new File(['new content'], 'minutes_v3.pdf', { type: 'application/pdf' })
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
@@ -391,10 +429,12 @@ describe('GraphDocumentInspector', () => {
       />,
     )
 
-    // Shows archived notice for status
+    // Shows archived notice for status (Edit tab)
+    await goToTab(user, 'edit')
     expect(screen.getByText('Archived documents are locked.')).toBeInTheDocument()
 
-    // Upload dropzone is disabled / shows archived text
+    // Upload dropzone is disabled / shows archived text (Versions tab)
+    await goToTab(user, 'versions')
     expect(screen.getByText('Archived — new versions are disabled.')).toBeInTheDocument()
 
     // Restore button is present
@@ -409,7 +449,8 @@ describe('GraphDocumentInspector', () => {
     )
   })
 
-  it('disables editing inputs and new version dropzone when document is locked (not editable)', () => {
+  it('disables editing inputs and new version dropzone when document is locked (not editable)', async () => {
+    const user = userEvent.setup()
     const lockedDoc: DocumentResponse = {
       ...mockDoc,
       is_editable: false,
@@ -424,14 +465,40 @@ describe('GraphDocumentInspector', () => {
       />,
     )
 
+    await goToTab(user, 'edit')
+
     const titleInput = screen.getByDisplayValue('Q3 Board Minutes')
     expect(titleInput).toBeDisabled()
 
     const tagsInput = screen.getByDisplayValue('board, minutes')
     expect(tagsInput).toBeDisabled()
 
+    await goToTab(user, 'versions')
     expect(
       screen.getByText('This document is locked (new versions not allowed).'),
     ).toBeInTheDocument()
+  })
+
+  it('defaults to Overview tab showing read-only facts and tag chips', () => {
+    renderComponent(<GraphDocumentInspector open document={mockDoc} buckets={mockBuckets} onClose={vi.fn()} />)
+    expect(screen.getByTestId('inspector-tab-overview').getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('board')).toBeInTheDocument()
+    expect(screen.getByText('minutes')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Q3 Board Minutes')).not.toBeInTheDocument()
+  })
+
+  it('switches tabs and resets to Overview when document changes', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderComponent(<GraphDocumentInspector open document={mockDoc} buckets={mockBuckets} onClose={vi.fn()} />)
+    await user.click(screen.getByTestId('inspector-tab-edit'))
+    expect(screen.getByTestId('inspector-tab-edit').getAttribute('aria-selected')).toBe('true')
+    rerender(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
+        <ToastProvider>
+          <GraphDocumentInspector open document={{ ...mockDoc, id: 'doc-2' }} buckets={mockBuckets} onClose={vi.fn()} />
+        </ToastProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByTestId('inspector-tab-overview').getAttribute('aria-selected')).toBe('true')
   })
 })

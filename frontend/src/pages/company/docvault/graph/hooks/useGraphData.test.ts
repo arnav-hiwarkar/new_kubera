@@ -91,4 +91,38 @@ describe('transformToGraphData', () => {
     expect(data.nodes.length).toBe(3)
     expect(data.nodes.some((n) => n.id === 'doc_d3')).toBe(false)
   })
+
+  it('creates tag-shared links for docs sharing >= 1 tag', () => {
+    const data = transformToGraphData(mockBuckets, mockDocs, 'bucket', new Set(['all']))
+    const tagLinks = data.links.filter((l) => l.kind === 'tag-shared')
+    expect(tagLinks.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('does not create tag links when docs share no tags', () => {
+    const noTags = mockDocs.map((d) => ({ ...d, tags: [] }))
+    const data = transformToGraphData(mockBuckets, noTags, 'bucket', new Set(['all']))
+    expect(data.links.filter((l) => l.kind === 'tag-shared')).toHaveLength(0)
+  })
+
+  it('respects showTagLinks=false', () => {
+    const data = transformToGraphData(mockBuckets, mockDocs, 'bucket', new Set(['all']), false)
+    expect(data.links.filter((l) => l.kind === 'tag-shared')).toHaveLength(0)
+  })
+
+  it('caps tag links at 8 per document, prioritizing more shared tags', () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      ...mockDocs[0],
+      id: `extra-${i}`,
+      title: `Extra ${i}`,
+      tags: ['common'],
+    }))
+    const docs = [{ ...mockDocs[0], id: 'hub', title: 'Hub', tags: ['common'] }, ...many]
+    const data = transformToGraphData(mockBuckets, docs, 'bucket', new Set(['all']))
+    const hubLinks = data.links.filter(
+      (l) =>
+        l.kind === 'tag-shared' &&
+        ((l.source as string) === 'doc_hub' || (l.target as string) === 'doc_hub'),
+    )
+    expect(hubLinks.length).toBeLessThanOrEqual(8)
+  })
 })

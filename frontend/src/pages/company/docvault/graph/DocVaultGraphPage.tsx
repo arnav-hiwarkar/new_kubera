@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import type { ForceGraph3DInstance } from '3d-force-graph'
+import { X } from 'lucide-react'
 import { useBuckets, useDocuments } from '@/api/hooks/docvault'
+import { useTheme } from '@/lib/useTheme'
 import type { ColorMode, GraphNode } from './types/graph'
 import { useGraphData } from './hooks/useGraphData'
 import { useGraphControls } from './hooks/useGraphControls'
@@ -19,20 +21,29 @@ export function DocVaultGraphPage() {
   const [visibleBucketIds, setVisibleBucketIds] = useState<Set<string>>(new Set(['all']))
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
+  const { theme } = useTheme()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isolatedClusterId, setIsolatedClusterId] = useState<string | null>(null)
+  const [showTagLinks, setShowTagLinks] = useState(true)
 
   const graphInstanceRef = useRef<ForceGraph3DInstance | null>(null)
-  const graphData = useGraphData(buckets, documents, colorMode, visibleBucketIds)
+  const graphData = useGraphData(buckets, documents, colorMode, visibleBucketIds, showTagLinks)
   const graphControls = useGraphControls(graphInstanceRef)
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setSelectedNode(null)
+        setIsolatedClusterId(null)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
+
+  const handleIsolateCluster = (bucketRawId: string) => {
+    setIsolatedClusterId((prev) => (prev === bucketRawId ? null : bucketRawId))
+  }
 
   const handleToggleBucket = (bucketId: string) => {
     setVisibleBucketIds((prev) => {
@@ -103,6 +114,8 @@ export function DocVaultGraphPage() {
         onToggleBucket={handleToggleBucket}
         onShowAllBuckets={handleShowAllBuckets}
         onSelectNode={handleSelectNode}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
       />
 
       <GraphCanvas
@@ -113,7 +126,33 @@ export function DocVaultGraphPage() {
         onHoverNode={setHoveredNode}
         graphInstanceRef={graphInstanceRef}
         className="w-full h-full"
+        theme={theme}
+        searchQuery={searchQuery}
+        isolatedClusterId={isolatedClusterId}
+        onIsolateCluster={handleIsolateCluster}
       />
+
+      {isolatedClusterId && (
+        <div
+          data-testid="isolation-pill"
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-bg-surface/90 backdrop-blur-md border border-border px-3 py-1.5 text-xs text-text-primary shadow-lg"
+        >
+          <span>
+            Isolated:{' '}
+            {buckets.find((b) => b.id === isolatedClusterId)?.name ??
+              (isolatedClusterId === 'uncategorized' ? 'Uncategorized' : isolatedClusterId)}
+          </span>
+          <button
+            type="button"
+            data-testid="isolation-exit-btn"
+            onClick={() => setIsolatedClusterId(null)}
+            aria-label="Exit isolation"
+            className="text-text-muted hover:text-text-primary"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       <GraphNavigationControls controls={graphControls} />
 
@@ -123,12 +162,16 @@ export function DocVaultGraphPage() {
         documentCount={bucketDocCount}
         onClose={() => setSelectedNode(null)}
         onFocusCluster={(n) => graphControls.flyToNode(n)}
+        onIsolate={() => setIsolatedClusterId(selectedNode!.rawId)}
+        isIsolated={isolatedClusterId === selectedNode?.rawId}
       />
 
       <GraphLegend
         colorMode={colorMode}
         buckets={buckets}
         data={graphData}
+        showTagLinks={showTagLinks}
+        onToggleTagLinks={setShowTagLinks}
       />
 
       <GraphDocumentInspector

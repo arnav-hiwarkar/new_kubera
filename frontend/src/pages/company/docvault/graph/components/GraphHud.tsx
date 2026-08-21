@@ -25,6 +25,8 @@ export interface GraphHudProps {
   onToggleBucket: (bucketId: string) => void
   onShowAllBuckets: () => void
   onSelectNode: (node: GraphNode) => void
+  searchQuery: string
+  onSearchQueryChange: (q: string) => void
   className?: string
 }
 
@@ -37,12 +39,13 @@ export function GraphHud({
   onToggleBucket,
   onShowAllBuckets,
   onSelectNode,
+  searchQuery,
+  onSearchQueryChange,
   className = '',
 }: GraphHudProps) {
   const navigate = useNavigate()
 
-  // Search state
-  const [searchQuery, setSearchQuery] = useState('')
+  // Search popover state (query itself is lifted to the page)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement>(null)
 
@@ -104,7 +107,7 @@ export function GraphHud({
   const handleSelectSearchResult = (node: GraphNode) => {
     onSelectNode(node)
     setIsSearchOpen(false)
-    setSearchQuery('')
+    onSearchQueryChange('')
   }
 
   return (
@@ -121,7 +124,7 @@ export function GraphHud({
           onClick={() => navigate('/app/docvault')}
           aria-label="Back to DocVault"
           data-testid="back-button"
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/85 backdrop-blur-md border border-slate-700/60 text-slate-200 hover:text-white hover:bg-slate-800/90 transition-colors shadow-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-bg-surface/85 backdrop-blur-md border border-border text-text-primary hover:bg-bg-raised/80 transition-colors shadow-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-border-strong"
         >
           <ArrowLeft className="h-4 w-4" />
           <span>Back to DocVault</span>
@@ -129,9 +132,9 @@ export function GraphHud({
 
         <div
           data-testid="graph-breadcrumb-badge"
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/85 backdrop-blur-md border border-slate-700/60 text-slate-300 text-xs font-medium shadow-lg"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-surface/85 backdrop-blur-md border border-border text-text-secondary text-xs font-medium shadow-lg"
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
           <span>
             DocVault 3D Graph &middot; {totalBucketCount} Buckets &middot; {totalDocCount} Docs
           </span>
@@ -144,31 +147,40 @@ export function GraphHud({
         className="pointer-events-auto relative flex-1 max-w-md min-w-[240px]"
       >
         <div className="relative flex items-center">
-          <Search className="absolute left-3 w-4 h-4 text-slate-400 pointer-events-none" />
+          <Search className="absolute left-3 w-4 h-4 text-text-muted pointer-events-none" />
           <input
             type="text"
             data-testid="graph-search-input"
             value={searchQuery}
             onChange={(e) => {
-              setSearchQuery(e.target.value)
+              onSearchQueryChange(e.target.value)
               setIsSearchOpen(true)
             }}
             onFocus={() => {
               if (searchQuery.trim()) setIsSearchOpen(true)
             }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && searchResults.length > 0) {
+                handleSelectSearchResult(searchResults[0])
+              }
+              if (e.key === 'Escape') {
+                onSearchQueryChange('')
+                setIsSearchOpen(false)
+              }
+            }}
             placeholder="Search documents, buckets, tags..."
-            className="w-full pl-9 pr-8 py-2 rounded-lg bg-slate-900/85 backdrop-blur-md border border-slate-700/60 text-slate-100 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/80 transition-all shadow-lg"
+            className="w-full pl-9 pr-8 py-2 rounded-lg bg-bg-surface/85 backdrop-blur-md border border-border text-text-primary placeholder-text-muted text-xs focus:outline-none focus:ring-2 focus:ring-accent-ring focus:border-accent transition-all shadow-lg"
           />
           {searchQuery && (
             <button
               type="button"
               data-testid="search-clear-btn"
               onClick={() => {
-                setSearchQuery('')
+                onSearchQueryChange('')
                 setIsSearchOpen(false)
               }}
               aria-label="Clear search"
-              className="absolute right-2.5 p-0.5 text-slate-400 hover:text-slate-200 focus:outline-none"
+              className="absolute right-2.5 p-0.5 text-text-muted hover:text-text-primary focus:outline-none"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -179,12 +191,12 @@ export function GraphHud({
         {isSearchOpen && searchQuery.trim().length > 0 && (
           <div
             data-testid="search-results-dropdown"
-            className="absolute left-0 right-0 top-full mt-1.5 max-h-72 overflow-y-auto rounded-lg bg-slate-900/95 backdrop-blur-md border border-slate-700/80 shadow-2xl p-1 text-slate-200 text-xs z-30"
+            className="absolute left-0 right-0 top-full mt-1.5 max-h-72 overflow-y-auto rounded-lg bg-bg-surface/95 backdrop-blur-md border border-border shadow-2xl p-1 text-text-primary text-xs z-30"
           >
             {searchResults.length === 0 ? (
               <div
                 data-testid="search-no-results"
-                className="px-3 py-3 text-center text-slate-400"
+                className="px-3 py-3 text-center text-text-muted"
               >
                 No matching documents or buckets found
               </div>
@@ -197,7 +209,7 @@ export function GraphHud({
                     type="button"
                     data-testid="search-result-item"
                     onClick={() => handleSelectSearchResult(node)}
-                    className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-md hover:bg-slate-800/90 text-left transition-colors group"
+                    className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-md hover:bg-bg-raised/80 text-left transition-colors group"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <span
@@ -205,18 +217,18 @@ export function GraphHud({
                         style={{ backgroundColor: node.color }}
                       />
                       {isBucket ? (
-                        <Folder className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        <Folder className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
                       ) : (
-                        <FileText className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        <FileText className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
                       )}
-                      <span className="truncate font-medium text-slate-200 group-hover:text-white">
+                      <span className="truncate font-medium text-text-primary group-hover:text-text-primary">
                         {node.name}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {node.tags && node.tags.length > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-inset text-text-muted border border-border">
                           {node.tags[0]}
                           {node.tags.length > 1 ? ` +${node.tags.length - 1}` : ''}
                         </span>
@@ -225,8 +237,8 @@ export function GraphHud({
                         className={cn(
                           'text-[10px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider',
                           isBucket
-                            ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
-                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
+                            ? 'bg-bg-inset text-text-secondary border border-border'
+                            : 'bg-accent-subtle text-accent border border-accent/30',
                         )}
                       >
                         {isBucket ? 'Bucket' : 'Doc'}
@@ -246,7 +258,7 @@ export function GraphHud({
         <div
           role="group"
           aria-label="Color Mode"
-          className="flex items-center p-1 rounded-lg bg-slate-900/85 backdrop-blur-md border border-slate-700/60 shadow-lg text-xs"
+          className="flex items-center p-1 rounded-lg bg-bg-surface/85 backdrop-blur-md border border-border shadow-lg text-xs"
         >
           <button
             type="button"
@@ -255,8 +267,8 @@ export function GraphHud({
             className={cn(
               'px-2.5 py-1 rounded-md transition-all font-medium',
               colorMode === 'bucket'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200',
+                ? 'bg-accent text-accent-contrast shadow-sm'
+                : 'text-text-muted hover:text-text-primary',
             )}
           >
             By Bucket
@@ -268,8 +280,8 @@ export function GraphHud({
             className={cn(
               'px-2.5 py-1 rounded-md transition-all font-medium',
               colorMode === 'status'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200',
+                ? 'bg-accent text-accent-contrast shadow-sm'
+                : 'text-text-muted hover:text-text-primary',
             )}
           >
             By Status
@@ -285,16 +297,16 @@ export function GraphHud({
             aria-expanded={isFilterOpen}
             aria-label="Filter Buckets"
             className={cn(
-              'flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/85 backdrop-blur-md border text-slate-200 hover:text-white transition-colors shadow-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-500',
+              'flex items-center gap-1.5 px-3 py-2 rounded-lg bg-bg-surface/85 backdrop-blur-md border text-text-primary transition-colors shadow-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-border-strong',
               !showAll && visibleBucketIds.size > 0
-                ? 'border-emerald-500/50 text-emerald-300'
-                : 'border-slate-700/60',
+                ? 'border-accent/50 text-accent'
+                : 'border-border',
             )}
           >
             <Filter className="w-3.5 h-3.5" />
             <span>Buckets</span>
             {!showAll && (
-              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-accent-subtle text-accent text-[10px] font-mono">
                 {visibleBucketIds.size}
               </span>
             )}
@@ -304,10 +316,10 @@ export function GraphHud({
           {isFilterOpen && (
             <div
               data-testid="bucket-filter-dropdown"
-              className="absolute right-0 top-full mt-1.5 w-60 max-h-80 overflow-y-auto rounded-lg bg-slate-900/95 backdrop-blur-md border border-slate-700/80 shadow-2xl p-2 text-slate-200 text-xs z-30 flex flex-col gap-1"
+              className="absolute right-0 top-full mt-1.5 w-60 max-h-80 overflow-y-auto rounded-lg bg-bg-surface/95 backdrop-blur-md border border-border shadow-2xl p-2 text-text-primary text-xs z-30 flex flex-col gap-1"
             >
-              <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 pb-1.5 mb-1">
-                <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+              <div className="flex items-center justify-between px-2 py-1 border-b border-border pb-1.5 mb-1">
+                <span className="font-semibold text-text-secondary flex items-center gap-1.5">
                   <Layers className="w-3.5 h-3.5" />
                   Filter Buckets
                 </span>
@@ -318,7 +330,7 @@ export function GraphHud({
                     onShowAllBuckets()
                     setIsFilterOpen(false)
                   }}
-                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
+                  className="text-[11px] text-accent hover:text-accent-hover font-medium transition-colors"
                 >
                   Show All
                 </button>
@@ -330,7 +342,7 @@ export function GraphHud({
                 return (
                   <label
                     key={bucket.id}
-                    className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-slate-800/80 cursor-pointer select-none transition-colors"
+                    className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-bg-raised/80 cursor-pointer select-none transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <input
@@ -344,8 +356,8 @@ export function GraphHud({
                         className={cn(
                           'w-4 h-4 rounded border flex items-center justify-center transition-colors',
                           isChecked
-                            ? 'bg-emerald-600 border-emerald-500 text-white'
-                            : 'border-slate-600 bg-slate-800/50',
+                            ? 'bg-accent border-accent text-accent-contrast'
+                            : 'border-border bg-bg-inset',
                         )}
                       >
                         {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
@@ -354,7 +366,7 @@ export function GraphHud({
                         className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: color }}
                       />
-                      <span className="truncate text-slate-200 font-medium">
+                      <span className="truncate text-text-primary font-medium">
                         {bucket.name}
                       </span>
                     </div>
@@ -363,7 +375,7 @@ export function GraphHud({
               })}
 
               {/* Option for Uncategorized documents if any */}
-              <label className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-slate-800/80 cursor-pointer select-none transition-colors border-t border-slate-800/60 mt-1 pt-1.5">
+              <label className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-bg-raised/80 cursor-pointer select-none transition-colors border-t border-border mt-1 pt-1.5">
                 <div className="flex items-center gap-2 min-w-0">
                   <input
                     type="checkbox"
@@ -376,8 +388,8 @@ export function GraphHud({
                     className={cn(
                       'w-4 h-4 rounded border flex items-center justify-center transition-colors',
                       showAll || visibleBucketIds.has('uncategorized')
-                        ? 'bg-emerald-600 border-emerald-500 text-white'
-                        : 'border-slate-600 bg-slate-800/50',
+                        ? 'bg-accent border-accent text-accent-contrast'
+                        : 'border-border bg-bg-inset',
                     )}
                   >
                     {(showAll || visibleBucketIds.has('uncategorized')) && (
@@ -385,9 +397,9 @@ export function GraphHud({
                     )}
                   </div>
                   <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-slate-400"
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-text-muted"
                   />
-                  <span className="truncate text-slate-300 font-medium">
+                  <span className="truncate text-text-secondary font-medium">
                     Uncategorized
                   </span>
                 </div>

@@ -8,6 +8,7 @@ export function transformToGraphData(
   documents: DocumentResponse[],
   colorMode: ColorMode,
   visibleBucketIds: Set<string>,
+  showTagLinks = true,
 ): GraphData {
   const bucketMap = new Map<string, BucketResponse>()
   buckets.forEach((b) => bucketMap.set(b.id, b))
@@ -86,26 +87,38 @@ export function transformToGraphData(
       target: docNodeId,
       kind: 'bucket-doc',
       strength: 0.8,
-      color: 'rgba(100, 160, 255, 0.35)',
+      color: '',
     })
   })
 
-  // Add Secondary Links between docs sharing >= 2 tags
-  for (let i = 0; i < filteredDocs.length; i++) {
-    for (let j = i + 1; j < filteredDocs.length; j++) {
-      const docA = filteredDocs[i]
-      const docB = filteredDocs[j]
-      if (!docA.tags?.length || !docB.tags?.length) continue
-      const sharedTags = docA.tags.filter((t) => docB.tags.includes(t))
-      if (sharedTags.length >= 2) {
-        links.push({
-          source: `doc_${docA.id}`,
-          target: `doc_${docB.id}`,
-          kind: 'tag-shared',
-          strength: 0.15,
-          color: 'rgba(255, 255, 255, 0.12)',
-        })
+  // Secondary links between docs sharing >= 1 tag, capped at 8 per doc,
+  // prioritized by shared-tag count so strongest relationships survive the cap.
+  if (showTagLinks) {
+    const candidates: { a: DocumentResponse; b: DocumentResponse; shared: number }[] = []
+    for (let i = 0; i < filteredDocs.length; i++) {
+      for (let j = i + 1; j < filteredDocs.length; j++) {
+        const docA = filteredDocs[i]
+        const docB = filteredDocs[j]
+        if (!docA.tags?.length || !docB.tags?.length) continue
+        const shared = docA.tags.filter((t) => docB.tags.includes(t)).length
+        if (shared >= 1) candidates.push({ a: docA, b: docB, shared })
       }
+    }
+    candidates.sort((x, y) => y.shared - x.shared)
+
+    const perDoc = new Map<string, number>()
+    const canLink = (id: string) => (perDoc.get(id) ?? 0) < 8
+    for (const c of candidates) {
+      if (!canLink(c.a.id) || !canLink(c.b.id)) continue
+      perDoc.set(c.a.id, (perDoc.get(c.a.id) ?? 0) + 1)
+      perDoc.set(c.b.id, (perDoc.get(c.b.id) ?? 0) + 1)
+      links.push({
+        source: `doc_${c.a.id}`,
+        target: `doc_${c.b.id}`,
+        kind: 'tag-shared',
+        strength: 0.08,
+        color: '',
+      })
     }
   }
 
@@ -123,9 +136,10 @@ export function useGraphData(
   documents: DocumentResponse[],
   colorMode: ColorMode,
   visibleBucketIds: Set<string>,
+  showTagLinks = true,
 ): GraphData {
   return useMemo(
-    () => transformToGraphData(buckets, documents, colorMode, visibleBucketIds),
-    [buckets, documents, colorMode, visibleBucketIds],
+    () => transformToGraphData(buckets, documents, colorMode, visibleBucketIds, showTagLinks),
+    [buckets, documents, colorMode, visibleBucketIds, showTagLinks],
   )
 }

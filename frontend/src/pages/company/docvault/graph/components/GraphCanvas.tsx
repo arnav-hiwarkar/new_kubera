@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import ForceGraph3D, { type ForceGraph3DInstance } from '3d-force-graph'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import type { GraphData, GraphLink, GraphNode } from '../types/graph'
-import { createNodeSprite, updateSpriteLOD } from '../lib/textSprite'
+import { createNodeSprite } from '../lib/textSprite'
+import { getGraphTheme, type GraphThemeMode } from '../lib/theme'
+import { buildNeighborSet, dimOpacity, resolveDimState } from '../lib/dimState'
 
 export interface GraphCanvasProps {
   data: GraphData
@@ -12,6 +15,10 @@ export interface GraphCanvasProps {
   onHoverNode?: (node: GraphNode | null) => void
   graphInstanceRef?: React.MutableRefObject<ForceGraph3DInstance | null> | React.RefObject<ForceGraph3DInstance | null> | { current: ForceGraph3DInstance | null }
   className?: string
+  theme?: GraphThemeMode
+  searchQuery?: string
+  isolatedClusterId?: string | null
+  onIsolateCluster?: (bucketRawId: string) => void
 }
 
 interface ForceSimulationLike {
@@ -19,6 +26,15 @@ interface ForceSimulationLike {
   restart?: () => ForceSimulationLike
   distance?: (fn: (link: GraphLink) => number) => ForceSimulationLike
   strength?: (fnOrVal: number | ((link: GraphLink) => number)) => ForceSimulationLike
+}
+
+const PULSE_STATUSES = new Set(['action_required', 'overdue'])
+
+function sameCluster(docA: string, docB: string, nodes: GraphNode[]): boolean {
+  const m = new Map(nodes.map((n) => [n.id, n]))
+  const a = m.get(docA)
+  const b = m.get(docB)
+  return (a?.bucketId ?? 'uncategorized') === (b?.bucketId ?? 'uncategorized')
 }
 
 export function GraphCanvas({
@@ -29,6 +45,10 @@ export function GraphCanvas({
   onHoverNode,
   graphInstanceRef,
   className = '',
+  theme = 'dark',
+  searchQuery = '',
+  isolatedClusterId = null,
+  onIsolateCluster,
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const graphObjRef = useRef<ForceGraph3DInstance | null>(null)
@@ -48,12 +68,37 @@ export function GraphCanvas({
   const hoveredNodeIdRef = useRef(hoveredNodeId)
   hoveredNodeIdRef.current = hoveredNodeId
 
+  const themeRef = useRef(theme)
+  themeRef.current = theme
+
+  const searchQueryRef = useRef(searchQuery)
+  searchQueryRef.current = searchQuery
+
+  const isolatedClusterIdRef = useRef(isolatedClusterId)
+  isolatedClusterIdRef.current = isolatedClusterId
+
+  const onIsolateClusterRef = useRef(onIsolateCluster)
+  onIsolateClusterRef.current = onIsolateCluster
+
+  const lastClickRef = useRef<{ id: string; time: number }>({ id: '', time: 0 })
+
+  const visualRegistryRef = useRef<Map<string, {
+    group: THREE.Group
+    sphereMat: THREE.MeshStandardMaterial
+    baseEmissive: number
+    baseScale: number
+    sprite: THREE.Sprite
+  }>>(new Map())
+
   // Mount 3d-force-graph canvas
   useEffect(() => {
     if (!containerRef.current) return
 
     // Clear previous sprites
     spritesRef.current.clear()
+    visualRegistryRef.current.clear()
+
+    const themeObj = getGraphTheme(themeRef.current)
 
     // Initialize 3d-force-graph
     const ForceGraphFactory = (ForceGraph3D as unknown as { default?: () => (elem: HTMLElement) => ForceGraph3DInstance }).default || (ForceGraph3D as unknown as () => (elem: HTMLElement) => ForceGraph3DInstance)
@@ -61,17 +106,21 @@ export function GraphCanvas({
     const graph = (typeof initFn === 'function' ? initFn(containerRef.current) : initFn) as ForceGraph3DInstance
 
     graph
-      .backgroundColor('#0B0F17')
+      .backgroundColor(themeObj.background)
       .showNavInfo(false)
       .nodeRelSize(4)
       .nodeVal((node) => ((node as GraphNode).type === 'bucket' ? 16 : 6))
       .linkWidth((link) => ((link as GraphLink).kind === 'bucket-doc' ? 1.5 : 0.8))
       .linkOpacity(0.4)
-      .linkColor((link) => (link as GraphLink).color || 'rgba(100, 160, 255, 0.35)')
+      .linkColor((link) => {
+        const t = getGraphTheme(themeRef.current)
+        return (link as GraphLink).kind === 'bucket-doc' ? t.linkBucketDoc : t.linkTag
+      })
       .linkDirectionalParticles((link) => ((link as GraphLink).kind === 'bucket-doc' ? 2 : 0))
       .linkDirectionalParticleWidth(1.2)
       .linkDirectionalParticleSpeed(0.004)
-      .linkDirectionalParticleColor((link) => (link as GraphLink).color || 'rgba(147, 197, 253, 0.8)')
+      .linkDirectionalParticleColor(() => getGraphTheme(themeRef.current).particle)
+      .linkCurvature((link) => ((link as GraphLink).kind === 'tag-shared' ? 0.25 : 0))
       .nodeThreeObject((nodeObj) => {
         const node = nodeObj as GraphNode
         const group = new THREE.Group()
@@ -87,7 +136,7 @@ export function GraphCanvas({
         const material = new THREE.MeshStandardMaterial({
           color: node.color,
           emissive: node.color,
-          emissiveIntensity: isSelected ? 0.9 : isHovered ? 0.75 : isBucket ? 0.6 : 0.35,
+          emissiveIntensity: (isSelected ? 0.9 : isHovered ? 0.75 : isBucket ? 0.6 : 0.35) * getGraphTheme(themeRef.current).emissiveMultiplier,
           roughness: 0.3,
           metalness: 0.2,
         })
@@ -98,7 +147,7 @@ export function GraphCanvas({
         if (isBucket) {
           const ringGeom = new THREE.RingGeometry(node.size * 1.3, node.size * 1.45, 32)
           const ringMat = new THREE.MeshBasicMaterial({
-            color: node.color,
+            color: getGraphTheme(themeRef.current).bucketRing,
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.45,
@@ -112,7 +161,7 @@ export function GraphCanvas({
         if (isSelected) {
           const selRingGeom = new THREE.RingGeometry(node.size * 1.5, node.size * 1.65, 32)
           const selRingMat = new THREE.MeshBasicMaterial({
-            color: '#FFFFFF',
+            color: getGraphTheme(themeRef.current).selectionRing,
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.8,
@@ -122,10 +171,18 @@ export function GraphCanvas({
         }
 
         // Billboard text sprite
-        const sprite = createNodeSprite(node)
+        const sprite = createNodeSprite(node, getGraphTheme(themeRef.current))
         sprite.position.set(0, node.size + (isBucket ? 6 : 4), 0)
         spritesRef.current.set(node.id, sprite)
         group.add(sprite)
+
+        visualRegistryRef.current.set(node.id, {
+          group,
+          sphereMat: material,
+          baseEmissive: material.emissiveIntensity,
+          baseScale: 1,
+          sprite,
+        })
 
         return group
       })
@@ -136,6 +193,15 @@ export function GraphCanvas({
         onHoverNodeRef.current?.((node as GraphNode) || null)
       })
       .onNodeClick((node) => {
+        const now = Date.now()
+        const n = node as GraphNode
+        if (lastClickRef.current.id === n.id && now - lastClickRef.current.time < 350) {
+          lastClickRef.current = { id: '', time: 0 }
+          if (n.type === 'bucket') onIsolateClusterRef.current?.(n.rawId)
+          onSelectNodeRef.current?.(n)
+          return
+        }
+        lastClickRef.current = { id: n.id, time: now }
         onSelectNodeRef.current?.((node as GraphNode) || null)
       })
       .onBackgroundClick(() => {
@@ -197,15 +263,27 @@ export function GraphCanvas({
       graph.height(containerRef.current.clientHeight || window.innerHeight)
     }
 
-    // Per-frame LOD update loop & Scene lighting
-    const camera = graph.camera()
+    // Per-frame unified render loop & Scene lighting
     const scene = graph.scene()
 
     if (scene) {
-      scene.add(new THREE.AmbientLight(0xffffff, 0.7))
-      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8)
+      scene.add(new THREE.AmbientLight(0xffffff, themeObj.ambientIntensity))
+      const dirLight = new THREE.DirectionalLight(0xffffff, themeObj.directionalIntensity)
       dirLight.position.set(100, 200, 150)
       scene.add(dirLight)
+      scene.fog = new THREE.Fog(themeObj.background, themeObj.fogNear, themeObj.fogFar)
+    }
+
+    // Bloom in dark mode only — degrade silently on failure
+    if (themeRef.current === 'dark') {
+      try {
+        const composer = graph.postProcessingComposer()
+        const width = containerRef.current?.clientWidth || window.innerWidth
+        const height = containerRef.current?.clientHeight || window.innerHeight
+        composer.addPass(new UnrealBloomPass(new THREE.Vector2(width, height), 0.35, 0.6, 0.55))
+      } catch {
+        // no bloom
+      }
     }
 
     // Load initial graph data
@@ -214,19 +292,75 @@ export function GraphCanvas({
       links: dataRef.current.links,
     })
 
-    const interval = setInterval(() => {
-      if (!camera) return
-      const camPos = camera.position
-      if (!camPos) return
+    const applyFrame = () => {
+      const cam = graph.camera()
+      if (!cam) return
+      const t = getGraphTheme(themeRef.current)
+      const now = performance.now() / 1000
+      const pulse = Math.sin((now * Math.PI * 2) / 1.4) // ~1.4s cycle
+
+      const input = {
+        query: searchQueryRef.current,
+        hoveredNodeId: hoveredNodeIdRef.current,
+        selectedNodeId: selectedNodeIdRef.current,
+        isolatedClusterId: isolatedClusterIdRef.current,
+      }
+      const focusId = input.hoveredNodeId ?? input.selectedNodeId
+      const neighbors = buildNeighborSet(dataRef.current.links, focusId)
+      const isolatedActive = !!input.isolatedClusterId || !!input.query.trim()
 
       dataRef.current.nodes.forEach((node) => {
-        const sprite = spritesRef.current.get(node.id)
+        const vis = visualRegistryRef.current.get(node.id)
+        if (!vis) return
+
+        // Dim / spotlight
+        const state = resolveDimState(node, neighbors, input)
+        const opacity = dimOpacity(state, isolatedActive)
+        vis.group.traverse((obj) => {
+          const mesh = obj as THREE.Mesh
+          if (mesh.material && 'opacity' in mesh.material) {
+            const mat = mesh.material as THREE.Material
+            mat.transparent = true
+            mat.opacity = opacity
+          }
+        })
+
+        // Status pulse (only when not dimmed)
+        const shouldPulse = node.type === 'document' && !!node.status && PULSE_STATUSES.has(node.status)
+        if (shouldPulse && opacity === 1) {
+          const s = 1 + 0.1 * pulse
+          vis.group.scale.setScalar(s)
+          vis.sphereMat.emissiveIntensity = vis.baseEmissive * (1 + 0.5 * pulse)
+        } else {
+          vis.group.scale.setScalar(1)
+          vis.sphereMat.emissiveIntensity =
+            vis.baseEmissive * t.emissiveMultiplier * (state === 'highlight' ? 1.25 : 1)
+        }
+
+        // Label LOD (existing behavior) × dim factor
+        const sprite = vis.sprite
         if (sprite && node.x !== undefined && node.y !== undefined && node.z !== undefined) {
-          const dist = camPos.distanceTo(new THREE.Vector3(node.x, node.y, node.z))
-          updateSpriteLOD(sprite, dist, node.type === 'bucket')
+          const dist = cam.position.distanceTo(new THREE.Vector3(node.x, node.y, node.z))
+          const isBucket = node.type === 'bucket'
+          let lodOpacity = 1
+          if (!isBucket) {
+            if (dist >= 420) lodOpacity = 0
+            else if (dist > 200) lodOpacity = (420 - dist) / (420 - 200)
+          }
+          sprite.material.opacity = opacity * Math.max(0, Math.min(1, lodOpacity))
+          sprite.visible = sprite.material.opacity > 0.001
         }
       })
-    }, 60)
+    }
+
+    // Prefer the library's frame hook; fall back to an interval.
+    let intervalId: ReturnType<typeof setInterval> | undefined
+    const g = graph as unknown as { onRenderFramePre?: (cb: () => void) => unknown }
+    if (typeof g.onRenderFramePre === 'function') {
+      g.onRenderFramePre(applyFrame)
+    } else {
+      intervalId = setInterval(applyFrame, 60)
+    }
 
     graphObjRef.current = graph
     if (graphInstanceRef) {
@@ -241,7 +375,7 @@ export function GraphCanvas({
     window.addEventListener('resize', handleResize)
 
     return () => {
-      clearInterval(interval)
+      if (intervalId !== undefined) clearInterval(intervalId)
       window.removeEventListener('resize', handleResize)
       if (graph) {
         graph._destructor?.()
@@ -266,6 +400,50 @@ export function GraphCanvas({
     if (!graphObjRef.current) return
     graphObjRef.current.nodeThreeObject(graphObjRef.current.nodeThreeObject())
   }, [selectedNodeId, hoveredNodeId])
+
+  // Re-apply theme when the theme prop changes
+  useEffect(() => {
+    const graph = graphObjRef.current
+    if (!graph) return
+    const t = getGraphTheme(theme)
+    graph.backgroundColor(t.background)
+    const scene = graph.scene()
+    if (scene) {
+      scene.fog = new THREE.Fog(t.background, t.fogNear, t.fogFar)
+      scene.traverse((obj) => {
+        if ((obj as THREE.AmbientLight).isAmbientLight) (obj as THREE.AmbientLight).intensity = t.ambientIntensity
+        if ((obj as THREE.DirectionalLight).isDirectionalLight) (obj as THREE.DirectionalLight).intensity = t.directionalIntensity
+      })
+    }
+    // rebuild node objects so sprites/materials pick up new colors
+    graph.nodeThreeObject(graph.nodeThreeObject())
+  }, [theme])
+
+  // Link dimming during focus
+  useEffect(() => {
+    const graph = graphObjRef.current
+    if (!graph) return
+    const anyG = graph as unknown as { linkVisibility?: unknown }
+    if (typeof anyG.linkVisibility !== 'function') return
+    const focusId = hoveredNodeId ?? selectedNodeId
+    const neighbors = buildNeighborSet(dataRef.current.links, focusId)
+    const active = !!(searchQuery.trim() || isolatedClusterId || focusId)
+    if (!active) {
+      graph.linkVisibility(() => true)
+      return
+    }
+    graph.linkVisibility((link) => {
+      const l = link as GraphLink
+      const s = typeof l.source === 'string' ? l.source : l.source.id
+      const t = typeof l.target === 'string' ? l.target : l.target.id
+      if (isolatedClusterId) {
+        return s === `bucket_${isolatedClusterId}` || t === `bucket_${isolatedClusterId}` ||
+          (s.startsWith('doc_') && t.startsWith('doc_') &&
+            sameCluster(s, t, dataRef.current.nodes))
+      }
+      return neighbors.has(s) || neighbors.has(t) || s === focusId || t === focusId
+    })
+  }, [hoveredNodeId, selectedNodeId, searchQuery, isolatedClusterId])
 
   return (
     <div

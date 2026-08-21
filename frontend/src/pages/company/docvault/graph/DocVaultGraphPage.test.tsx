@@ -21,6 +21,10 @@ const mockForceGraphInstance = {
   linkDirectionalParticleWidth: vi.fn().mockReturnThis(),
   linkDirectionalParticleSpeed: vi.fn().mockReturnThis(),
   linkDirectionalParticleColor: vi.fn().mockReturnThis(),
+  linkCurvature: vi.fn().mockReturnThis(),
+  linkVisibility: vi.fn().mockReturnThis(),
+  postProcessingComposer: vi.fn(() => ({ addPass: vi.fn() })),
+  onRenderFramePre: vi.fn().mockReturnThis(),
   nodeThreeObject: vi.fn().mockReturnThis(),
   onNodeHover: vi.fn().mockReturnThis(),
   onNodeClick: vi.fn().mockReturnThis(),
@@ -40,6 +44,8 @@ const mockForceGraphInstance = {
   }),
   scene: vi.fn().mockReturnValue({
     add: vi.fn(),
+    traverse: vi.fn(),
+    fog: null,
   }),
   graphData: vi.fn().mockReturnThis(),
   width: vi.fn().mockReturnThis(),
@@ -315,11 +321,11 @@ describe('DocVaultGraphPage', () => {
 
     const statusBtn = await findByTestId('color-mode-status')
     await user.click(statusBtn)
-    expect(statusBtn.className).toContain('bg-emerald-600')
+    expect(statusBtn.className).toContain('bg-accent')
 
     const bucketBtn = await findByTestId('color-mode-bucket')
     await user.click(bucketBtn)
-    expect(bucketBtn.className).toContain('bg-emerald-600')
+    expect(bucketBtn.className).toContain('bg-accent')
   })
 
   it('filters by bucket via HUD bucket dropdown', async () => {

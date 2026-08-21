@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest'
 import * as THREE from 'three'
 import { createNodeSprite, updateSpriteLOD, clearSpriteCache } from './textSprite'
+import { getGraphTheme } from './theme'
 import type { GraphNode } from '../types/graph'
 
 describe('textSprite and LOD engine', () => {
@@ -125,9 +126,16 @@ describe('textSprite and LOD engine', () => {
     it('uses texture cache to prevent redundant canvas redraws for identical node properties', () => {
       const sprite1 = createNodeSprite(mockDocNode)
       const sprite2 = createNodeSprite({ ...mockDocNode })
-      
+
       // Should reuse the same material / texture map from cache
       expect(sprite1.material.map).toBe(sprite2.material.map)
+    })
+
+    it('produces distinct cache entries per theme', () => {
+      const node = mockDocNode
+      const a = createNodeSprite(node, getGraphTheme('dark'))
+      const b = createNodeSprite(node, getGraphTheme('light'))
+      expect(a).not.toBe(b)
     })
   })
 })

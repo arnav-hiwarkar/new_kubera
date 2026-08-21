@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { GraphNode } from '../types/graph'
+import { getGraphTheme, type GraphTheme } from './theme'
 
 export const DOC_LOD_FULL_DISTANCE = 200
 export const DOC_LOD_CUTOFF_DISTANCE = 420
@@ -19,11 +20,11 @@ export function clearSpriteCache(): void {
   textureCache.clear()
 }
 
-function getNodeCacheKey(node: GraphNode): string {
+function getNodeCacheKey(node: GraphNode, themeMode: string): string {
   if (node.type === 'bucket') {
-    return `bucket:${node.name}:${node.color}`
+    return `${themeMode}:bucket:${node.name}:${node.color}`
   }
-  return `doc:${node.name}:${node.color}:${node.versionNo ?? 1}:${node.status ?? ''}`
+  return `${themeMode}:doc:${node.name}:${node.color}:${node.versionNo ?? 1}:${node.status ?? ''}`
 }
 
 function drawRoundedRect(
@@ -57,7 +58,7 @@ function truncateText(text: string, maxLength = 26): string {
   return `${text.slice(0, maxLength - 3)}...`
 }
 
-function createTextTexture(node: GraphNode): CachedTextureEntry {
+function createTextTexture(node: GraphNode, theme: GraphTheme): CachedTextureEntry {
   const DPI = 2
   const isBucket = node.type === 'bucket'
   
@@ -114,7 +115,7 @@ function createTextTexture(node: GraphNode): CachedTextureEntry {
 
   // Draw Background Pill
   drawRoundedRect(ctx, 1 * DPI, 1 * DPI, width - 2 * DPI, height - 2 * DPI, radius)
-  ctx.fillStyle = isBucket ? 'rgba(15, 23, 42, 0.92)' : 'rgba(15, 23, 42, 0.82)'
+  ctx.fillStyle = isBucket ? theme.spriteBgBucket : theme.spriteBgDoc
   ctx.fill()
 
   // Border Stroke
@@ -123,7 +124,7 @@ function createTextTexture(node: GraphNode): CachedTextureEntry {
     ctx.strokeStyle = node.color || '#38BDF8'
   } else {
     ctx.lineWidth = 1 * DPI
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)'
+    ctx.strokeStyle = theme.spriteBorderDoc
   }
   ctx.stroke()
 
@@ -139,7 +140,7 @@ function createTextTexture(node: GraphNode): CachedTextureEntry {
   const textX = dotCenterX + dotRadius + dotGap
   const textY = height / 2 + (DPI * 0.5) // Slight optical vertical alignment
   ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`
-  ctx.fillStyle = isBucket ? '#FFFFFF' : '#F1F5F9'
+  ctx.fillStyle = theme.spriteText
   ctx.fillText(labelText, textX, textY)
 
   // Draw Version Badge if present
@@ -150,7 +151,7 @@ function createTextTexture(node: GraphNode): CachedTextureEntry {
     const badgeRadius = badgeHeight / 2
 
     drawRoundedRect(ctx, badgeX, badgeY, versionWidth, badgeHeight, badgeRadius)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.12)'
+    ctx.fillStyle = isBucket ? 'rgba(255, 255, 255, 0.12)' : theme.spriteBorderDoc
     ctx.fill()
 
     ctx.font = `600 ${versionFontSize}px ${fontFamily}`
@@ -169,20 +170,20 @@ function createTextTexture(node: GraphNode): CachedTextureEntry {
   }
 }
 
-function getOrCreateTexture(node: GraphNode): CachedTextureEntry {
-  const cacheKey = getNodeCacheKey(node)
+function getOrCreateTexture(node: GraphNode, theme: GraphTheme): CachedTextureEntry {
+  const cacheKey = getNodeCacheKey(node, theme.mode)
   const cached = textureCache.get(cacheKey)
   if (cached) {
     return cached
   }
 
-  const created = createTextTexture(node)
+  const created = createTextTexture(node, theme)
   textureCache.set(cacheKey, created)
   return created
 }
 
-export function createNodeSprite(node: GraphNode): THREE.Sprite {
-  const { texture, aspect } = getOrCreateTexture(node)
+export function createNodeSprite(node: GraphNode, theme: GraphTheme = getGraphTheme('dark')): THREE.Sprite {
+  const { texture, aspect } = getOrCreateTexture(node, theme)
   
   const material = new THREE.SpriteMaterial({
     map: texture,

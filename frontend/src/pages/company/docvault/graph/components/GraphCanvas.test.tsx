@@ -15,6 +15,7 @@ const mockForceGraphInstance = {
   linkDirectionalParticleWidth: vi.fn().mockReturnThis(),
   linkDirectionalParticleSpeed: vi.fn().mockReturnThis(),
   linkDirectionalParticleColor: vi.fn().mockReturnThis(),
+  linkCurvature: vi.fn().mockReturnThis(),
   nodeThreeObject: vi.fn().mockReturnThis(),
   onNodeHover: vi.fn().mockReturnThis(),
   onNodeClick: vi.fn().mockReturnThis(),
@@ -34,7 +35,11 @@ const mockForceGraphInstance = {
   }),
   scene: vi.fn().mockReturnValue({
     add: vi.fn(),
+    traverse: vi.fn(),
   }),
+  postProcessingComposer: vi.fn(() => ({ addPass: vi.fn() })),
+  onRenderFramePre: vi.fn(),
+  linkVisibility: vi.fn().mockReturnThis(),
   graphData: vi.fn().mockReturnThis(),
   width: vi.fn().mockReturnThis(),
   height: vi.fn().mockReturnThis(),
@@ -112,7 +117,7 @@ describe('GraphCanvas', () => {
 
     const container = getByTestId('graph-canvas-container')
     expect(container).toBeDefined()
-    expect(mockForceGraphInstance.backgroundColor).toHaveBeenCalledWith('#0B0F17')
+    expect(mockForceGraphInstance.backgroundColor).toHaveBeenCalledWith('#0a0e0c')
     expect(mockForceGraphInstance.graphData).toHaveBeenCalledWith({
       nodes: mockData.nodes,
       links: mockData.links,

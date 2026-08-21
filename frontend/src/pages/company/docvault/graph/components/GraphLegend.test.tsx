@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { GraphLegend } from './GraphLegend'
 import type { BucketResponse } from '@/api/types'
 
@@ -46,5 +47,16 @@ describe('GraphLegend', () => {
     fireEvent.click(toggleBtn)
 
     expect(screen.queryByText('Node Types')).toBeNull()
+  })
+
+  it('renders tag-links toggle and reports changes', async () => {
+    const user = userEvent.setup()
+    const onToggleTagLinks = vi.fn()
+    render(<GraphLegend colorMode="bucket" showTagLinks onToggleTagLinks={onToggleTagLinks} />)
+    const toggle = screen.getByTestId('legend-tag-links-toggle')
+    const checkbox = within(toggle).getByRole('checkbox')
+    expect(checkbox).toBeChecked()
+    await user.click(checkbox)
+    expect(onToggleTagLinks).toHaveBeenCalledWith(false)
   })
 })
