@@ -1,14 +1,22 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Download, Upload } from 'lucide-react'
 import { Button, Card, Field, Input, PageHeader, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
-import { useCreateExistingAsset } from '@/api/hooks/assets'
+import { assetsApi } from '@/api/endpoints/assets'
+import { saveBlob } from '@/lib/download'
+import { useCreateExistingAsset, useImportAssets } from '@/api/hooks/assets'
 import { useCategoryTree } from '@/api/hooks/assetMasters'
 import { CategoryPicker } from './CategoryPicker'
 import { LookupSelect } from './LookupSelect'
 
 type Errors = Record<string, string>
+
+/** Shape of one entry in the 422 detail array the import endpoint returns. */
+interface ImportRowError {
+  row: number | string
+  message: string
+}
 
 const OPENING_FIELDS = ['opening_accumulated_depreciation', 'opening_wdv', 'opening_it_wdv'] as const
 
@@ -20,7 +28,38 @@ export function ExistingAssetPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const create = useCreateExistingAsset()
+  const importAssets = useImportAssets()
   const { tree } = useCategoryTree()
+
+  // Bulk entry: download the template, fill it, import it. A rejected file
+  // reports its failing rows inline because the whole file is atomic.
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importErrors, setImportErrors] = useState<ImportRowError[]>([])
+
+  const downloadTemplate = async () => {
+    try {
+      saveBlob(await assetsApi.downloadImportTemplate(), 'asset_import_template.xlsx')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not download the template')
+    }
+  }
+
+  const doImport = async (file: File) => {
+    setImportErrors([])
+    try {
+      const res = await importAssets.mutateAsync(file)
+      toast.success(`Imported ${res.created_count} assets`)
+      if (res.first_asset_id) navigate(`/app/assets/${res.first_asset_id}`)
+    } catch (e) {
+      if (e instanceof ApiError && Array.isArray(e.detail)) {
+        const rows = e.detail as ImportRowError[]
+        setImportErrors(rows.slice(0, 20))
+        toast.error(`${rows.length} rows failed — nothing was imported`)
+      } else {
+        toast.error(e instanceof Error ? e.message : 'Import failed')
+      }
+    }
+  }
 
   const [values, setValues] = useState({
     asset_name: '', categoryId: '', original_cost: '', purchase_date: '',
@@ -127,8 +166,47 @@ export function ExistingAssetPage() {
         eyebrow="OPERATIONS"
         title="Add existing asset"
         description="Record an asset the company already owned — with its opening book and tax values."
-        actions={<Button variant="ghost" onClick={() => navigate('/app/assets')}>
-          <ArrowLeft className="mr-1.5 h-4 w-4" />Back</Button>}
+        actions={
+          <>
+            <Button variant="secondary" onClick={downloadTemplate}>
+              <Download className="mr-1.5 h-4 w-4" />Download template
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => importInputRef.current?.click()}
+              loading={importAssets.isPending}
+            >
+              <Upload className="mr-1.5 h-4 w-4" />Import
+            </Button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".xlsx,.csv"
+              className="hidden"
+              aria-label="Import file"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) doImport(file)
+                e.target.value = ''
+              }}
+      />
+
+      {importErrors.length > 0 && (
+        <div className="rounded-card border border-status-action/40 bg-status-action/5 p-3">
+          <p className="text-sm font-medium text-status-action">Nothing was imported</p>
+          <ul className="mt-2 space-y-1 text-xs text-text-primary">
+            {importErrors.map((e, i) => (
+              <li key={i}>
+                Row {e.row} — {e.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+            <Button variant="ghost" onClick={() => navigate('/app/assets')}>
+              <ArrowLeft className="mr-1.5 h-4 w-4" />Back</Button>
+          </>
+        }
       />
 
       <Card className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">

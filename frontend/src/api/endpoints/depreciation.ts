@@ -21,6 +21,10 @@ export const depreciationApi = {
     ),
   finalizeRun: (runId: string) =>
     companyClient.post<DepreciationRunResponse>(`/api/v1/depreciation/runs/${runId}/finalize`),
+  reopenRun: (runId: string, reason: string) =>
+    companyClient.post<DepreciationRunResponse>(`/api/v1/depreciation/runs/${runId}/reopen`, {
+      body: { reason },
+    }),
   deleteRun: (runId: string) =>
     companyClient.delete<void>(`/api/v1/depreciation/runs/${runId}`),
 }

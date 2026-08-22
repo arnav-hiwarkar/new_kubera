@@ -89,6 +89,15 @@ export function useCreateExistingAsset() {
   return useMutation({ mutationFn: (body: AssetExistingCreate) => assetsApi.createExisting(body) })
 }
 
+/** Atomic bulk creation from the filled import template. */
+export function useImportAssets() {
+  const invalidate = useInvalidateAssets()
+  return useMutation({
+    mutationFn: (file: File) => assetsApi.importAssets(file),
+    onSuccess: invalidate,
+  })
+}
+
 export function useUpdateAsset() {
   const invalidate = useInvalidateAssets()
   return useMutation({

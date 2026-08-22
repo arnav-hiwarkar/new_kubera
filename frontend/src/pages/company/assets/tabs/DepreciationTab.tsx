@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { Card, Field, Input, Select, Textarea, Button, Spinner, useToast } from '@/components/ui'
+import { Card, Field, Input, Select, Textarea, Button, Spinner, Modal, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import type { AssetDetail } from '@/api/hooks/assets'
 import { useUpdateAsset } from '@/api/hooks/assets'
 import { useItBlocks, useAssetCategories } from '@/api/hooks/assetMasters'
 import { useFinancialYears } from '@/api/hooks/financialYears'
-import { useDepreciationRuns, useCreateDepreciationRun, useAssetDepreciationLines, useFinalizeDepreciationRun } from '@/api/hooks/depreciation'
+import { useDepreciationRuns, useCreateDepreciationRun, useAssetDepreciationLines, useFinalizeDepreciationRun, useReopenDepreciationRun } from '@/api/hooks/depreciation'
 import { DEPRECIATION_METHOD } from '@/api/enums'
 import type { AssetUpdate } from '@/api/types'
 import { dateOrDash, money, months, num } from '../assetFormat'
 import { numOrNull, useSectionForm } from '../useSectionForm'
 import { DerivedRow, SectionShell } from './SectionShell'
-import { Play, CheckCircle } from 'lucide-react'
+import { Play, CheckCircle, RotateCcw } from 'lucide-react'
+import { useCompanyAuth } from '@/auth/company'
 
 export function DepreciationTab({
   detail,
@@ -23,12 +24,18 @@ export function DepreciationTab({
   const asset = detail.asset
   const toast = useToast()
   const update = useUpdateAsset()
+  const { profile } = useCompanyAuth()
+  const isAdmin = profile?.role === 'admin'
   const { data: blocks = [] } = useItBlocks()
   const { data: categories = [] } = useAssetCategories()
   const { data: fys = [] } = useFinancialYears()
   const { data: runs = [] } = useDepreciationRuns()
   const createRun = useCreateDepreciationRun()
   const finalizeRun = useFinalizeDepreciationRun()
+  const reopenRunMutation = useReopenDepreciationRun()
+
+  const [reopenOpen, setReopenOpen] = useState(false)
+  const [reopenReason, setReopenReason] = useState('')
 
   const [selectedFyId, setSelectedFyId] = useState<string>(fys[0]?.id || '')
 
@@ -59,6 +66,18 @@ export function DepreciationTab({
       toast.success('Depreciation run finalized')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to finalize run')
+    }
+  }
+
+  const handleReopen = async () => {
+    if (!latestRunForFy || reopenReason.trim().length < 3) return
+    try {
+      await reopenRunMutation.mutateAsync({ runId: latestRunForFy.id, reason: reopenReason.trim() })
+      toast.success('Run reopened to draft')
+      setReopenOpen(false)
+      setReopenReason('')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to reopen run')
     }
   }
 
@@ -406,6 +425,57 @@ export function DepreciationTab({
                 <CheckCircle className="mr-1 h-3.5 w-3.5" />
                 Finalize
               </Button>
+            )}
+            {isAdmin && latestRunForFy && latestRunForFy.status === 'finalized' && (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setReopenOpen(true)}>
+                  <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                  Reopen
+                </Button>
+                {/* ConfirmDialog renders a static message only, so the reason
+                    field needs its own Modal-based dialog. */}
+                <Modal
+                  open={reopenOpen}
+                  onClose={() => setReopenOpen(false)}
+                  title="Reopen finalized depreciation?"
+                  size="sm"
+                  footer={
+                    <>
+                      <Button
+                        variant="secondary"
+                        onClick={() => setReopenOpen(false)}
+                        disabled={reopenRunMutation.isPending}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleReopen}
+                        loading={reopenRunMutation.isPending}
+                        disabled={reopenReason.trim().length < 3}
+                      >
+                        Confirm reopen
+                      </Button>
+                    </>
+                  }
+                >
+                  <p className="text-sm text-text-secondary">
+                    {latestRunForFy.financial_year_label ?? 'This year'} will flip back to draft so
+                    you can correct inputs and regenerate. Redo years oldest-first.
+                  </p>
+                  <Field
+                    className="mt-3"
+                    label="Reason (recorded in the audit log)"
+                    required
+                    hint="At least 3 characters"
+                  >
+                    <Textarea
+                      aria-label="Reason"
+                      value={reopenReason}
+                      onChange={(e) => setReopenReason(e.target.value)}
+                    />
+                  </Field>
+                </Modal>
+              </>
             )}
           </div>
         </div>

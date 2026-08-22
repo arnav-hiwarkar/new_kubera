@@ -57,6 +57,19 @@ export const assetsApi = {
     companyClient.post<AssetResponse>(`/api/v1/assets/${id}/dispose`, { body }),
   exportExcel: () =>
     companyClient.get<Blob>('/api/v1/assets/export/excel', { responseType: 'blob' }),
+  /** Bulk-entry for pre-owned assets: template download reuses exportExcel's
+   *  authenticated blob mechanism; import posts multipart like document uploads.
+   *  A rejected file comes back as a 422 whose detail lists {row, message}. */
+  downloadImportTemplate: () =>
+    companyClient.get<Blob>('/api/v1/assets/import/template', { responseType: 'blob' }),
+  importAssets: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return companyClient.post<{ created_count: number; first_asset_id: string | null }>(
+      '/api/v1/assets/import',
+      { formData },
+    )
+  },
 
   // --- Documents ---
   listDocuments: (assetId: string) =>

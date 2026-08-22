@@ -20,8 +20,10 @@ vi.mock('@/api/hooks/assetMasters', () => ({
 }))
 vi.mock('./LookupSelect', () => ({ LookupSelect: () => <div /> }))
 const mutateAsync = vi.fn().mockResolvedValue({ id: 'a-1' })
+const importMutateAsync = vi.fn().mockResolvedValue({ created_count: 0, first_asset_id: null })
 vi.mock('@/api/hooks/assets', () => ({
   useCreateExistingAsset: () => ({ mutateAsync, isPending: false }),
+  useImportAssets: () => ({ mutateAsync: importMutateAsync, isPending: false }),
 }))
 
 function fill(label: string, value: string) {

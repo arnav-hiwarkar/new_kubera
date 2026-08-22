@@ -61,6 +61,20 @@ export function useFinalizeDepreciationRun() {
   })
 }
 
+/** Flips a finalized year back to draft. The reason is recorded in the audit
+ *  log, so it travels with the mutation rather than being a UI-only note. */
+export function useReopenDepreciationRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ runId, reason }: { runId: string; reason: string }) =>
+      depreciationApi.reopenRun(runId, reason),
+    onSuccess: (_data, { runId }) => {
+      qc.invalidateQueries({ queryKey: depreciationKeys.runs })
+      qc.invalidateQueries({ queryKey: depreciationKeys.run(runId) })
+    },
+  })
+}
+
 export function useDeleteDepreciationRun() {
   const qc = useQueryClient()
   return useMutation({
