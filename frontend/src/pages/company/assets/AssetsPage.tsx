@@ -22,7 +22,7 @@ import { formatMoney } from '@/lib/format'
 import { saveBlob } from '@/lib/download'
 import type { AssetResponse } from '@/api/types'
 import { dateOrDash, num } from './assetFormat'
-import { QuickAddAssetModal } from './QuickAddAssetModal'
+import { AddAssetButton } from './AddAssetButton'
 import { AssetColumnPicker } from './AssetColumnPicker'
 import { useColumnPreference } from './useColumnPreference'
 
@@ -45,7 +45,6 @@ export function AssetsPage() {
   const [view, setView] = useState('all')
   const [operational, setOperational] = useState('')
   const [condition, setCondition] = useState('')
-  const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const { visible, setVisible } = useColumnPreference()
@@ -231,7 +230,7 @@ export function AssetsPage() {
             <Button variant="secondary" onClick={handleExport} loading={exporting}>
               Export
             </Button>
-            <Button onClick={() => setQuickAddOpen(true)}>New asset</Button>
+            <AddAssetButton />
           </div>
         }
       />
@@ -322,7 +321,6 @@ export function AssetsPage() {
         }
       />
 
-      <QuickAddAssetModal open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
       <AssetColumnPicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}

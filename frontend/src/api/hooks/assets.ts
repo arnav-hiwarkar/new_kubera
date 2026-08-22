@@ -3,6 +3,7 @@ import { acquisitionsApi, assetsApi, type AssetFilters } from '@/api/endpoints/a
 import type {
   AcquisitionUpdate,
   AssetDetailResponse,
+  AssetExistingCreate,
   AssetQuickAddRequest,
   AssetUpdate,
   BulkSerialRequest,
@@ -82,6 +83,10 @@ export function useQuickAddAsset() {
     mutationFn: (body: AssetQuickAddRequest) => assetsApi.quickAdd(body),
     onSuccess: invalidate,
   })
+}
+
+export function useCreateExistingAsset() {
+  return useMutation({ mutationFn: (body: AssetExistingCreate) => assetsApi.createExisting(body) })
 }
 
 export function useUpdateAsset() {

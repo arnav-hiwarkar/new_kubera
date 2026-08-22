@@ -15,6 +15,7 @@ import { DocVaultGraphPage } from '@/pages/company/docvault/graph/DocVaultGraphP
 import { KraPage } from '@/pages/company/kra/KraPage'
 import { AssetsPage } from '@/pages/company/assets/AssetsPage'
 import { AssetDetailPage } from '@/pages/company/assets/AssetDetailPage'
+import { ExistingAssetPage } from '@/pages/company/assets/ExistingAssetPage'
 import { AssetMastersPage } from '@/pages/company/assets/masters/AssetMastersPage'
 import { AssetReportsPage } from '@/pages/company/assets/AssetReportsPage'
 import { SalesPage } from '@/pages/company/sales/SalesPage'
@@ -69,9 +70,10 @@ export const companyRoutes: RouteObject = {
                   element: <ModuleGuard moduleId="assets"><Outlet /></ModuleGuard>,
                   children: [
                     { index: true, element: <AssetsPage /> },
-                    // Literal paths first: ':assetId' would otherwise swallow 'masters' or 'reports'.
+                    // Literal paths first: ':assetId' would otherwise swallow 'masters', 'reports' or 'new/existing'.
                     { path: 'masters', element: <AssetMastersPage /> },
                     { path: 'reports', element: <AssetReportsPage /> },
+                    { path: 'new/existing', element: <ExistingAssetPage /> },
                     { path: ':assetId', element: <AssetDetailPage /> },
                   ],
                 },

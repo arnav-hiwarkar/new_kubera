@@ -6,6 +6,7 @@ import type {
   AssetDocRole,
   AssetDocumentAttach,
   AssetDocumentResponse,
+  AssetExistingCreate,
   AssetQuickAddRequest,
   AssetQuickAddResponse,
   AssetResponse,
@@ -36,6 +37,8 @@ export const assetsApi = {
   get: (id: string) => companyClient.get<AssetDetailResponse>(`/api/v1/assets/${id}`),
   quickAdd: (body: AssetQuickAddRequest) =>
     companyClient.post<AssetQuickAddResponse>('/api/v1/assets/quick-add', { body }),
+  createExisting: (body: AssetExistingCreate) =>
+    companyClient.post<AssetResponse>('/api/v1/assets/existing', { body }),
   update: (id: string, body: AssetUpdate) =>
     companyClient.patch<AssetResponse>(`/api/v1/assets/${id}`, { body }),
   remove: (id: string) => companyClient.delete<void>(`/api/v1/assets/${id}`),

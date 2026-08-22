@@ -43,6 +43,27 @@ export type AssetDetailResponse = Omit<S['AssetDetailResponse'], 'asset'> & {
 export type AssetSibling = S['AssetSibling']
 export type AssetQuickAddRequest = S['AssetQuickAddRequest']
 export type AssetQuickAddResponse = S['AssetQuickAddResponse']
+export interface AssetExistingCreate {
+  asset_name: string
+  category_path: string[]
+  original_cost: string
+  purchase_date?: string | null
+  put_to_use_date?: string | null
+  capitalization_date?: string | null
+  opening_accumulated_depreciation?: string | null
+  opening_wdv?: string | null
+  opening_it_wdv?: string | null
+  useful_life_months?: number | null
+  useful_life_override_reason?: string | null
+  residual_pct?: string | null
+  branch_id?: string | null
+  location_id?: string | null
+  department_id?: string | null
+  cost_centre_id?: string | null
+  custodian_name?: string | null
+  serial_number?: string | null
+  remarks?: string | null
+}
 export type AssetLifecycleStatus = S['AssetLifecycleStatus']
 export type AssetOperationalStatus = S['AssetOperationalStatus']
 export type AssetCondition = S['AssetCondition']

@@ -335,7 +335,7 @@ describe('AssetsPage — the register list', () => {
     await screen.findByText('MacBook Pro')
     expect(screen.queryByRole('button', { name: 'Masters' })).not.toBeInTheDocument()
     // But they can still create — drafts are open to anyone with the module.
-    expect(screen.getByRole('button', { name: 'New asset' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add asset' })).toBeInTheDocument()
   })
 })
 
@@ -351,6 +351,8 @@ describe('QuickAddAssetModal — the six-field create form', () => {
     wrap(<AssetsPage />)
     await screen.findByText('MacBook Pro')
 
+    // The split entry point: the quick-add modal now lives behind the menu.
+    await u.click(screen.getByRole('button', { name: 'Add asset' }))
     await u.click(screen.getByRole('button', { name: 'New asset' }))
     await u.type(await screen.findByLabelText('Asset name'), 'Dell Latitude')
 
@@ -379,6 +381,7 @@ describe('QuickAddAssetModal — the six-field create form', () => {
     wrap(<AssetsPage />)
     await screen.findByText('MacBook Pro')
 
+    await u.click(screen.getByRole('button', { name: 'Add asset' }))
     await u.click(screen.getByRole('button', { name: 'New asset' }))
     await u.click(await screen.findByRole('button', { name: 'Create draft' }))
 
@@ -392,6 +395,7 @@ describe('QuickAddAssetModal — the six-field create form', () => {
     wrap(<AssetsPage />)
     await screen.findByText('MacBook Pro')
 
+    await u.click(screen.getByRole('button', { name: 'Add asset' }))
     await u.click(screen.getByRole('button', { name: 'New asset' }))
     const qty = await screen.findByLabelText('Quantity')
     await u.clear(qty)
