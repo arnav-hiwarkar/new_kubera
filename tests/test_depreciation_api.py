@@ -1267,3 +1267,94 @@ async def test_f9_gate_scenario_4_pre_cutover_asset_runs_cleanly(client: AsyncCl
     )
 
 
+@pytest.mark.asyncio
+async def test_reopen_flips_finalized_run_back_to_draft(client: AsyncClient):
+    ctx = await setup_depreciation_environment(client, "ro_happy@testco.com")
+    headers, fy_id = ctx["headers"], ctx["fy_id"]
+
+    run_id = (
+        await client.post("/api/v1/depreciation/runs", json={"financial_year_id": fy_id}, headers=headers)
+    ).json()["id"]
+    assert (
+        await client.post(f"/api/v1/depreciation/runs/{run_id}/finalize", headers=headers)
+    ).status_code == 200
+
+    resp = await client.post(
+        f"/api/v1/depreciation/runs/{run_id}/reopen",
+        json={"reason": "Opening WDV was keyed wrong"}, headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "draft"
+    assert "Opening WDV" in body["notes"]
+    assert body["finalized_at"] is None
+
+    # Lines survive the flip for reference.
+    lines = await client.get(f"/api/v1/depreciation/runs/{run_id}/lines", headers=headers)
+    assert lines.status_code == 200 and len(lines.json()) == 1
+
+    # Regenerate supersedes the draft, re-finalize works again.
+    rerun = (await client.post("/api/v1/depreciation/runs",
+                               json={"financial_year_id": fy_id}, headers=headers)).json()
+    assert (
+        await client.post(f"/api/v1/depreciation/runs/{rerun['id']}/finalize", headers=headers)
+    ).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_reopen_blocked_when_later_year_finalized(client: AsyncClient):
+    ctx = await setup_depreciation_environment(client, "ro_chain@testco.com")
+    headers = ctx["headers"]
+
+    fy_old = (await client.post("/api/v1/financial-years", json={
+        "label": "2023-24", "start_date": "2023-04-01", "end_date": "2024-03-31"},
+        headers=headers)).json()["id"]
+    # setup_depreciation_environment already created this company's "2024-25";
+    # the duplicate-label rule (409) forbids creating it twice.
+    fy_new = ctx["fy_id"]
+
+    # Runs chain oldest-first: the F9 gate refuses a later year while its
+    # predecessor's run is still a draft, so finalize each as we go.
+    r_old = (await client.post("/api/v1/depreciation/runs",
+                               json={"financial_year_id": fy_old}, headers=headers)).json()["id"]
+    assert (
+        await client.post(f"/api/v1/depreciation/runs/{r_old}/finalize", headers=headers)
+    ).status_code == 200
+    r_new = (await client.post("/api/v1/depreciation/runs",
+                               json={"financial_year_id": fy_new}, headers=headers)).json()["id"]
+    assert (
+        await client.post(f"/api/v1/depreciation/runs/{r_new}/finalize", headers=headers)
+    ).status_code == 200
+
+    resp = await client.post(
+        f"/api/v1/depreciation/runs/{r_old}/reopen",
+        json={"reason": "fix older year"}, headers=headers,
+    )
+    assert resp.status_code == 409
+    assert "2024-25" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_reopen_requires_reason_and_admin(client: AsyncClient):
+    from tests.asset_helpers import make_user, user_headers
+
+    ctx = await setup_depreciation_environment(client, "ro_auth@testco.com")
+    AH, fy_id = ctx["headers"], ctx["fy_id"]
+    rid = (await client.post("/api/v1/depreciation/runs",
+                             json={"financial_year_id": fy_id}, headers=AH)).json()["id"]
+    await client.post(f"/api/v1/depreciation/runs/{rid}/finalize", headers=AH)
+
+    await make_user(client, AH, "ro_staff@testco.com")
+    UH = await user_headers(client, "ro_staff@testco.com")
+    assert (
+        await client.post(f"/api/v1/depreciation/runs/{rid}/reopen", json={"reason": "x"}, headers=UH)
+    ).status_code == 403
+    # Draft runs cannot be reopened either.
+    draft_rid = (await client.post("/api/v1/depreciation/runs",
+                                   json={"financial_year_id": fy_id}, headers=AH)).json()
+    # (the run above superseded the finalized one into a new draft)
+    assert (
+        await client.post(f"/api/v1/depreciation/runs/{rid}/reopen", json={"reason": ""}, headers=AH)
+    ).status_code in (422, 409)
+
+

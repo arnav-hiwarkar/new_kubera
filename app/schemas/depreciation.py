@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DepreciationRunCreate(BaseModel):
@@ -15,6 +15,10 @@ class DepreciationRunCreate(BaseModel):
     # changed nothing but could slip a second "finalized" run past the old index.
     financial_year_id: uuid.UUID
     notes: Optional[str] = None
+
+
+class DepreciationRunReopenRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class AssetDepreciationLineResponse(BaseModel):

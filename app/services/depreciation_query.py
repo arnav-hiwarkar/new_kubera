@@ -440,3 +440,60 @@ async def finalize_depreciation_run(
     await db.refresh(run)
     return run
 
+
+async def _blocking_later_label(
+    db: AsyncSession, company_id: uuid.UUID, run: DepreciationRun
+) -> str | None:
+    row = (
+        await db.execute(
+            select(FinancialYear.label)
+            .join(DepreciationRun, DepreciationRun.financial_year_id == FinancialYear.id)
+            .where(
+                DepreciationRun.company_id == company_id,
+                DepreciationRun.status == DepreciationRunStatus.finalized.value,
+                DepreciationRun.id != run.id,
+                FinancialYear.start_date > run.financial_year.start_date,
+            )
+            .order_by(FinancialYear.start_date)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return row
+
+
+async def reopen_depreciation_run(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    run_id: uuid.UUID,
+    user_id: uuid.UUID,
+    reason: str,
+) -> DepreciationRun:
+    """Flip a finalized run back to draft so wrong inputs can be corrected.
+
+    Openings chain chronologically: a later finalized year consumed this run's
+    closings, so reopening while one exists would silently desynchronize the
+    chain — refuse and tell the operator to redo oldest-first. Lines are kept so
+    the previous numbers stay inspectable while a corrected run is prepared.
+    """
+    run = await db.get(DepreciationRun, run_id)
+    if not run or run.company_id != company_id:
+        raise ValueError("Depreciation run not found")
+    if run.status != DepreciationRunStatus.finalized.value:
+        raise DepreciationConflictError("Only a finalized run can be reopened")
+
+    fy = run.financial_year
+    blocking = await _blocking_later_label(db, company_id, run)
+    if blocking is not None:
+        raise DepreciationConflictError(
+            f"Financial year {blocking} is already finalized. Redo years "
+            f"oldest-first before reopening {fy.label}."
+        )
+
+    run.status = DepreciationRunStatus.draft.value
+    run.notes = f"Reopened: {reason}"
+    run.finalized_at = None
+    run.finalized_by = None
+    await db.commit()
+    await db.refresh(run)
+    return run
+

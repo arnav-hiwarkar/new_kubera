@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.auth import get_current_company_user, require_assets_module
+from app.auth import get_current_company_user, require_admin, require_assets_module
 from app.models.company import CompanyUser
 from app.models.depreciation import (
     DepreciationRun,
@@ -20,16 +20,19 @@ from app.models.depreciation import (
 from app.models.financial_year import FinancialYear
 from app.schemas.depreciation import (
     DepreciationRunCreate,
+    DepreciationRunReopenRequest,
     DepreciationRunResponse,
     AssetDepreciationLineResponse,
     ItBlockDepreciationLineResponse,
 )
+from app.services.activity import log_activity
 from app.services.depreciation import DepreciationDataError
 from app.services.depreciation_query import (
     DepreciationConflictError,
     FinancialYearNotFoundError,
     execute_depreciation_run,
     finalize_depreciation_run,
+    reopen_depreciation_run,
 )
 
 router = APIRouter(prefix="/api/v1/depreciation", tags=["depreciation"])
@@ -216,6 +219,43 @@ async def finalize_run(
             detail=str(e),
         )
 
+    stmt = (
+        select(DepreciationRun)
+        .where(DepreciationRun.id == run.id)
+        .options(
+            selectinload(DepreciationRun.financial_year),
+            selectinload(DepreciationRun.lines),
+            selectinload(DepreciationRun.it_lines),
+        )
+    )
+    res = await db.execute(stmt)
+    return _populate_run_summary(res.scalar_one())
+
+
+@router.post("/runs/{run_id}/reopen", response_model=DepreciationRunResponse)
+async def reopen_run(
+    run_id: uuid.UUID,
+    body: DepreciationRunReopenRequest,
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    try:
+        run = await reopen_depreciation_run(
+            db, current_user.company_id, run_id, current_user.id, body.reason.strip()
+        )
+    # DepreciationConflictError subclasses ValueError, so it must be caught first.
+    except DepreciationConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    await log_activity(db, current_user.company_id, current_user.id,
+                       "depreciation.run.reopened", "depreciation_run", run.id,
+                       {"reason": body.reason.strip()})
+    await db.commit()
+
+    # The service committed + refreshed, so run's relationships are stale; reload
+    # with the same eager-load options as the other endpoints before summarizing.
     stmt = (
         select(DepreciationRun)
         .where(DepreciationRun.id == run.id)
