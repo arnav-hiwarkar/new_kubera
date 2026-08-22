@@ -21,7 +21,7 @@ from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse, StreamingResponse
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -189,9 +189,7 @@ async def _load_asset_context(
             dep_lines_by_asset_id[str(l.asset_id)] = l
 
     # Query IT blocks
-    block_stmt = select(ItAssetBlock).where(
-        or_(ItAssetBlock.company_id == company_id, ItAssetBlock.company_id.is_(None))
-    )
+    block_stmt = select(ItAssetBlock).where(ItAssetBlock.company_id == company_id)
     block_res = await db.execute(block_stmt)
     blocks_by_id = {str(b.id): b for b in block_res.scalars().all()}
 

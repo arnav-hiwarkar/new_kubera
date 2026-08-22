@@ -284,6 +284,77 @@ async def test_module_access_enforced_server_side(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_admin_can_edit_it_block(client: AsyncClient):
+    AH = await admin_headers(client, "am_itedit@a.com")
+    blocks = (await client.get(f"{MASTERS}/it-blocks", headers=AH)).json()
+    target = next(b for b in blocks if b["code"] == "PM-15")
+
+    resp = await client.patch(
+        f"{MASTERS}/it-blocks/{target['id']}",
+        json={"name": "Plant and machinery — general (edited)"},
+        headers=AH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["name"].endswith("(edited)")
+
+
+@pytest.mark.asyncio
+async def test_it_block_edit_rejects_bad_input_and_duplicates(client: AsyncClient):
+    AH = await admin_headers(client, "am_itbad@a.com")
+    blocks = (await client.get(f"{MASTERS}/it-blocks", headers=AH)).json()
+    pm = next(b for b in blocks if b["code"] == "PM-15")
+    comp = next(b for b in blocks if b["code"] == "PM-40-COMP")
+
+    assert (await client.patch(
+        f"{MASTERS}/it-blocks/{pm['id']}", json={"dep_rate": 120}, headers=AH
+    )).status_code == 422  # bounds 0..100
+
+    dup = await client.patch(
+        f"{MASTERS}/it-blocks/{pm['id']}", json={"code": "pm-40-comp"}, headers=AH
+    )
+    assert dup.status_code == 409  # case-insensitive uniqueness
+
+    deact = await client.patch(
+        f"{MASTERS}/it-blocks/{comp['id']}", json={"is_active": False}, headers=AH
+    )
+    assert deact.status_code == 200 and deact.json()["is_active"] is False
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_edit_it_block(client: AsyncClient):
+    from tests.asset_helpers import make_user, user_headers
+
+    AH = await admin_headers(client, "am_itadm@a.com")
+    await admin_headers(client, "am_itemp@a.com")  # isolation company
+
+    await make_user(client, AH, "am_itstaff@a.com")
+    UH = await user_headers(client, "am_itstaff@a.com")
+
+    mine = (await client.get(f"{MASTERS}/it-blocks", headers=AH)).json()
+    resp = await client.patch(
+        f"{MASTERS}/it-blocks/{mine[0]['id']}", json={"name": "nope"}, headers=UH
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_tenant_isolation_on_master_writes(client: AsyncClient):
+    """A company cannot reach another company's IT block — it PATCHes to a 404."""
+    A = await admin_headers(client, "am_iso_a@a.com")
+    B = await admin_headers(client, "am_iso_b@b.com")
+
+    blocks_a = (await client.get(f"{MASTERS}/it-blocks", headers=A)).json()
+    target = next(b for b in blocks_a if b["code"] == "PM-15")
+
+    resp = await client.patch(
+        f"{MASTERS}/it-blocks/{target['id']}",
+        json={"name": "stolen"},
+        headers=B,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_seed_is_idempotent():
     """Re-running the statutory seeder must not duplicate template rows."""
     from sqlalchemy import select

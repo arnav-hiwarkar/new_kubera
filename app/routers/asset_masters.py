@@ -31,6 +31,7 @@ from app.schemas.asset_masters import (
     AssetLookupUpdate,
     ItAssetBlockCreate,
     ItAssetBlockResponse,
+    ItAssetBlockUpdate,
     SupplierCreate,
     SupplierResponse,
     SupplierUpdate,
@@ -68,6 +69,31 @@ async def list_it_blocks(current_user: CurrentReader, db: Db):
 async def create_it_block(body: ItAssetBlockCreate, current_user: CurrentAdmin, db: Db):
     block = ItAssetBlock(company_id=current_user.company_id, **body.model_dump())
     db.add(block)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A block with this code already exists")
+    await db.refresh(block)
+    return block
+
+
+@router.patch("/it-blocks/{block_id}", response_model=ItAssetBlockResponse)
+async def update_it_block(
+    block_id: uuid.UUID, body: ItAssetBlockUpdate, current_user: CurrentAdmin, db: Db
+):
+    result = await db.execute(
+        select(ItAssetBlock).where(
+            ItAssetBlock.id == block_id,
+            ItAssetBlock.company_id == current_user.company_id,
+        )
+    )
+    block = result.scalar_one_or_none()
+    if block is None:
+        raise HTTPException(status_code=404, detail="Block not found")
+
+    for key, value in body.model_dump(exclude_unset=True).items():
+        setattr(block, key, value)
     try:
         await db.commit()
     except IntegrityError:

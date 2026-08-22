@@ -199,10 +199,7 @@ async def quick_add(body: AssetQuickAddRequest, current_user: Reader, db: Db):
         await db.execute(
             select(AssetCategory).where(
                 AssetCategory.id == body.category_id,
-                or_(
-                    AssetCategory.company_id.is_(None),
-                    AssetCategory.company_id == current_user.company_id,
-                ),
+                AssetCategory.company_id == current_user.company_id,
             )
         )
     ).scalars().unique().one_or_none()

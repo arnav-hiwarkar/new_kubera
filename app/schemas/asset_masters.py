@@ -49,6 +49,16 @@ class ItAssetBlockCreate(BaseModel):
     display_order: int = 0
 
 
+class ItAssetBlockUpdate(BaseModel):
+    """Partial edit of a company-owned Appendix I block."""
+    code: Optional[str] = Field(default=None, min_length=1, max_length=30)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    dep_rate: Optional[float] = Field(default=None, ge=0, le=100)
+    block_class: Optional[ItBlockClass] = None
+    is_active: Optional[bool] = None
+    display_order: Optional[int] = None
+
+
 # === Categories ===
 
 class AssetCategoryBase(BaseModel):
