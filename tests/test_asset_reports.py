@@ -2,13 +2,14 @@
 from datetime import date
 from decimal import Decimal
 import io
+import uuid
+
 import openpyxl
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.assets import Asset, AssetLifecycleStatus, AssetOperationalStatus, AssetAcquisition, ItcTreatment, DiscountType
-from app.models.asset_masters import AssetCategory, ItAssetBlock
 from app.models.company import Company, CompanyUser
 from app.models.depreciation import DepreciationRun
 from app.models.financial_year import FinancialYear
@@ -20,12 +21,11 @@ from app.services.reporting.asset_reports import (
     build_income_tax_appendix_i_report,
     build_gst_itc_summary_report,
 )
-from tests.asset_helpers import admin_headers, seed_masters, user_headers
+from tests.asset_helpers import admin_headers, user_headers
 from tests.conftest import TestSessionLocal, create_test_company, get_company_token
 
 
 async def setup_asset_reports_environment(client: AsyncClient, email: str = "admin_reports@testco.com"):
-    await seed_masters()
     headers = await admin_headers(client, email)
 
     # 1. Create Financial Year
@@ -41,18 +41,22 @@ async def setup_asset_reports_environment(client: AsyncClient, email: str = "adm
     assert fy_res.status_code == 201, fy_res.text
     fy_id = fy_res.json()["id"]
 
+    # Take ids from the API so they are guaranteed company-owned.
+    blocks = (await client.get("/api/v1/asset-masters/it-blocks", headers=headers)).json()
+    block_id = next(b["id"] for b in blocks if b["code"] == "PM-15")
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     # 2. Insert test assets with full lifecycle
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
 
         # Active capitalized asset
         a1 = Asset(
             company_id=user.company_id,
             asset_name="Production CNC Machine",
             asset_code="MCH-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -61,7 +65,7 @@ async def setup_asset_reports_environment(client: AsyncClient, email: str = "adm
             residual_pct=Decimal("5.00"),
             dep_method="slm",
             original_cost=Decimal("500000.00"),
-            it_block_id=it_block.id if it_block else None,
+            it_block_id=uuid.UUID(block_id),
             it_dep_rate=Decimal("15.00"),
             it_put_to_use_date=date(2024, 4, 1),
         )
@@ -71,7 +75,7 @@ async def setup_asset_reports_environment(client: AsyncClient, email: str = "adm
             company_id=user.company_id,
             asset_name="Old Office Van",
             asset_code="VEH-002",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.disposed,
             operational_status=AssetOperationalStatus.in_storage,
             capitalization_date=date(2024, 4, 1),
@@ -83,7 +87,7 @@ async def setup_asset_reports_environment(client: AsyncClient, email: str = "adm
             disposal_date=date(2024, 9, 30),
             disposal_type="sale",
             sale_proceeds=Decimal("120000.00"),
-            it_block_id=it_block.id if it_block else None,
+            it_block_id=uuid.UUID(block_id),
             it_dep_rate=Decimal("15.00"),
         )
 
@@ -91,7 +95,7 @@ async def setup_asset_reports_environment(client: AsyncClient, email: str = "adm
         a3 = Asset(
             company_id=user.company_id,
             asset_name="Factory Expansion Under Construction",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.draft,
             operational_status=AssetOperationalStatus.in_storage,
             original_cost=Decimal("350000.00"),
@@ -315,9 +319,12 @@ async def test_asset_reports_gating_unfinalized_run(client: AsyncClient):
     
     Expected to FAIL: defect R4 (endpoints check only run existence, not finalized status; report 4 has no check).
     """
-    await seed_masters()
     email = "gate_test@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     # Create FY
     fy_res = await client.post(
@@ -331,11 +338,10 @@ async def test_asset_reports_gating_unfinalized_run(client: AsyncClient):
     # Insert an asset
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
         asset = Asset(
             company_id=user.company_id,
             asset_name="Lathe Machine",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -384,9 +390,12 @@ async def test_asset_reports_category_filtering(client: AsyncClient):
     
     Expected to FAIL: defect R5 (report endpoints accept no category filter params).
     """
-    await seed_masters()
     email = "filter_test@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    leaves = [c for c in cats if c["parent_id"] is not None]
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -398,14 +407,11 @@ async def test_asset_reports_category_filtering(client: AsyncClient):
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cats = (await session.execute(select(AssetCategory))).scalars().all()
-        cat1 = cats[0]
-        cat2 = cats[1]
 
         a1 = Asset(
             company_id=user.company_id,
             asset_name="Server Unit Alpha",
-            category_id=cat1.id,
+            category_id=uuid.UUID(leaves[0]["id"]),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -418,7 +424,7 @@ async def test_asset_reports_category_filtering(client: AsyncClient):
         a2 = Asset(
             company_id=user.company_id,
             asset_name="Delivery Truck Beta",
-            category_id=cat2.id,
+            category_id=uuid.UUID(leaves[1]["id"]),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -430,8 +436,8 @@ async def test_asset_reports_category_filtering(client: AsyncClient):
         )
         session.add_all([a1, a2])
         await session.commit()
-        cat1_id = str(cat1.id)
-        cat2_name = cat2.name
+        cat1_id = leaves[0]["id"]
+        cat2_name = leaves[1]["name"]
 
     run_res = await client.post(
         "/api/v1/depreciation/runs",
@@ -538,8 +544,11 @@ async def test_asset_reports_archive_docvault(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_gst_itc_summary_report_endpoint(client: AsyncClient):
     """B1: gst_itc_summary report for a company with acquisitions returns 200 and non-empty content."""
-    await seed_masters()
     headers = await admin_headers(client, "gstitc_test@testco.com")
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     # Create FY
     fy_res = await client.post(
@@ -552,8 +561,6 @@ async def test_gst_itc_summary_report_endpoint(client: AsyncClient):
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == "gstitc_test@testco.com"))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-
         acq = AssetAcquisition(
             company_id=user.company_id,
             invoice_number="INV-2024-001",
@@ -575,7 +582,7 @@ async def test_gst_itc_summary_report_endpoint(client: AsyncClient):
             acquisition_id=acq.id,
             asset_name="Server Rack",
             asset_code="SRV-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 5, 1),
@@ -600,13 +607,14 @@ async def test_gst_itc_summary_report_endpoint(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_gst_itc_summary_interstate_igst(client: AsyncClient):
     """F6/B1: Interstate acquisition has igst_amount set, cgst/sgst null, reports IGST only."""
-    await seed_masters()
     headers = await admin_headers(client, "interstate_gst@testco.com")
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == "interstate_gst@testco.com"))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-
         acq = AssetAcquisition(
             company_id=user.company_id,
             invoice_number="INV-INTER-99",
@@ -628,7 +636,7 @@ async def test_gst_itc_summary_interstate_igst(client: AsyncClient):
             acquisition_id=acq.id,
             asset_name="Interstate Router",
             asset_code="RTR-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 6, 1),
@@ -664,13 +672,14 @@ async def test_gst_itc_summary_missing_rate_is_not_invented(client: AsyncClient)
     seeds a real rate, so without this one a reinstated fallback would pass the whole
     suite unnoticed.
     """
-    await seed_masters()
     headers = await admin_headers(client, "norate_gst@testco.com")
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == "norate_gst@testco.com"))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-
         acq = AssetAcquisition(
             company_id=user.company_id,
             invoice_number="INV-NORATE-1",
@@ -692,7 +701,7 @@ async def test_gst_itc_summary_missing_rate_is_not_invented(client: AsyncClient)
             acquisition_id=acq.id,
             asset_name="Rateless Rig",
             asset_code="RIG-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 6, 1),
@@ -802,9 +811,12 @@ async def test_asset_reports_invalid_enum_filter_is_422_not_500(client: AsyncCli
 @pytest.mark.asyncio
 async def test_disposals_register_includes_disposed_by_attribution(client: AsyncClient):
     """H1: Disposals Register output includes Disposed By column and the acting user name/email."""
-    await seed_masters()
     email = "disp_reg_user@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -815,13 +827,12 @@ async def test_disposals_register_includes_disposed_by_attribution(client: Async
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         asset = Asset(
             company_id=user.company_id,
             asset_name="Disposed Vehicle",
             asset_code="VEH-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -867,9 +878,12 @@ async def test_disposals_register_includes_disposed_by_attribution(client: Async
 @pytest.mark.asyncio
 async def test_pack_export_threads_filters_and_capitalized_default(client: AsyncClient):
     """M1: Pack export /pack returns 200 and FAR inside pack has capitalized default."""
-    await seed_masters()
     email = "pack_filter@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -880,14 +894,13 @@ async def test_pack_export_threads_filters_and_capitalized_default(client: Async
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         # 1 Draft asset, 1 Capitalized asset
         draft_asset = Asset(
             company_id=user.company_id,
             asset_name="Draft CWIP Item",
             asset_code="CWIP-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.draft,
             operational_status=AssetOperationalStatus.in_storage,
             original_cost=Decimal("30000.00"),
@@ -896,7 +909,7 @@ async def test_pack_export_threads_filters_and_capitalized_default(client: Async
             company_id=user.company_id,
             asset_name="Capitalized Machinery",
             asset_code="MAC-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -925,7 +938,6 @@ async def test_pack_export_threads_filters_and_capitalized_default(client: Async
 @pytest.mark.asyncio
 async def test_applied_filters_printed_on_all_filtered_reports(client: AsyncClient):
     """M3: Applied filters are printed in the subtitle of all filtered reports, not just FAR."""
-    await seed_masters()
     email = "filter_sub@testco.com"
     headers = await admin_headers(client, email)
 

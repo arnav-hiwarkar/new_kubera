@@ -284,10 +284,8 @@ async def execute_depreciation_run(
         asset_lines.append(line)
 
     # 3. Income Tax Act Block-wise Calculation
-    # Fetch all IT blocks for the company (including global reference blocks)
-    block_stmt = select(ItAssetBlock).where(
-        (ItAssetBlock.company_id == company_id) | (ItAssetBlock.company_id.is_(None))
-    )
+    # Fetch the company's own IT blocks (every company owns a forked set).
+    block_stmt = select(ItAssetBlock).where(ItAssetBlock.company_id == company_id)
     block_res = await db.execute(block_stmt)
     it_blocks = list(block_res.scalars().all())
 

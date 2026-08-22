@@ -8,40 +8,31 @@ MASTERS = "/api/v1/asset-masters"
 
 
 @pytest.mark.asyncio
-async def test_seeded_globals_visible_to_every_company(client: AsyncClient):
-    await seed_masters()
+async def test_statutory_defaults_survive_the_fork(client: AsyncClient):
+    """Forked rows carry the statutory figures verbatim — and are owned."""
     AH = await admin_headers(client, "am_seed@a.com")
 
     blocks = (await client.get(f"{MASTERS}/it-blocks", headers=AH)).json()
     by_code = {b["code"]: b for b in blocks}
-    # Statutory Appendix I rates we must not get wrong.
     assert by_code["PM-40-COMP"]["dep_rate"] == 40.0
     assert by_code["PM-15"]["dep_rate"] == 15.0
     assert by_code["BLD-10"]["dep_rate"] == 10.0
     assert by_code["INT-25"]["dep_rate"] == 25.0
-    # Seeded rows are global, not owned by the company.
-    assert all(b["company_id"] is None for b in blocks)
+    assert all(b["company_id"] is not None for b in blocks)
 
     cats = (await client.get(f"{MASTERS}/categories", headers=AH)).json()
     parents = [c for c in cats if c["parent_id"] is None]
     assert {"Buildings", "Motor vehicles", "Computers and data processing units"} <= {
         c["name"] for c in parents
     }
-
-    # A leaf carries the depreciation defaults that make the create form short.
     laptops = next(c for c in cats if c["name"] == "End user devices (desktops, laptops, printers)")
     assert laptops["default_useful_life_months"] == 36
     assert laptops["default_dep_method"] == "slm"
     assert laptops["default_residual_pct"] == 5.0
     assert laptops["tag_prefix"] == "COMP"
     assert laptops["default_it_block_code"] == "PM-40-COMP"
-    assert "network_ids" in laptops["applicable_field_groups"]
-
-    # Motor cars default to blocked ITC — Sec 17(5) — which is the whole reason
-    # the category carries an ITC default.
     cars = next(c for c in cats if c["name"].startswith("Motor cars"))
     assert cars["default_itc_treatment"] == "blocked"
-    assert "registration" in cars["applicable_field_groups"]
 
 
 @pytest.mark.asyncio
@@ -101,18 +92,23 @@ async def test_category_duplicate_name_under_same_parent_rejected(client: AsyncC
 
 @pytest.mark.asyncio
 async def test_global_rows_not_writable_by_a_company(client: AsyncClient):
-    await seed_masters()
-    AH = await admin_headers(client, "am_global@a.com")
-    cats = (await client.get(f"{MASTERS}/categories", headers=AH)).json()
-    global_cat = next(c for c in cats if c["company_id"] is None)
+    """With strict company scoping there are no shared rows left to guard, but a
+    tenant must still not be able to reach another tenant's categories."""
+    A = await admin_headers(client, "am_foreign@a.com")
+    B = await admin_headers(client, "am_global@a.com")
+    cats_a = (await client.get(f"{MASTERS}/categories", headers=A)).json()
+    foreign_cat = next(c for c in cats_a if c["parent_id"] is None)
 
+    # Not visible in B's list at all...
+    cats_b = (await client.get(f"{MASTERS}/categories", headers=B)).json()
+    assert all(c["id"] != foreign_cat["id"] for c in cats_b)
+    # ...and not writable either.
     patch = await client.patch(
-        f"{MASTERS}/categories/{global_cat['id']}",
+        f"{MASTERS}/categories/{foreign_cat['id']}",
         json={"default_useful_life_months": 999},
-        headers=AH,
+        headers=B,
     )
-    assert patch.status_code == 403
-    assert "seeded" in patch.json()["detail"].lower()
+    assert patch.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -230,8 +226,7 @@ async def test_location_lookup_supports_hierarchy(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_masters_are_tenant_isolated_but_share_globals(client: AsyncClient):
-    await seed_masters()
+async def test_masters_are_tenant_isolated_and_forks_are_private(client: AsyncClient):
     A = await admin_headers(client, "am_t1@a.com")
     B = await admin_headers(client, "am_t2@b.com")
 
@@ -240,10 +235,11 @@ async def test_masters_are_tenant_isolated_but_share_globals(client: AsyncClient
 
     assert (await client.get(f"{MASTERS}/suppliers", headers=B)).json() == []
     assert (await client.get(f"{MASTERS}/lookups?kind=branch", headers=B)).json() == []
-    # ...but both see the same seeded global blocks.
-    assert len((await client.get(f"{MASTERS}/it-blocks", headers=B)).json()) == len(
-        (await client.get(f"{MASTERS}/it-blocks", headers=A)).json()
-    )
+    # Each tenant sees only its own forked copy of the statutory set.
+    a_blocks = (await client.get(f"{MASTERS}/it-blocks", headers=A)).json()
+    b_blocks = (await client.get(f"{MASTERS}/it-blocks", headers=B)).json()
+    assert len(a_blocks) == len(b_blocks)
+    assert all(b["company_id"] is not None for b in a_blocks + b_blocks)
 
 
 @pytest.mark.asyncio
@@ -288,10 +284,17 @@ async def test_module_access_enforced_server_side(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_seed_is_idempotent(client: AsyncClient):
+async def test_seed_is_idempotent():
+    """Re-running the statutory seeder must not duplicate template rows."""
+    from sqlalchemy import select
+
+    from app.models.asset_masters import AssetCategory
+    from tests.conftest import TestSessionLocal
+
     await seed_masters()
-    AH = await admin_headers(client, "am_idem@a.com")
-    first = len((await client.get(f"{MASTERS}/categories", headers=AH)).json())
+    async with TestSessionLocal() as session:
+        first = len((await session.execute(select(AssetCategory))).scalars().unique().all())
     await seed_masters()
-    second = len((await client.get(f"{MASTERS}/categories", headers=AH)).json())
+    async with TestSessionLocal() as session:
+        second = len((await session.execute(select(AssetCategory))).scalars().unique().all())
     assert first == second

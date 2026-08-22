@@ -1,13 +1,14 @@
 """Fixed-asset master data endpoints.
 
-Reads require the `assets` module; writes require admin. Seeded global rows
-(company_id IS NULL) are visible to every tenant but not editable by them.
+Reads require the `assets` module; writes require admin. Every company owns a
+private copy of the statutory masters (forked at creation), so reads and writes
+are strictly scoped to the caller's company.
 """
 import uuid
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,12 +58,7 @@ async def list_it_blocks(current_user: CurrentReader, db: Db):
 
     result = await db.execute(
         select(ItAssetBlock)
-        .where(
-            or_(
-                ItAssetBlock.company_id.is_(None),
-                ItAssetBlock.company_id == current_user.company_id,
-            )
-        )
+        .where(ItAssetBlock.company_id == current_user.company_id)
         .order_by(ItAssetBlock.display_order, ItAssetBlock.code)
     )
     return result.scalars().all()
@@ -89,10 +85,7 @@ async def list_categories(current_user: CurrentReader, db: Db, include_inactive:
     await ensure_company_masters_forked(db, current_user.company_id)
 
     query = select(AssetCategory).where(
-        or_(
-            AssetCategory.company_id.is_(None),
-            AssetCategory.company_id == current_user.company_id,
-        )
+        AssetCategory.company_id == current_user.company_id
     )
     if not include_inactive:
         query = query.where(AssetCategory.is_active.is_(True))
@@ -103,16 +96,14 @@ async def list_categories(current_user: CurrentReader, db: Db, include_inactive:
 async def _load_category_for_write(
     category_id: uuid.UUID, company_id: uuid.UUID, db: AsyncSession
 ) -> AssetCategory:
-    result = await db.execute(select(AssetCategory).where(AssetCategory.id == category_id))
+    result = await db.execute(
+        select(AssetCategory).where(
+            AssetCategory.id == category_id,
+            AssetCategory.company_id == company_id,
+        )
+    )
     cat = result.scalars().unique().one_or_none()
     if cat is None:
-        raise HTTPException(status_code=404, detail="Category not found")
-    if cat.company_id is None:
-        raise HTTPException(
-            status_code=403,
-            detail="This is a seeded global category. Create your own category instead of editing it.",
-        )
-    if cat.company_id != company_id:
         raise HTTPException(status_code=404, detail="Category not found")
     return cat
 
@@ -123,10 +114,7 @@ async def create_category(body: AssetCategoryCreate, current_user: CurrentAdmin,
         parent_res = await db.execute(
             select(AssetCategory).where(
                 AssetCategory.id == body.parent_id,
-                or_(
-                    AssetCategory.company_id.is_(None),
-                    AssetCategory.company_id == current_user.company_id,
-                ),
+                AssetCategory.company_id == current_user.company_id,
             )
         )
         parent = parent_res.scalars().unique().one_or_none()
@@ -144,10 +132,7 @@ async def create_category(body: AssetCategoryCreate, current_user: CurrentAdmin,
         block_res = await db.execute(
             select(ItAssetBlock.id).where(
                 ItAssetBlock.id == body.default_it_block_id,
-                or_(
-                    ItAssetBlock.company_id.is_(None),
-                    ItAssetBlock.company_id == current_user.company_id,
-                ),
+                ItAssetBlock.company_id == current_user.company_id,
             )
         )
         if block_res.scalar_one_or_none() is None:

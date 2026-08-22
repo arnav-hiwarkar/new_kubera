@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Lock, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import {
   Button,
   Card,
@@ -87,8 +87,7 @@ export function CategoriesTab() {
           <p className="max-w-2xl text-sm text-text-muted">
             Categories carry the defaults that keep the asset form short — Schedule II
             useful life, SLM/WDV, residual value, the income-tax block and the tag prefix.
-            The rows marked with a lock are the shipped Schedule II set, shared by every
-            company; add your own instead of editing them.
+            Your company owns its own editable copy of the statutory set.
           </p>
           <Button onClick={() => setOpen(true)}>
             <Plus className="mr-1.5 h-4 w-4" />
@@ -102,9 +101,6 @@ export function CategoriesTab() {
           <Card key={group.parent.id} className="p-4">
             <div className="mb-2 flex items-center gap-2">
               <h3 className="text-md font-semibold text-text-primary">{group.parent.name}</h3>
-              {group.parent.company_id === null && (
-                <Lock className="h-3.5 w-3.5 text-text-muted" aria-label="Seeded, read-only" />
-              )}
               {group.parent.tag_prefix && (
                 <span className="rounded-pill bg-bg-raised px-2 py-0.5 font-mono text-xs text-text-muted">
                   {group.parent.tag_prefix}

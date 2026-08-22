@@ -10,7 +10,6 @@ from httpx import AsyncClient
 from tests.asset_helpers import (
     admin_headers,
     make_user,
-    seed_masters,
     set_company_gstin,
     user_headers,
 )
@@ -119,7 +118,6 @@ async def _make_ready(client, headers, created, masters, **asset_overrides):
 
 @pytest.mark.asyncio
 async def test_quick_add_creates_a_draft_from_six_fields(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_qa@a.com")
     cat = await _leaf_category(client, AH)
 
@@ -143,7 +141,6 @@ async def test_quick_add_creates_a_draft_from_six_fields(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_quantity_fifty_explodes_into_fifty_tagged_units(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_explode@a.com")
     cat = await _leaf_category(client, AH, "General furniture")
 
@@ -168,7 +165,6 @@ async def test_quantity_fifty_explodes_into_fifty_tagged_units(client: AsyncClie
 
 @pytest.mark.asyncio
 async def test_allocation_has_no_rounding_leak_on_an_awkward_total(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_leak@a.com")
     cat = await _leaf_category(client, AH, "General furniture")
     created = await _quick_add(client, AH, cat["id"], quantity=3, unit_basic_price="333.34")
@@ -180,7 +176,6 @@ async def test_allocation_has_no_rounding_leak_on_an_awkward_total(client: Async
 
 @pytest.mark.asyncio
 async def test_tag_prefixes_come_from_the_category(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_prefix@a.com")
     comp = await _leaf_category(client, AH)
     car = await _leaf_category(client, AH, "Motor cars")
@@ -203,7 +198,6 @@ async def test_tag_prefixes_come_from_the_category(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_gst_splits_by_state_and_flips_to_igst(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_gst@a.com")
     # The company's own GSTIN is the default place of supply (state 27).
     await set_company_gstin("as_gst@a.com", "27AAAAA1111A1Z5")
@@ -271,7 +265,6 @@ async def test_gst_splits_by_state_and_flips_to_igst(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_blocked_itc_lands_in_the_capitalized_value_eligible_does_not(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_itc@a.com")
     car = await _leaf_category(client, AH, "Motor cars")
     laptop = await _leaf_category(client, AH)
@@ -309,7 +302,6 @@ async def test_blocked_itc_lands_in_the_capitalized_value_eligible_does_not(clie
 
 @pytest.mark.asyncio
 async def test_manually_entered_gst_survives_a_later_recompute(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_ovr@a.com")
     cat = await _leaf_category(client, AH)
     created = await _quick_add(client, AH, cat["id"], unit_basic_price=1000)
@@ -336,7 +328,6 @@ async def test_manually_entered_gst_survives_a_later_recompute(client: AsyncClie
 
 @pytest.mark.asyncio
 async def test_freight_and_installation_are_capitalized(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_freight@a.com")
     cat = await _leaf_category(client, AH, "General plant")
     created = await _quick_add(client, AH, cat["id"], asset_name="Lathe", unit_basic_price=100000)
@@ -363,7 +354,6 @@ async def test_freight_and_installation_are_capitalized(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_submit_is_blocked_with_a_full_checklist(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_sub@a.com")
     cat = await _leaf_category(client, AH)
     created = await _quick_add(client, AH, cat["id"])
@@ -381,7 +371,6 @@ async def test_submit_is_blocked_with_a_full_checklist(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_a_completed_draft_submits_and_capitalizes(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_flow@a.com")
     masters = await _masters(client, AH)
     cat = await _leaf_category(client, AH)
@@ -423,7 +412,6 @@ async def test_a_completed_draft_submits_and_capitalizes(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_a_manager_cannot_approve_their_own_asset(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_sod@a.com")
     await make_user(client, AH, "as_mgr@a.com", role="manager")
     MH = await user_headers(client, "as_mgr@a.com")
@@ -454,7 +442,6 @@ async def test_a_manager_cannot_approve_their_own_asset(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_employees_cannot_approve(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_emp@a.com")
     await make_user(client, AH, "as_e1@a.com")
     EH = await user_headers(client, "as_e1@a.com")
@@ -467,7 +454,6 @@ async def test_employees_cannot_approve(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_reject_sends_it_back_to_draft(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_rej@a.com")
     masters = await _masters(client, AH)
     cat = await _leaf_category(client, AH)
@@ -484,7 +470,6 @@ async def test_reject_sends_it_back_to_draft(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_a_whole_batch_can_transition_at_once(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_batch@a.com")
     masters = await _masters(client, AH)
     cat = await _leaf_category(client, AH, "General furniture")
@@ -573,7 +558,6 @@ async def _capitalized(client, headers, email_suffix="x"):
 
 @pytest.mark.asyncio
 async def test_the_tag_is_immutable_once_capitalized(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_lock1@a.com")
     asset_id, _ = await _capitalized(client, AH)
 
@@ -583,7 +567,6 @@ async def test_the_tag_is_immutable_once_capitalized(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_cost_and_depreciation_inputs_are_locked_once_capitalized(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_lock2@a.com")
     asset_id, acq_id = await _capitalized(client, AH)
 
@@ -606,7 +589,6 @@ async def test_cost_and_depreciation_inputs_are_locked_once_capitalized(client: 
 
 @pytest.mark.asyncio
 async def test_a_capitalized_asset_cannot_be_deleted(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_del@a.com")
     asset_id, _ = await _capitalized(client, AH)
     resp = await client.delete(f"{ASSETS}/{asset_id}", headers=AH)
@@ -616,7 +598,6 @@ async def test_a_capitalized_asset_cannot_be_deleted(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_a_draft_can_be_deleted(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_del2@a.com")
     cat = await _leaf_category(client, AH)
     created = await _quick_add(client, AH, cat["id"])
@@ -630,7 +611,6 @@ async def test_a_draft_can_be_deleted(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_serials_can_be_filled_for_a_batch_in_one_call(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_ser@a.com")
     cat = await _leaf_category(client, AH)
     created = await _quick_add(client, AH, cat["id"], quantity=3, unit_basic_price=1000)
@@ -653,7 +633,6 @@ async def test_serials_can_be_filled_for_a_batch_in_one_call(client: AsyncClient
 
 @pytest.mark.asyncio
 async def test_duplicate_asset_codes_are_rejected(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_dupcode@a.com")
     cat = await _leaf_category(client, AH)
     a = await _quick_add(client, AH, cat["id"])
@@ -670,7 +649,6 @@ async def test_duplicate_asset_codes_are_rejected(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_growing_the_quantity_mints_new_units(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_grow@a.com")
     cat = await _leaf_category(client, AH, "General furniture")
     created = await _quick_add(client, AH, cat["id"], quantity=2, unit_basic_price=1000)
@@ -687,7 +665,6 @@ async def test_growing_the_quantity_mints_new_units(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_shrinking_the_quantity_drops_trailing_drafts(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_shrink@a.com")
     cat = await _leaf_category(client, AH, "General furniture")
     created = await _quick_add(client, AH, cat["id"], quantity=5, unit_basic_price=1000)
@@ -705,7 +682,6 @@ async def test_shrinking_the_quantity_drops_trailing_drafts(client: AsyncClient)
 
 @pytest.mark.asyncio
 async def test_the_invoice_attaches_once_and_covers_every_unit(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_doc1@a.com")
     cat = await _leaf_category(client, AH, "General furniture")
     created = await _quick_add(client, AH, cat["id"], quantity=3, unit_basic_price=1000)
@@ -721,7 +697,6 @@ async def test_the_invoice_attaches_once_and_covers_every_unit(client: AsyncClie
 
 @pytest.mark.asyncio
 async def test_document_roles_are_kept_at_the_right_level(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_doc2@a.com")
     cat = await _leaf_category(client, AH)
     created = await _quick_add(client, AH, cat["id"])
@@ -750,7 +725,6 @@ async def test_document_roles_are_kept_at_the_right_level(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_an_uploaded_photo_can_be_streamed_back_decrypted(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_doc3@a.com")
     cat = await _leaf_category(client, AH)
     created = await _quick_add(client, AH, cat["id"])
@@ -768,7 +742,6 @@ async def test_an_uploaded_photo_can_be_streamed_back_decrypted(client: AsyncCli
 
 @pytest.mark.asyncio
 async def test_an_attachment_can_be_detached(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_doc4@a.com")
     cat = await _leaf_category(client, AH)
     created = await _quick_add(client, AH, cat["id"])
@@ -789,7 +762,6 @@ async def test_an_attachment_can_be_detached(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_the_register_is_visible_to_every_module_holder(client: AsyncClient):
     """A finance artifact: totals must tie, so reads are not narrowed by custodian."""
-    await seed_masters()
     AH = await admin_headers(client, "as_scope@a.com")
     await make_user(client, AH, "as_s1@a.com")
     EH = await user_headers(client, "as_s1@a.com")
@@ -804,7 +776,6 @@ async def test_the_register_is_visible_to_every_module_holder(client: AsyncClien
 
 @pytest.mark.asyncio
 async def test_assets_are_tenant_isolated(client: AsyncClient):
-    await seed_masters()
     A = await admin_headers(client, "as_t1@a.com")
     B = await admin_headers(client, "as_t2@b.com")
     cat = await _leaf_category(client, A)
@@ -819,7 +790,6 @@ async def test_assets_are_tenant_isolated(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_module_access_is_required_server_side(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_mod@a.com")
     resp = await client.post(
         "/api/v1/users",
@@ -843,7 +813,6 @@ async def test_module_access_is_required_server_side(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_custom_fields_still_validate(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_cf@a.com")
     await client.post(
         "/api/v1/custom-fields/asset_management",
@@ -879,7 +848,6 @@ async def test_custom_fields_still_validate(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_lifecycle_transitions_are_written_to_the_activity_log(client: AsyncClient):
     """The old assets router logged nothing at all."""
-    await seed_masters()
     AH = await admin_headers(client, "as_log@a.com")
     asset_id, _ = await _capitalized(client, AH)
 
@@ -904,7 +872,6 @@ async def test_lifecycle_transitions_are_written_to_the_activity_log(client: Asy
 
 @pytest.mark.asyncio
 async def test_warranty_expiry_is_derived(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_warr@a.com")
     cat = await _leaf_category(client, AH)
     created = await _quick_add(client, AH, cat["id"])
@@ -919,7 +886,6 @@ async def test_warranty_expiry_is_derived(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_filters_and_search(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_filter@a.com")
     comp = await _leaf_category(client, AH)
     furn = await _leaf_category(client, AH, "General furniture")
@@ -934,7 +900,6 @@ async def test_filters_and_search(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_export_produces_a_spreadsheet(client: AsyncClient):
-    await seed_masters()
     AH = await admin_headers(client, "as_exp@a.com")
     cat = await _leaf_category(client, AH)
     await _quick_add(client, AH, cat["id"])

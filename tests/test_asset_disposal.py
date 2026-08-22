@@ -1,33 +1,36 @@
 """Integration tests for asset disposals."""
 from datetime import date
 from decimal import Decimal
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.assets import Asset, AssetLifecycleStatus, AssetOperationalStatus
-from app.models.asset_masters import AssetCategory
 from app.models.company import CompanyUser
 from app.models.financial_year import FinancialYear, FinancialYearStatus
-from tests.asset_helpers import admin_headers, seed_masters
+from tests.asset_helpers import admin_headers
 from tests.conftest import TestSessionLocal
 
 
 @pytest.mark.asyncio
 async def test_dispose_draft_asset_rejected(client: AsyncClient):
     """Disposing a draft asset must return 409 Conflict."""
-    await seed_masters()
     email = "admin_disp_draft@testco.com"
     headers = await admin_headers(client, email)
 
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         draft_asset = Asset(
             company_id=user.company_id,
             asset_name="Draft Asset Prototype",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.draft,
             operational_status=AssetOperationalStatus.in_use,
             original_cost=Decimal("50000.00"),
@@ -52,19 +55,21 @@ async def test_dispose_draft_asset_rejected(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_disposal_date_before_capitalization_rejected(client: AsyncClient):
     """Disposal date earlier than capitalization date must return 422 Unprocessable Entity."""
-    await seed_masters()
     email = "admin_disp_date@testco.com"
     headers = await admin_headers(client, email)
 
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         cap_asset = Asset(
             company_id=user.company_id,
             asset_name="Capitalized Laptop A",
             asset_code="LAP-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -97,13 +102,15 @@ async def test_disposal_into_closed_financial_year_rejected(client: AsyncClient)
     
     Expected to FAIL: Rule is not implemented in disposal endpoint.
     """
-    await seed_masters()
     email = "admin_disp_closed@testco.com"
     headers = await admin_headers(client, email)
 
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         closed_fy = FinancialYear(
             company_id=user.company_id,
@@ -118,7 +125,7 @@ async def test_disposal_into_closed_financial_year_rejected(client: AsyncClient)
             company_id=user.company_id,
             asset_name="Capitalized Machine X",
             asset_code="MCH-100",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2023, 4, 1),
@@ -151,19 +158,21 @@ async def test_disposal_sale_without_proceeds_rejected(client: AsyncClient):
     
     Expected to FAIL: Schema defaults proceeds to 0.00 and does not require explicit proceeds on sales.
     """
-    await seed_masters()
     email = "admin_disp_noproc@testco.com"
     headers = await admin_headers(client, email)
 
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         cap_asset = Asset(
             company_id=user.company_id,
             asset_name="Capitalized Vehicle Y",
             asset_code="VEH-200",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -192,19 +201,21 @@ async def test_disposal_sale_without_proceeds_rejected(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_successful_asset_disposal(client: AsyncClient):
     """Successful disposal sets lifecycle_status to disposed and records disposal fields."""
-    await seed_masters()
     email = "admin_disp_good@testco.com"
     headers = await admin_headers(client, email)
 
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         cap_asset = Asset(
             company_id=user.company_id,
             asset_name="Capitalized Laptop B",
             asset_code="LAP-002",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -243,19 +254,21 @@ async def test_successful_asset_disposal(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_disposal_without_proceeds(client: AsyncClient, disp_type: str):
     """B2: Disposals without proceeds (scrap, write_off, loss_destruction) must return 200 and set status disposed."""
-    await seed_masters()
     email = f"admin_disp_{disp_type}@testco.com"
     headers = await admin_headers(client, email)
 
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         cap_asset = Asset(
             company_id=user.company_id,
             asset_name=f"Equipment for {disp_type}",
             asset_code=f"EQ-{disp_type[:4].upper()}-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -288,19 +301,21 @@ async def test_disposal_without_proceeds(client: AsyncClient, disp_type: str):
 @pytest.mark.asyncio
 async def test_disposal_negative_sale_proceeds_rejected(client: AsyncClient):
     """B3: Negative sale proceeds must return 422 Unprocessable Entity."""
-    await seed_masters()
     email = "admin_disp_neg@testco.com"
     headers = await admin_headers(client, email)
 
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         cap_asset = Asset(
             company_id=user.company_id,
             asset_name="Asset with Negative Proceeds",
             asset_code="NEG-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -330,19 +345,21 @@ async def test_disposal_negative_sale_proceeds_rejected(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_disposal_invalid_type_banana_returns_422(client: AsyncClient):
     """H1: Invalid disposal_type ('banana') must return 422 Unprocessable Entity."""
-    await seed_masters()
     email = "admin_disp_banana@testco.com"
     headers = await admin_headers(client, email)
 
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         cap_asset = Asset(
             company_id=user.company_id,
             asset_name="Asset for Banana Disposal",
             asset_code="BAN-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -372,20 +389,22 @@ async def test_disposal_invalid_type_banana_returns_422(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_disposal_sets_disposed_by_user_attribution(client: AsyncClient):
     """H1: Disposing an asset sets asset.disposed_by to the acting user."""
-    await seed_masters()
     email = "admin_disp_by@testco.com"
     headers = await admin_headers(client, email)
 
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
         user_id = user.id
 
         cap_asset = Asset(
             company_id=user.company_id,
             asset_name="Asset with Disposed By Attribution",
             asset_code="ATTR-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),

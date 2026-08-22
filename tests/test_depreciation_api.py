@@ -1,46 +1,43 @@
 """Integration tests for Depreciation Runs and Endpoints."""
 from datetime import date
 from decimal import Decimal
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.assets import Asset, AssetLifecycleStatus, AssetOperationalStatus
-from app.models.asset_masters import AssetCategory, ItAssetBlock
 from app.models.company import CompanyUser
 from app.models.depreciation import DepreciationRun
-from tests.asset_helpers import admin_headers, seed_masters
+from tests.asset_helpers import admin_headers
 from tests.conftest import TestSessionLocal
 
 
 async def setup_depreciation_environment(client: AsyncClient, email: str = "admin_depapi@testco.com"):
-    await seed_masters()
-    headers = await admin_headers(client, email)
+    headers = await admin_headers(client, email)  # fork happens at creation
 
-    # 1. Create Financial Year
     fy_res = await client.post(
         "/api/v1/financial-years",
-        json={
-            "label": "2024-25",
-            "start_date": "2024-04-01",
-            "end_date": "2025-03-31",
-        },
+        json={"label": "2024-25", "start_date": "2024-04-01", "end_date": "2025-03-31"},
         headers=headers,
     )
     assert fy_res.status_code == 201, fy_res.text
     fy_id = fy_res.json()["id"]
 
-    # 2. Insert capitalized asset directly into DB for test
+    # Take ids from the API so they are guaranteed company-owned.
+    blocks = (await client.get("/api/v1/asset-masters/it-blocks", headers=headers)).json()
+    block_id = next(b["id"] for b in blocks if b["code"] == "PM-15")
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
+
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
-
         asset = Asset(
             company_id=user.company_id,
             asset_name="Server Rack",
             asset_code="SRV-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -49,7 +46,7 @@ async def setup_depreciation_environment(client: AsyncClient, email: str = "admi
             residual_pct=Decimal("5.00"),
             dep_method="slm",
             original_cost=Decimal("100000.00"),
-            it_block_id=it_block.id if it_block else None,
+            it_block_id=uuid.UUID(block_id),
             it_dep_rate=Decimal("15.00"),
             it_put_to_use_date=date(2024, 4, 1),
         )
@@ -58,11 +55,7 @@ async def setup_depreciation_environment(client: AsyncClient, email: str = "admi
         await session.refresh(asset)
         asset_id = str(asset.id)
 
-    return {
-        "headers": headers,
-        "fy_id": fy_id,
-        "asset_id": asset_id,
-    }
+    return {"headers": headers, "fy_id": fy_id, "asset_id": asset_id}
 
 
 @pytest.mark.asyncio
@@ -198,9 +191,12 @@ async def test_depreciation_three_year_slm_carry_forward(client: AsyncClient):
     
     Expected to FAIL: Opening balances are not carried forward from previous FY, so Yr2 and Yr3 produce 19,000.
     """
-    await seed_masters()
     email = "three_year_slm@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     # Create three consecutive financial years
     fy1_res = await client.post(
@@ -230,13 +226,12 @@ async def test_depreciation_three_year_slm_carry_forward(client: AsyncClient):
     # Create single asset available for use on the first day of FY1
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         asset = Asset(
             company_id=user.company_id,
             asset_name="Industrial Generator",
             asset_code="GEN-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -312,9 +307,14 @@ async def test_it_block_wdv_carry_forward(client: AsyncClient):
     
     Expected to FAIL: Opening WDV is not carried forward across consecutive FY runs.
     """
-    await seed_masters()
     email = "it_carry_forward@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    blocks = (await client.get("/api/v1/asset-masters/it-blocks", headers=headers)).json()
+    block_id = next(b["id"] for b in blocks if b["code"] == "PM-15")
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     # Create consecutive FYs
     fy1_res = await client.post(
@@ -335,15 +335,12 @@ async def test_it_block_wdv_carry_forward(client: AsyncClient):
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
-        it_block_id_str = str(it_block.id)
 
         asset = Asset(
             company_id=user.company_id,
             asset_name="Core Switch",
             asset_code="NET-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -352,7 +349,7 @@ async def test_it_block_wdv_carry_forward(client: AsyncClient):
             residual_pct=Decimal("5.00"),
             dep_method="slm",
             original_cost=Decimal("100000.00"),
-            it_block_id=it_block.id if it_block else None,
+            it_block_id=uuid.UUID(block_id),
             it_dep_rate=Decimal("15.00"),
             it_put_to_use_date=date(2024, 4, 1),
         )
@@ -375,7 +372,7 @@ async def test_it_block_wdv_carry_forward(client: AsyncClient):
     it_lines1_res = await client.get(f"/api/v1/depreciation/runs/{run1_id}/it-lines", headers=headers)
     assert it_lines1_res.status_code == 200, it_lines1_res.text
     it_lines1 = it_lines1_res.json()
-    it_line1 = next(l for l in it_lines1 if l["it_block_id"] == it_block_id_str)
+    it_line1 = next(l for l in it_lines1 if l["it_block_id"] == block_id)
     fy1_closing_wdv = float(it_line1["closing_wdv"])
 
     # 2. Run FY2
@@ -390,7 +387,7 @@ async def test_it_block_wdv_carry_forward(client: AsyncClient):
     it_lines2_res = await client.get(f"/api/v1/depreciation/runs/{run2_id}/it-lines", headers=headers)
     assert it_lines2_res.status_code == 200, it_lines2_res.text
     it_lines2 = it_lines2_res.json()
-    it_line2 = next(l for l in it_lines2 if l["it_block_id"] == it_block_id_str)
+    it_line2 = next(l for l in it_lines2 if l["it_block_id"] == block_id)
     fy2_opening_wdv = float(it_line2["opening_wdv"])
 
     assert fy2_opening_wdv == fy1_closing_wdv, (
@@ -401,9 +398,12 @@ async def test_it_block_wdv_carry_forward(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_depreciation_residual_floor_stops_depreciation(client: AsyncClient):
     """Asset reaches its residual floor at Year 5 (NBV 5,000) and Year 6 charge is 0."""
-    await seed_masters()
     email = "res_floor@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     # Create 6 consecutive financial years
     fy_ids = []
@@ -425,13 +425,12 @@ async def test_depreciation_residual_floor_stops_depreciation(client: AsyncClien
     # Create 100k SLM asset with 60m life and 5% residual
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         asset = Asset(
             company_id=user.company_id,
             asset_name="Turbine Generator",
             asset_code="TURB-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -477,9 +476,12 @@ async def test_depreciation_residual_floor_stops_depreciation(client: AsyncClien
 @pytest.mark.asyncio
 async def test_depreciation_null_useful_life_raises(client: AsyncClient):
     """An asset with NULL useful life raises an error on depreciation run."""
-    await seed_masters()
     email = "null_life@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -491,13 +493,12 @@ async def test_depreciation_null_useful_life_raises(client: AsyncClient):
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         asset = Asset(
             company_id=user.company_id,
             asset_name="Invalid Life Machine",
             asset_code="INV-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -522,9 +523,12 @@ async def test_depreciation_null_useful_life_raises(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_depreciation_wdv_zero_residual_raises_422(client: AsyncClient):
     """WDV depreciation with 0% residual raises 422 Unprocessable Entity."""
-    await seed_masters()
     email = "wdv_zero_res@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -536,13 +540,12 @@ async def test_depreciation_wdv_zero_residual_raises_422(client: AsyncClient):
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         asset = Asset(
             company_id=user.company_id,
             asset_name="WDV Zero Res Machine",
             asset_code="WDV-ZRES-01",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -567,9 +570,14 @@ async def test_depreciation_wdv_zero_residual_raises_422(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_depreciation_pre_cutover_missing_wdv_raises_422(client: AsyncClient):
     """Pre-cutover asset without opening WDV raises 422 Unprocessable Entity."""
-    await seed_masters()
     email = "pre_cutover_err@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    blocks = (await client.get("/api/v1/asset-masters/it-blocks", headers=headers)).json()
+    block_id = next(b["id"] for b in blocks if b["code"] == "PM-15")
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -581,15 +589,13 @@ async def test_depreciation_pre_cutover_missing_wdv_raises_422(client: AsyncClie
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
 
         asset = Asset(
             company_id=user.company_id,
             asset_name="Cutover Machine Without WDV",
             asset_code="CUT-001",
-            category_id=cat.id if cat else None,
-            it_block_id=it_block.id if it_block else None,
+            category_id=uuid.UUID(cat_id),
+            it_block_id=uuid.UUID(block_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2023, 4, 1),
@@ -622,9 +628,14 @@ async def test_income_tax_block_will_not_borrow_the_book_wdv(client: AsyncClient
     one for the other produced a wrong block opening base, and therefore a wrong
     deduction, with nothing on the report to say so.
     """
-    await seed_masters()
     email = "it_no_borrow@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    blocks = (await client.get("/api/v1/asset-masters/it-blocks", headers=headers)).json()
+    block_id = next(b["id"] for b in blocks if b["code"] == "PM-15")
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -636,16 +647,14 @@ async def test_income_tax_block_will_not_borrow_the_book_wdv(client: AsyncClient
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
 
         session.add(
             Asset(
                 company_id=user.company_id,
                 asset_name="Books WDV Only",
                 asset_code="BWO-001",
-                category_id=cat.id if cat else None,
-                it_block_id=it_block.id if it_block else None,
+                category_id=uuid.UUID(cat_id),
+                it_block_id=uuid.UUID(block_id),
                 lifecycle_status=AssetLifecycleStatus.capitalized,
                 operational_status=AssetOperationalStatus.in_use,
                 capitalization_date=date(2023, 4, 1),
@@ -684,9 +693,14 @@ async def test_pre_cutover_run_uses_the_entered_opening_wdv(client: AsyncClient)
     deliberately disagree: cost 100,000 less accumulated 40,000 would give 60,000,
     but the stated carrying amount is 50,000.
     """
-    await seed_masters()
     email = "cutover_wdv_used@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    blocks = (await client.get("/api/v1/asset-masters/it-blocks", headers=headers)).json()
+    block_id = next(b["id"] for b in blocks if b["code"] == "PM-15")
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -698,16 +712,14 @@ async def test_pre_cutover_run_uses_the_entered_opening_wdv(client: AsyncClient)
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
 
         session.add(
             Asset(
                 company_id=user.company_id,
                 asset_name="Impaired Press",
                 asset_code="IMP-001",
-                category_id=cat.id if cat else None,
-                it_block_id=it_block.id if it_block else None,
+                category_id=uuid.UUID(cat_id),
+                it_block_id=uuid.UUID(block_id),
                 lifecycle_status=AssetLifecycleStatus.capitalized,
                 operational_status=AssetOperationalStatus.in_use,
                 capitalization_date=date(2021, 4, 1),
@@ -748,9 +760,12 @@ async def test_pre_cutover_run_uses_the_entered_opening_wdv(client: AsyncClient)
 @pytest.mark.asyncio
 async def test_depreciation_zero_residual_pct(client: AsyncClient):
     """Asset with 0% residual depreciates to zero rather than assuming 5%."""
-    await seed_masters()
     email = "zero_res@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -762,13 +777,12 @@ async def test_depreciation_zero_residual_pct(client: AsyncClient):
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         asset = Asset(
             company_id=user.company_id,
             asset_name="Zero Residual Asset",
             asset_code="ZRES-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -801,9 +815,12 @@ async def test_depreciation_zero_residual_pct(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_depreciation_wdv_routing(client: AsyncClient):
     """WDV asset routes properly to WDV calculation branch."""
-    await seed_masters()
     email = "wdv_route@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -815,13 +832,12 @@ async def test_depreciation_wdv_routing(client: AsyncClient):
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
 
         asset = Asset(
             company_id=user.company_id,
             asset_name="WDV Plant Equipment",
             asset_code="WDV-001",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 4, 1),
@@ -853,7 +869,6 @@ async def test_depreciation_wdv_routing(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_multiple_draft_runs_prior_fy_returns_409(client: AsyncClient):
     """B4: Multiple draft runs in prior FY must return 409 Conflict when running next FY, not 500 MultipleResultsFound."""
-    await seed_masters()
     email = "admin_multidraft@testco.com"
     headers = await admin_headers(client, email)
 
@@ -905,7 +920,6 @@ async def test_multiple_draft_runs_prior_fy_returns_409(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_depreciation_run_finalized_uniqueness_rejected(client: AsyncClient):
     """H1 / F2: Two finalized runs for the same (company_id, financial_year_id) are rejected with 409."""
-    await seed_masters()
     email = "admin_uniq_run@testco.com"
     headers = await admin_headers(client, email)
 
@@ -951,9 +965,14 @@ async def test_depreciation_run_finalized_uniqueness_rejected(client: AsyncClien
 @pytest.mark.asyncio
 async def test_prior_fy_disposal_in_live_block_still_depreciates(client: AsyncClient):
     """H1 / F7: A block holding 1 asset disposed 2 years ago and 1 live asset still depreciates normally and is NOT flagged all_assets_disposed."""
-    await seed_masters()
     email = "live_block_disp@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    blocks = (await client.get("/api/v1/asset-masters/it-blocks", headers=headers)).json()
+    block_id = next(b["id"] for b in blocks if b["code"] == "PM-15")
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     # Create 3 FYs: 2022-23, 2023-24, 2024-25
     fy1_res = await client.post(
@@ -979,15 +998,12 @@ async def test_prior_fy_disposal_in_live_block_still_depreciates(client: AsyncCl
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
-        it_block = (await session.execute(select(ItAssetBlock))).scalars().first()
-        it_block_id = it_block.id
 
         # Asset 1: Disposed in FY 2022-23
         a1 = Asset(
             company_id=user.company_id,
             asset_name="Old Server",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.disposed,
             operational_status=AssetOperationalStatus.in_storage,
             capitalization_date=date(2022, 4, 1),
@@ -995,7 +1011,7 @@ async def test_prior_fy_disposal_in_live_block_still_depreciates(client: AsyncCl
             residual_pct=Decimal("5.00"),
             dep_method="slm",
             original_cost=Decimal("50000.00"),
-            it_block_id=it_block_id,
+            it_block_id=uuid.UUID(block_id),
             it_dep_rate=Decimal("15.00"),
             it_put_to_use_date=date(2022, 4, 1),
             disposal_date=date(2022, 10, 1),
@@ -1007,7 +1023,7 @@ async def test_prior_fy_disposal_in_live_block_still_depreciates(client: AsyncCl
         a2 = Asset(
             company_id=user.company_id,
             asset_name="Live Server",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2022, 4, 1),
@@ -1015,7 +1031,7 @@ async def test_prior_fy_disposal_in_live_block_still_depreciates(client: AsyncCl
             residual_pct=Decimal("5.00"),
             dep_method="slm",
             original_cost=Decimal("100000.00"),
-            it_block_id=it_block_id,
+            it_block_id=uuid.UUID(block_id),
             it_dep_rate=Decimal("15.00"),
             it_put_to_use_date=date(2022, 4, 1),
         )
@@ -1040,7 +1056,7 @@ async def test_prior_fy_disposal_in_live_block_still_depreciates(client: AsyncCl
     it_lines_res = await client.get(f"/api/v1/depreciation/runs/{r3_id}/it-lines", headers=headers)
     assert it_lines_res.status_code == 200
     it_lines = it_lines_res.json()
-    block_line = next(l for l in it_lines if l["it_block_id"] == str(it_block_id))
+    block_line = next(l for l in it_lines if l["it_block_id"] == block_id)
 
     # Must have depreciation > 0 and NOT all_assets_disposed / capital loss
     assert float(block_line["total_depreciation"]) > 0
@@ -1051,7 +1067,6 @@ async def test_prior_fy_disposal_in_live_block_still_depreciates(client: AsyncCl
 @pytest.mark.asyncio
 async def test_f9_gate_scenario_1_fy2_with_fy1_draft_returns_409(client: AsyncClient):
     """H1 / F9 scenario 1: FY2 with FY1 in draft -> returns 409."""
-    await seed_masters()
     email = "f9_sc1@testco.com"
     headers = await admin_headers(client, email)
 
@@ -1082,9 +1097,12 @@ async def test_f9_gate_scenario_1_fy2_with_fy1_draft_returns_409(client: AsyncCl
 @pytest.mark.asyncio
 async def test_f9_gate_scenario_2_fy1_finalized_then_fy2_succeeds(client: AsyncClient):
     """H1 / F9 scenario 2: FY1 finalized, then FY2 -> succeeds and carries forward."""
-    await seed_masters()
     email = "f9_sc2@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy1_res = await client.post(
         "/api/v1/financial-years",
@@ -1102,11 +1120,10 @@ async def test_f9_gate_scenario_2_fy1_finalized_then_fy2_succeeds(client: AsyncC
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
         asset = Asset(
             company_id=user.company_id,
             asset_name="Office AC",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2023, 4, 1),
@@ -1147,9 +1164,12 @@ async def test_f9_gate_scenario_2_fy1_finalized_then_fy2_succeeds(client: AsyncC
 @pytest.mark.asyncio
 async def test_f9_gate_scenario_3_first_ever_fy_runs_cleanly(client: AsyncClient):
     """H1 / F9 scenario 3: A company's first-ever FY, no prior year -> runs cleanly, not blocked."""
-    await seed_masters()
     email = "f9_sc3@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     fy_res = await client.post(
         "/api/v1/financial-years",
@@ -1160,11 +1180,10 @@ async def test_f9_gate_scenario_3_first_ever_fy_runs_cleanly(client: AsyncClient
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
         asset = Asset(
             company_id=user.company_id,
             asset_name="First Laptop",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2024, 6, 1),
@@ -1193,9 +1212,12 @@ async def test_f9_gate_scenario_3_first_ever_fy_runs_cleanly(client: AsyncClient
 @pytest.mark.asyncio
 async def test_f9_gate_scenario_4_pre_cutover_asset_runs_cleanly(client: AsyncClient):
     """H1 / F9 scenario 4: A pre-cutover asset with opening figures and no prior run -> runs cleanly."""
-    await seed_masters()
     email = "f9_sc4@testco.com"
     headers = await admin_headers(client, email)
+
+    # Take ids from the API so they are guaranteed company-owned.
+    cats = (await client.get("/api/v1/asset-masters/categories", headers=headers)).json()
+    cat_id = next(c["id"] for c in cats if c["parent_id"] is not None)
 
     # Create prior FY and current FY, but NO prior run
     fy1_res = await client.post(
@@ -1212,12 +1234,11 @@ async def test_f9_gate_scenario_4_pre_cutover_asset_runs_cleanly(client: AsyncCl
 
     async with TestSessionLocal() as session:
         user = (await session.execute(select(CompanyUser).where(CompanyUser.email == email))).scalar_one()
-        cat = (await session.execute(select(AssetCategory))).scalars().first()
         # Pre-cutover asset capitalized before fy2_start
         asset = Asset(
             company_id=user.company_id,
             asset_name="Pre-cutover Plant",
-            category_id=cat.id if cat else None,
+            category_id=uuid.UUID(cat_id),
             lifecycle_status=AssetLifecycleStatus.capitalized,
             operational_status=AssetOperationalStatus.in_use,
             capitalization_date=date(2022, 1, 1),
