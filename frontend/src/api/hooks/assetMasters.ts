@@ -8,6 +8,8 @@ import type {
   AssetLookupCreate,
   AssetLookupKind,
   AssetLookupUpdate,
+  ImpactKind,
+  ItAssetBlockResponse,
   SupplierCreate,
   SupplierUpdate,
 } from '@/api/types'
@@ -167,3 +169,33 @@ export function useUpdateLookup() {
     onSuccess: invalidate,
   })
 }
+
+export function useCreateItBlock() {
+  const invalidate = useInvalidateMasters()
+  return useMutation({
+    mutationFn: (body: Partial<ItAssetBlockResponse>) => assetMastersApi.createItBlock(body),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateItBlock() {
+  const invalidate = useInvalidateMasters()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Partial<ItAssetBlockResponse> }) =>
+      assetMastersApi.updateItBlock(id, body),
+    onSuccess: invalidate,
+  })
+}
+
+/** Live impact verdict for a master row; only fetched once kind and id are known. */
+export function useImpactPreview(kind: ImpactKind | null, id: string | null) {
+  return useQuery({
+    queryKey: ['asset-masters', 'impact', kind, id],
+    queryFn: () => assetMastersApi.impactPreview(kind!, id!),
+    enabled: !!kind && !!id,
+  })
+}
+
+// Re-exported so components can type against the hook's kind without reaching
+// into '@/api/types' as well.
+export type { ImpactKind } from '@/api/types'

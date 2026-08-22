@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Pencil, Plus } from 'lucide-react'
 import {
   Button,
   DataTable,
@@ -10,32 +10,74 @@ import {
   type Column,
 } from '@/components/ui'
 import { ApiError } from '@/api/http'
-import { useCreateSupplier, useSuppliers } from '@/api/hooks/assetMasters'
+import {
+  useCreateSupplier,
+  useImpactPreview,
+  useSuppliers,
+  useUpdateSupplier,
+} from '@/api/hooks/assetMasters'
 import type { SupplierResponse } from '@/api/types'
+import { ImpactNotice } from './ImpactNotice'
 
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/
+
+const EMPTY_FORM = {
+  code: '',
+  name: '',
+  gstin: '',
+  state: '',
+  contact_person: '',
+  phone: '',
+  email: '',
+  city: '',
+}
+
+type Editor = { mode: 'create' } | { mode: 'edit'; supplier: SupplierResponse }
 
 export function SuppliersTab() {
   const { data: suppliers = [], isLoading } = useSuppliers()
   const create = useCreateSupplier()
+  const update = useUpdateSupplier()
   const toast = useToast()
 
-  const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({
-    code: '',
-    name: '',
-    gstin: '',
-    state: '',
-    contact_person: '',
-    phone: '',
-    email: '',
-    city: '',
-  })
+  const [editor, setEditor] = useState<Editor | null>(null)
+  const open = editor !== null
+  const editingId = editor?.mode === 'edit' ? editor.supplier.id : null
+
+  const [form, setForm] = useState(EMPTY_FORM)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [acked, setAcked] = useState(false)
+
+  const preview = useImpactPreview(editingId ? 'supplier' : null, editingId)
+  const needsAck = !!preview.data && preview.data.classification !== 'none'
+
+  // Reset the acknowledgement whenever a modal opens so each edit re-earns it.
+  useEffect(() => setAcked(false), [open])
 
   const set = (k: keyof typeof form, v: string) => setForm((p) => ({ ...p, [k]: v }))
 
-  const handleCreate = async () => {
+  const openCreate = () => {
+    setForm(EMPTY_FORM)
+    setErrors({})
+    setEditor({ mode: 'create' })
+  }
+
+  const openEdit = (s: SupplierResponse) => {
+    setForm({
+      code: s.code,
+      name: s.name,
+      gstin: s.gstin ?? '',
+      state: s.state ?? '',
+      contact_person: s.contact_person ?? '',
+      phone: s.phone ?? '',
+      email: s.email ?? '',
+      city: s.city ?? '',
+    })
+    setErrors({})
+    setEditor({ mode: 'edit', supplier: s })
+  }
+
+  const handleSave = async () => {
     const errs: Record<string, string> = {}
     if (!form.code.trim()) errs.code = 'Required'
     if (!form.name.trim()) errs.name = 'Required'
@@ -46,26 +88,32 @@ export function SuppliersTab() {
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
 
+    const body = {
+      code: form.code.trim(),
+      name: form.name.trim(),
+      gstin: form.gstin.trim() ? form.gstin.trim().toUpperCase() : null,
+      state: form.state.trim() || null,
+      contact_person: form.contact_person.trim() || null,
+      phone: form.phone.trim() || null,
+      email: form.email.trim() || null,
+      city: form.city.trim() || null,
+    }
     try {
-      await create.mutateAsync({
-        code: form.code.trim(),
-        name: form.name.trim(),
-        gstin: form.gstin.trim() ? form.gstin.trim().toUpperCase() : null,
-        state: form.state.trim() || null,
-        contact_person: form.contact_person.trim() || null,
-        phone: form.phone.trim() || null,
-        email: form.email.trim() || null,
-        city: form.city.trim() || null,
-      })
-      toast.success('Supplier added')
-      setOpen(false)
-      setForm({ code: '', name: '', gstin: '', state: '', contact_person: '', phone: '', email: '', city: '' })
+      if (editor?.mode === 'edit') {
+        await update.mutateAsync({ id: editor.supplier.id, body })
+        toast.success('Supplier updated')
+      } else {
+        await create.mutateAsync(body)
+        toast.success('Supplier added')
+      }
+      setEditor(null)
+      setForm(EMPTY_FORM)
     } catch (e) {
       if (e instanceof ApiError && typeof e.detail === 'string') {
         setErrors({ code: e.detail })
         return
       }
-      toast.error(e instanceof Error ? e.message : 'Could not add the supplier')
+      toast.error(e instanceof Error ? e.message : 'Could not save the supplier')
     }
   }
 
@@ -84,6 +132,17 @@ export function SuppliersTab() {
     },
     { key: 'contact_person', header: 'Contact', cell: (s) => s.contact_person ?? '—' },
     { key: 'email', header: 'Email', cell: (s) => s.email ?? '—' },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      cell: (s) => (
+        <Button variant="ghost" size="sm" aria-label={`Edit ${s.name}`} onClick={() => openEdit(s)}>
+          <Pencil className="h-4 w-4" />
+          Edit
+        </Button>
+      ),
+    },
   ]
 
   return (
@@ -103,7 +162,7 @@ export function SuppliersTab() {
         emptyTitle="No suppliers"
         emptyDescription="Add the vendors you buy assets from."
         toolbar={
-          <Button size="sm" onClick={() => setOpen(true)}>
+          <Button size="sm" onClick={openCreate}>
             <Plus className="mr-1.5 h-4 w-4" />
             New supplier
           </Button>
@@ -112,16 +171,31 @@ export function SuppliersTab() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="New supplier"
+        onClose={() => setEditor(null)}
+        title={editor?.mode === 'edit' ? `Edit ${editor.supplier.name}` : 'New supplier'}
         size="lg"
         footer={
           <>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            {needsAck && (
+              <label className="mr-auto flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  aria-label="I understand"
+                  checked={acked}
+                  onChange={(e) => setAcked(e.target.checked)}
+                />
+                I understand the effects described above
+              </label>
+            )}
+            <Button variant="ghost" onClick={() => setEditor(null)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} loading={create.isPending}>
-              Add supplier
+            <Button
+              onClick={handleSave}
+              loading={create.isPending || update.isPending}
+              disabled={needsAck && !acked}
+            >
+              {editor?.mode === 'edit' ? 'Save' : 'Add supplier'}
             </Button>
           </>
         }
@@ -181,6 +255,8 @@ export function SuppliersTab() {
           <Field label="City">
             <Input value={form.city} aria-label="City" onChange={(e) => set('city', e.target.value)} />
           </Field>
+
+          <ImpactNotice kind="supplier" id={editingId} />
         </div>
       </Modal>
     </div>

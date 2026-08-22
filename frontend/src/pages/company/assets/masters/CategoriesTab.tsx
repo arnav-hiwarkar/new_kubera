@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Pencil, Plus } from 'lucide-react'
 import {
   Button,
   Card,
@@ -15,17 +15,30 @@ import {
   useCategoryTree,
   useCreateCategory,
   useItBlocks,
+  useImpactPreview,
+  useUpdateCategory,
 } from '@/api/hooks/assetMasters'
 import { DEPRECIATION_METHOD, ITC_TREATMENT, humanize } from '@/api/enums'
+import type { AssetCategoryResponse } from '@/api/types'
 import { months } from '../assetFormat'
+import { ImpactNotice } from './ImpactNotice'
+
+type Editor =
+  | { mode: 'create' }
+  | { mode: 'edit'; category: AssetCategoryResponse; parentOnly: boolean }
 
 export function CategoriesTab() {
   const { tree, isLoading } = useCategoryTree()
   const { data: blocks = [] } = useItBlocks()
   const create = useCreateCategory()
+  const update = useUpdateCategory()
   const toast = useToast()
 
-  const [open, setOpen] = useState(false)
+  const [editor, setEditor] = useState<Editor | null>(null)
+  const open = editor !== null
+  const editingId =
+    editor && editor.mode === 'edit' ? editor.category.id : null
+
   const [parentId, setParentId] = useState('')
   const [name, setName] = useState('')
   const [life, setLife] = useState('')
@@ -35,6 +48,13 @@ export function CategoriesTab() {
   const [itc, setItc] = useState('')
   const [prefix, setPrefix] = useState('')
   const [error, setError] = useState('')
+  const [acked, setAcked] = useState(false)
+
+  const preview = useImpactPreview(editingId ? 'category' : null, editingId)
+  const needsAck = !!preview.data && preview.data.classification !== 'none'
+
+  // Reset the acknowledgement whenever a modal opens so each edit re-earns it.
+  useEffect(() => setAcked(false), [open])
 
   const reset = () => {
     setParentId('')
@@ -48,37 +68,84 @@ export function CategoriesTab() {
     setError('')
   }
 
-  const handleCreate = async () => {
+  const openCreate = () => {
+    reset()
+    setEditor({ mode: 'create' })
+  }
+
+  const openEdit = (category: AssetCategoryResponse, parentOnly: boolean) => {
+    setName(category.name)
+    setPrefix(category.tag_prefix ?? '')
+    setLife(
+      category.default_useful_life_months != null
+        ? String(category.default_useful_life_months)
+        : '',
+    )
+    setMethod(category.default_dep_method ?? 'slm')
+    setResidual(category.default_residual_pct != null ? String(category.default_residual_pct) : '')
+    setBlockId(category.default_it_block_id ?? '')
+    setItc(category.default_itc_treatment ?? '')
+    setError('')
+    setEditor({ mode: 'edit', category, parentOnly })
+  }
+
+  const handleSave = async () => {
     if (!name.trim()) {
       setError('Name is required')
       return
     }
     try {
-      await create.mutateAsync({
-        name: name.trim(),
-        parent_id: parentId || null,
-        default_useful_life_months: life ? Number(life) : null,
-        default_dep_method: parentId ? (method as 'slm' | 'wdv') : null,
-        default_residual_pct: parentId && residual ? Number(residual) : null,
-        default_it_block_id: blockId || null,
-        default_itc_treatment: (itc || null) as 'eligible' | 'blocked' | 'partial' | null,
-        tag_prefix: prefix.trim() || null,
-        applicable_field_groups: [],
-        display_order: 0,
-      })
-      toast.success('Category created')
-      setOpen(false)
+      if (editor?.mode === 'create') {
+        await create.mutateAsync({
+          name: name.trim(),
+          parent_id: parentId || null,
+          default_useful_life_months: life ? Number(life) : null,
+          default_dep_method: parentId ? (method as 'slm' | 'wdv') : null,
+          default_residual_pct: parentId && residual ? Number(residual) : null,
+          default_it_block_id: blockId || null,
+          default_itc_treatment: (itc || null) as 'eligible' | 'blocked' | 'partial' | null,
+          tag_prefix: prefix.trim() || null,
+          applicable_field_groups: [],
+          display_order: 0,
+        })
+        toast.success('Category created')
+      } else if (editor?.mode === 'edit') {
+        if (editor.parentOnly) {
+          await update.mutateAsync({
+            id: editor.category.id,
+            body: { name: name.trim(), tag_prefix: prefix.trim() || null },
+          })
+        } else {
+          await update.mutateAsync({
+            id: editor.category.id,
+            body: {
+              name: name.trim(),
+              tag_prefix: prefix.trim() || null,
+              default_useful_life_months: life ? Number(life) : null,
+              default_dep_method: method as 'slm' | 'wdv',
+              default_residual_pct: residual ? Number(residual) : null,
+              default_it_block_id: blockId || null,
+              default_itc_treatment: (itc || null) as 'eligible' | 'blocked' | 'partial' | null,
+            },
+          })
+        }
+        toast.success('Category updated')
+      }
+      setEditor(null)
       reset()
     } catch (e) {
       if (e instanceof ApiError && typeof e.detail === 'string') {
         setError(e.detail)
         return
       }
-      setError(e instanceof Error ? e.message : 'Could not create the category')
+      setError(e instanceof Error ? e.message : 'Could not save the category')
     }
   }
 
   if (isLoading) return <Spinner />
+
+  const defaultsVisible =
+    editor?.mode === 'create' ? !!parentId : editor ? !editor.parentOnly : false
 
   return (
     <div className="flex flex-col gap-4">
@@ -89,7 +156,7 @@ export function CategoriesTab() {
             useful life, SLM/WDV, residual value, the income-tax block and the tag prefix.
             Your company owns its own editable copy of the statutory set.
           </p>
-          <Button onClick={() => setOpen(true)}>
+          <Button onClick={openCreate}>
             <Plus className="mr-1.5 h-4 w-4" />
             New category
           </Button>
@@ -106,6 +173,16 @@ export function CategoriesTab() {
                   {group.parent.tag_prefix}
                 </span>
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Edit ${group.parent.name}`}
+                className="ml-auto"
+                onClick={() => openEdit(group.parent, true)}
+              >
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
             </div>
             {group.children.length === 0 ? (
               <p className="text-sm text-text-muted">No subcategories.</p>
@@ -119,6 +196,7 @@ export function CategoriesTab() {
                     <th className="py-1.5 font-medium">Residual</th>
                     <th className="py-1.5 font-medium">Tax block</th>
                     <th className="py-1.5 font-medium">ITC</th>
+                    <th className="py-1.5" aria-label="Row actions" />
                   </tr>
                 </thead>
                 <tbody>
@@ -149,8 +227,19 @@ export function CategoriesTab() {
                           ? `${c.default_it_block_code} · ${c.default_it_block_rate}%`
                           : '—'}
                       </td>
-                      <td className="py-1.5 text-text-secondary">
+                      <td className="py-1.5 pr-3 text-text-secondary">
                         {c.default_itc_treatment ? humanize(c.default_itc_treatment) : '—'}
+                      </td>
+                      <td className="py-1.5 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Edit ${c.name}`}
+                          onClick={() => openEdit(c, false)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -163,16 +252,37 @@ export function CategoriesTab() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="New category"
+        onClose={() => setEditor(null)}
+        title={
+          editor?.mode === 'create'
+            ? 'New category'
+            : editor
+              ? `Edit ${editor.category.name}`
+              : ''
+        }
         size="lg"
         footer={
           <>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            {needsAck && (
+              <label className="mr-auto flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  aria-label="I understand"
+                  checked={acked}
+                  onChange={(e) => setAcked(e.target.checked)}
+                />
+                I understand the effects described above
+              </label>
+            )}
+            <Button variant="ghost" onClick={() => setEditor(null)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} loading={create.isPending}>
-              Create
+            <Button
+              onClick={handleSave}
+              loading={create.isPending || update.isPending}
+              disabled={needsAck && !acked}
+            >
+              {editor?.mode === 'create' ? 'Create' : 'Save'}
             </Button>
           </>
         }
@@ -180,19 +290,21 @@ export function CategoriesTab() {
         <div className="flex flex-col gap-3">
           {error && <p className="text-sm text-status-action">{error}</p>}
 
-          <Field
-            label="Parent category"
-            hint="Leave blank to create a top-level category. The tree is two levels deep."
-          >
-            <Select value={parentId} onChange={(e) => setParentId(e.target.value)} aria-label="Parent category">
-              <option value="">None — this is a top-level category</option>
-              {tree.map((g) => (
-                <option key={g.parent.id} value={g.parent.id}>
-                  {g.parent.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          {editor?.mode === 'create' && (
+            <Field
+              label="Parent category"
+              hint="Leave blank to create a top-level category. The tree is two levels deep."
+            >
+              <Select value={parentId} onChange={(e) => setParentId(e.target.value)} aria-label="Parent category">
+                <option value="">None — this is a top-level category</option>
+                {tree.map((g) => (
+                  <option key={g.parent.id} value={g.parent.id}>
+                    {g.parent.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
 
           <Field label="Name" required>
             <Input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" />
@@ -207,7 +319,7 @@ export function CategoriesTab() {
             />
           </Field>
 
-          {parentId && (
+          {defaultsVisible && (
             <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <Field label="Useful life (months)">
@@ -267,6 +379,8 @@ export function CategoriesTab() {
               </Field>
             </>
           )}
+
+          <ImpactNotice kind="category" id={editingId} />
         </div>
       </Modal>
     </div>

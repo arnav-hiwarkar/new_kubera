@@ -7,6 +7,8 @@ import type {
   AssetLookupKind,
   AssetLookupResponse,
   AssetLookupUpdate,
+  ImpactKind,
+  ImpactPreview,
   ItAssetBlockResponse,
   SupplierCreate,
   SupplierResponse,
@@ -24,6 +26,14 @@ export const assetMastersApi = {
     companyClient.patch<AssetCategoryResponse>(`${BASE}/categories/${id}`, { body }),
 
   listItBlocks: () => companyClient.get<ItAssetBlockResponse[]>(`${BASE}/it-blocks`),
+  createItBlock: (body: Partial<ItAssetBlockResponse>) =>
+    companyClient.post<ItAssetBlockResponse>(`${BASE}/it-blocks`, { body }),
+  updateItBlock: (id: string, body: Partial<ItAssetBlockResponse>) =>
+    companyClient.patch<ItAssetBlockResponse>(`${BASE}/it-blocks/${id}`, { body }),
+
+  /** Who references this master row and which depreciation runs would shift. */
+  impactPreview: (kind: ImpactKind, id: string) =>
+    companyClient.get<ImpactPreview>(`${BASE}/${kind}/${id}/impact-preview`),
 
   listSuppliers: () => companyClient.get<SupplierResponse[]>(`${BASE}/suppliers`),
   createSupplier: (body: SupplierCreate) =>

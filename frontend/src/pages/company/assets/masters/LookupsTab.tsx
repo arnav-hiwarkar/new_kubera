@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Pencil, Plus } from 'lucide-react'
 import {
   Button,
   Card,
@@ -12,9 +12,15 @@ import {
   useToast,
 } from '@/components/ui'
 import { ApiError } from '@/api/http'
-import { useAssetLookups, useCreateLookup } from '@/api/hooks/assetMasters'
+import {
+  useAssetLookups,
+  useCreateLookup,
+  useImpactPreview,
+  useUpdateLookup,
+} from '@/api/hooks/assetMasters'
 import { ASSET_LOOKUP_KIND } from '@/api/enums'
-import type { AssetLookupKind } from '@/api/types'
+import type { AssetLookupKind, AssetLookupResponse } from '@/api/types'
+import { ImpactNotice } from './ImpactNotice'
 
 const KIND_LABEL: Record<AssetLookupKind, string> = {
   branch: 'Branches',
@@ -31,52 +37,96 @@ const KIND_HELP: Record<AssetLookupKind, string> = {
   location: 'Where the asset physically sits. Locations can nest — a site, then rooms within it.',
 }
 
+type Editor = { mode: 'create' } | { mode: 'edit'; lookup: AssetLookupResponse }
+
 export function LookupsTab() {
   const { data: all = [], isLoading } = useAssetLookups()
   const create = useCreateLookup()
+  const update = useUpdateLookup()
   const toast = useToast()
 
-  const [open, setOpen] = useState(false)
+  const [editor, setEditor] = useState<Editor | null>(null)
+  const open = editor !== null
+  const editingId = editor?.mode === 'edit' ? editor.lookup.id : null
+
   const [kind, setKind] = useState<AssetLookupKind>('branch')
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
   const [gstin, setGstin] = useState('')
   const [parentId, setParentId] = useState('')
   const [error, setError] = useState('')
+  const [acked, setAcked] = useState(false)
 
-  const handleCreate = async () => {
+  const preview = useImpactPreview(editingId ? 'lookup' : null, editingId)
+  const needsAck = !!preview.data && preview.data.classification !== 'none'
+
+  // Reset the acknowledgement whenever a modal opens so each edit re-earns it.
+  useEffect(() => setAcked(false), [open])
+
+  const openCreate = () => {
+    setKind('branch')
+    setName('')
+    setCode('')
+    setGstin('')
+    setParentId('')
+    setError('')
+    setEditor({ mode: 'create' })
+  }
+
+  const openEdit = (l: AssetLookupResponse) => {
+    setKind(l.kind)
+    setName(l.name)
+    setCode(l.code ?? '')
+    setGstin(l.gstin ?? '')
+    setParentId(l.parent_id ?? '')
+    setError('')
+    setEditor({ mode: 'edit', lookup: l })
+  }
+
+  // A location cannot nest inside itself while being edited.
+  const locations = all.filter(
+    (l) => l.kind === 'location' && !(editor?.mode === 'edit' && l.id === editor.lookup.id),
+  )
+
+  const handleSave = async () => {
     if (!name.trim()) {
       setError('Name is required')
       return
     }
     try {
-      await create.mutateAsync({
-        kind,
-        name: name.trim(),
-        code: code.trim() || null,
-        gstin: kind === 'branch' && gstin.trim() ? gstin.trim().toUpperCase() : null,
-        parent_id: kind === 'location' && parentId ? parentId : null,
-        display_order: 0,
-      })
-      toast.success(`Added to ${KIND_LABEL[kind]}`)
-      setOpen(false)
-      setName('')
-      setCode('')
-      setGstin('')
-      setParentId('')
-      setError('')
+      if (editor?.mode === 'edit') {
+        await update.mutateAsync({
+          id: editor.lookup.id,
+          body: {
+            name: name.trim(),
+            code: code.trim() || null,
+            gstin: kind === 'branch' && gstin.trim() ? gstin.trim().toUpperCase() : null,
+            parent_id: kind === 'location' && parentId ? parentId : null,
+          },
+        })
+        toast.success('Value updated')
+      } else {
+        await create.mutateAsync({
+          kind,
+          name: name.trim(),
+          code: code.trim() || null,
+          gstin: kind === 'branch' && gstin.trim() ? gstin.trim().toUpperCase() : null,
+          parent_id: kind === 'location' && parentId ? parentId : null,
+          display_order: 0,
+        })
+        toast.success(`Added to ${KIND_LABEL[kind]}`)
+      }
+      setEditor(null)
     } catch (e) {
       if (e instanceof ApiError && typeof e.detail === 'string') {
         setError(e.detail)
         return
       }
-      setError(e instanceof Error ? e.message : 'Could not add the value')
+      setError(e instanceof Error ? e.message : 'Could not save the value')
     }
   }
 
   if (isLoading) return <Spinner />
-
-  const locations = all.filter((l) => l.kind === 'location')
 
   return (
     <div className="flex flex-col gap-4">
@@ -85,7 +135,7 @@ export function LookupsTab() {
           The dimensions assets are classified by. Defining them here rather than typing
           them per asset is what makes location and department reports usable.
         </p>
-        <Button onClick={() => setOpen(true)}>
+        <Button onClick={openCreate}>
           <Plus className="mr-1.5 h-4 w-4" />
           New value
         </Button>
@@ -113,6 +163,15 @@ export function LookupsTab() {
                         <span className="flex items-center gap-2 text-xs text-text-muted">
                           {l.code && <span className="font-mono">{l.code}</span>}
                           {l.gstin && <span className="font-mono">{l.gstin}</span>}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`Edit ${l.name}`}
+                            onClick={() => openEdit(l)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </Button>
                         </span>
                       </li>
                     )
@@ -126,15 +185,30 @@ export function LookupsTab() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="New value"
+        onClose={() => setEditor(null)}
+        title={editor?.mode === 'edit' ? `Edit ${editor.lookup.name}` : 'New value'}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            {needsAck && (
+              <label className="mr-auto flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  aria-label="I understand"
+                  checked={acked}
+                  onChange={(e) => setAcked(e.target.checked)}
+                />
+                I understand the effects described above
+              </label>
+            )}
+            <Button variant="ghost" onClick={() => setEditor(null)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} loading={create.isPending}>
-              Add
+            <Button
+              onClick={handleSave}
+              loading={create.isPending || update.isPending}
+              disabled={needsAck && !acked}
+            >
+              {editor?.mode === 'edit' ? 'Save' : 'Add'}
             </Button>
           </>
         }
@@ -142,10 +216,15 @@ export function LookupsTab() {
         <div className="flex flex-col gap-3">
           {error && <p className="text-sm text-status-action">{error}</p>}
 
-          <Field label="Type" required>
+          <Field
+            label="Type"
+            required
+            hint={editor?.mode === 'edit' ? 'A value stays in its list; create a new one to move it.' : undefined}
+          >
             <Select
               value={kind}
               aria-label="Type"
+              disabled={editor?.mode === 'edit'}
               onChange={(e) => setKind(e.target.value as AssetLookupKind)}
             >
               {ASSET_LOOKUP_KIND.map((k) => (
@@ -187,6 +266,8 @@ export function LookupsTab() {
               </Select>
             </Field>
           )}
+
+          <ImpactNotice kind="lookup" id={editingId} />
         </div>
       </Modal>
     </div>

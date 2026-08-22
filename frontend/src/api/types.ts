@@ -98,6 +98,19 @@ export type AssetLookupKind = S['AssetLookupKind']
 export type ItAssetBlockResponse = S['ItAssetBlockResponse']
 export type DepreciationMethod = S['DepreciationMethod']
 
+/** Live verdict on who a master edit will affect; not part of the generated schema yet. */
+export interface ImpactPreview {
+  kind: string
+  id: string
+  assets_referencing: number
+  draft_run_fy_labels: string[]
+  finalized_run_fy_labels: string[]
+  classification: 'none' | 'future_only'
+  message: string
+}
+
+export type ImpactKind = 'category' | 'it_block' | 'supplier' | 'lookup'
+
 // Sales
 export type SalesRecordResponse = S['SalesRecordResponse']
 export type SalesRecordCreate = S['SalesRecordCreate']
