@@ -1,12 +1,210 @@
-import { useState } from 'react'
-import { Plus, Trash2, ScrollText } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Plus, Trash2, ScrollText, Search, X, ChevronDown, Check } from 'lucide-react'
 import { Card, Button, Spinner, StatusBadge, EmptyState, useToast, Drawer, Field } from '@/components/ui'
 import { useAuditorListEntries, useAuditorDeleteEntry, useAuditorCreateEntry, useAuditorTrialBalanceAccounts } from '@/api/hooks/auditorEngagements'
+import type { TrialBalanceAccountResponse } from '@/api/types'
 import { formatMoney } from '@/lib/format'
 
 type EntryLineState = {
   ledger_id: string
   amount: number
+}
+
+type LedgerDisplayFormat = 'code' | 'name'
+
+const LEDGER_DISPLAY_KEY = 'auditease:ledger-display-format'
+
+function getInitialLedgerDisplayFormat(): LedgerDisplayFormat {
+  try {
+    const stored = localStorage.getItem(LEDGER_DISPLAY_KEY)
+    if (stored === 'code' || stored === 'name') return stored
+  } catch {
+    /* ignore */
+  }
+  return 'name'
+}
+
+function ledgerLabel(acc: TrialBalanceAccountResponse, format: LedgerDisplayFormat): string {
+  if (format === 'code' && acc.ledger_code) return acc.ledger_code
+  return acc.ledger_name
+}
+
+function LedgerPicker({
+  accounts,
+  value,
+  onChange,
+  format,
+}: {
+  accounts: TrialBalanceAccountResponse[]
+  value: string
+  onChange: (ledgerId: string) => void
+  format: LedgerDisplayFormat
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [highlighted, setHighlighted] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+
+  const selected = useMemo(() => accounts.find((a) => a.id === value) ?? null, [accounts, value])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return accounts
+    return accounts.filter(
+      (a) =>
+        a.ledger_name.toLowerCase().includes(q) ||
+        (a.ledger_code ?? '').toLowerCase().includes(q),
+    )
+  }, [accounts, query])
+
+  useEffect(() => {
+    setHighlighted(0)
+  }, [query])
+
+  useEffect(() => {
+    if (!open) return
+    const node = listRef.current?.children[highlighted] as HTMLElement | undefined
+    node?.scrollIntoView({ block: 'nearest' })
+  }, [highlighted, open])
+
+  useEffect(() => {
+    if (!open) return
+    const handlePointerDown = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [open])
+
+  const openPicker = () => {
+    setOpen(true)
+    setQuery('')
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+
+  const selectAccount = (acc: TrialBalanceAccountResponse) => {
+    onChange(acc.id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlighted((h) => Math.min(h + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlighted((h) => Math.max(h - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const acc = filtered[highlighted]
+      if (acc) selectAccount(acc)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setOpen(false)
+      setQuery('')
+    }
+  }
+
+  if (open || !selected) {
+    return (
+      <div ref={containerRef} className="relative flex-1">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" />
+          <input
+            ref={inputRef}
+            type="text"
+            className="w-full rounded-md border border-border bg-bg-surface py-1 pl-7 pr-7 text-sm text-text-primary placeholder:text-text-muted focus:border-auditor focus:outline-none"
+            placeholder={selected ? undefined : 'Search ledger by code or name...'}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setOpen(true)}
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => {
+              setOpen(false)
+              setQuery('')
+            }}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-text-primary"
+            aria-label="Close ledger search"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        </div>
+        {open && (
+          <ul
+            ref={listRef}
+            className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-bg-surface shadow-lg"
+          >
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-text-muted italic">No ledgers match "{query}"</li>
+            ) : (
+              filtered.map((acc, i) => {
+                const isSelected = acc.id === value
+                return (
+                  <li key={acc.id}>
+                    <button
+                      type="button"
+                      onMouseEnter={() => setHighlighted(i)}
+                      onClick={() => selectAccount(acc)}
+                      className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm ${
+                        i === highlighted ? 'bg-bg-raised' : ''
+                      }`}
+                    >
+                      <span className="min-w-0 truncate text-text-primary">
+                        {format === 'code' && acc.ledger_code ? (
+                          <>
+                            <span className="font-medium">{acc.ledger_code}</span>
+                            <span className="ml-2 text-text-muted">{acc.ledger_name}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-medium">{acc.ledger_name}</span>
+                            {acc.ledger_code && <span className="ml-2 text-text-muted">{acc.ledger_code}</span>}
+                          </>
+                        )}
+                      </span>
+                      {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-auditor" />}
+                    </button>
+                  </li>
+                )
+              })
+            )}
+          </ul>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-1 items-center gap-1 rounded-md border border-border bg-bg-surface px-2 py-1">
+      <button
+        type="button"
+        onClick={openPicker}
+        className="min-w-0 flex-1 truncate text-left text-sm text-text-primary hover:text-text-secondary"
+        title={`${selected.ledger_code ? `${selected.ledger_code} — ` : ''}${selected.ledger_name} (click to change)`}
+      >
+        {ledgerLabel(selected, format)}
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('')}
+        className="shrink-0 rounded p-0.5 text-text-muted hover:bg-bg-raised hover:text-status-action"
+        aria-label="Clear selected ledger"
+        title="Clear selection"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
 }
 
 function NewEntryDrawer({
@@ -22,6 +220,7 @@ function NewEntryDrawer({
   const [description, setDescription] = useState('')
   const [debitLines, setDebitLines] = useState<EntryLineState[]>([])
   const [creditLines, setCreditLines] = useState<EntryLineState[]>([])
+  const [ledgerFormat, setLedgerFormat] = useState<LedgerDisplayFormat>(getInitialLedgerDisplayFormat)
 
   const { data: tbAccounts = [] } = useAuditorTrialBalanceAccounts(engagementId)
   const createEntry = useAuditorCreateEntry()
@@ -79,22 +278,23 @@ function NewEntryDrawer({
     }
   }
 
+  const handleSetLedgerFormat = (format: LedgerDisplayFormat) => {
+    setLedgerFormat(format)
+    try {
+      localStorage.setItem(LEDGER_DISPLAY_KEY, format)
+    } catch {
+      /* ignore */
+    }
+  }
+
   const renderLine = (line: EntryLineState, index: number, side: 'debit' | 'credit') => (
     <div key={index} className="flex items-center gap-2 mb-2">
-      <select
-        className="flex-1 rounded-md border border-border bg-bg-surface px-2 py-1 text-sm text-text-primary focus:border-auditor focus:outline-none"
+      <LedgerPicker
+        accounts={tbAccounts}
         value={line.ledger_id}
-        onChange={(e) => updateLine(side, index, 'ledger_id', e.target.value)}
-        required
-      >
-        <option value="" disabled>Select Ledger...</option>
-        {tbAccounts.map((acc) => (
-          <option key={acc.id} value={acc.id}>
-            {acc.ledger_code ? `${acc.ledger_code} - ` : ''}
-            {acc.ledger_name}
-          </option>
-        ))}
-      </select>
+        onChange={(ledgerId) => updateLine(side, index, 'ledger_id', ledgerId)}
+        format={ledgerFormat}
+      />
       <input
         type="number"
         min="0"
@@ -109,6 +309,8 @@ function NewEntryDrawer({
         type="button"
         onClick={() => handleRemoveLine(side, index)}
         className="p-1 text-text-muted hover:text-status-action"
+        aria-label="Remove line"
+        title="Remove this line"
       >
         <Trash2 className="h-4 w-4" />
       </button>
@@ -140,6 +342,25 @@ function NewEntryDrawer({
           </Field>
 
           <div className="mt-6">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-text-muted">Show ledgers by</span>
+              <div className="flex rounded-md border border-border p-0.5">
+                {(['code', 'name'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => handleSetLedgerFormat(f)}
+                    className={`rounded px-2 py-0.5 text-xs capitalize transition-colors ${
+                      ledgerFormat === f
+                        ? 'bg-auditor-subtle text-auditor font-medium'
+                        : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    Ledger {f}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-sm font-semibold text-text-primary">Debit Lines</h4>
               <Button type="button" variant="secondary" size="sm" onClick={() => handleAddLine('debit')}>
