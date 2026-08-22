@@ -43,6 +43,7 @@ from app.schemas.assets import (
     AssetDetailResponse,
     AssetDisposalRequest,
     AssetDocumentResponse,
+    AssetExistingCreate,
     AssetQuickAddRequest,
     AssetQuickAddResponse,
     AssetResponse,
@@ -257,6 +258,55 @@ async def quick_add(body: AssetQuickAddRequest, current_user: Reader, db: Db):
         first_asset_id=units[0].id,
         quantity=len(units),
     )
+
+
+@router.post("/existing", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
+async def create_existing_asset(body: AssetExistingCreate, current_user: Reader, db: Db):
+    """Opening entry for an asset owned before the register (or this FY).
+
+    Creates a standalone draft — no acquisition — carrying cutover balances;
+    approval then puts it on the books like any other asset.
+    """
+    from app.services.asset_existing import (
+        ExistingAssetError,
+        build_existing_asset,
+        resolve_category_path,
+    )
+
+    try:
+        category = await resolve_category_path(db, current_user.company_id, body.category_path)
+        unit = await build_existing_asset(
+            db,
+            current_user.company_id,
+            current_user.id,
+            asset_name=body.asset_name,
+            category=category,
+            original_cost=body.original_cost,
+            purchase_date=body.purchase_date,
+            put_to_use_date=body.put_to_use_date,
+            capitalization_date=body.capitalization_date,
+            opening_accumulated_depreciation=body.opening_accumulated_depreciation,
+            opening_wdv=body.opening_wdv,
+            opening_it_wdv=body.opening_it_wdv,
+            useful_life_months=body.useful_life_months,
+            residual_pct=body.residual_pct,
+            branch_id=body.branch_id,
+            location_id=body.location_id,
+            department_id=body.department_id,
+            cost_centre_id=body.cost_centre_id,
+            custodian_name=body.custodian_name,
+            serial_number=body.serial_number,
+            remarks=body.remarks,
+        )
+    except ExistingAssetError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+    await log_activity(db, current_user.company_id, current_user.id, "asset.created",
+                       "asset", unit.id, {"asset_code": unit.asset_code, "source": "existing"})
+    await db.commit()
+
+    result = await db.execute(select(Asset).where(Asset.id == unit.id))
+    return result.scalars().unique().one()
 
 
 @router.post("/cost-preview", response_model=CostPreviewResponse)

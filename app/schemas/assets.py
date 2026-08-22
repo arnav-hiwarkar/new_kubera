@@ -40,6 +40,28 @@ class AssetQuickAddResponse(BaseModel):
     quantity: int
 
 
+class AssetExistingCreate(BaseModel):
+    asset_name: str = Field(min_length=1, max_length=255)
+    category_path: List[str] = Field(min_length=1, max_length=2)
+    original_cost: Decimal = Field(ge=0)
+    purchase_date: Optional[date] = None
+    put_to_use_date: Optional[date] = None
+    capitalization_date: Optional[date] = None
+    opening_accumulated_depreciation: Optional[Decimal] = Field(default=None, ge=0)
+    opening_wdv: Optional[Decimal] = Field(default=None, ge=0)
+    opening_it_wdv: Optional[Decimal] = Field(default=None, ge=0)
+    useful_life_months: Optional[int] = Field(default=None, ge=1, le=1200)
+    useful_life_override_reason: Optional[str] = Field(default=None, max_length=2000)
+    residual_pct: Optional[Decimal] = Field(default=None, ge=0, le=100)
+    branch_id: Optional[uuid.UUID] = None
+    location_id: Optional[uuid.UUID] = None
+    department_id: Optional[uuid.UUID] = None
+    cost_centre_id: Optional[uuid.UUID] = None
+    custodian_name: Optional[str] = Field(default=None, max_length=255)
+    serial_number: Optional[str] = Field(default=None, max_length=255)
+    remarks: Optional[str] = None
+
+
 # === Cost preview ===
 
 class CostPreviewRequest(BaseModel):
