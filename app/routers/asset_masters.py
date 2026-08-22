@@ -32,6 +32,7 @@ from app.schemas.asset_masters import (
     ItAssetBlockCreate,
     ItAssetBlockResponse,
     ItAssetBlockUpdate,
+    ImpactPreviewResponse,
     SupplierCreate,
     SupplierResponse,
     SupplierUpdate,
@@ -332,3 +333,17 @@ async def update_lookup(
         )
     await db.refresh(lookup)
     return lookup
+
+
+# === Impact preview ===
+
+_IMPACT_KINDS = ("category", "it_block", "supplier", "lookup")
+
+
+@router.get("/{kind}/{row_id}/impact-preview", response_model=ImpactPreviewResponse)
+async def impact_preview(kind: str, row_id: uuid.UUID, current_user: CurrentAdmin, db: Db):
+    """Facts shown inside masters edit dialogs BEFORE saving (see spec §7)."""
+    if kind not in _IMPACT_KINDS:
+        raise HTTPException(status_code=404, detail="Unknown master kind")
+    from app.services.master_impact import compute_master_impact
+    return await compute_master_impact(db, current_user.company_id, kind, row_id)  # type: ignore[arg-type]

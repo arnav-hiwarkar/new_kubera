@@ -1,7 +1,7 @@
 """Schemas for fixed-asset master data."""
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -272,3 +272,15 @@ class AssetLookupResponse(BaseModel):
     display_order: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# === Impact preview ===
+
+class ImpactPreviewResponse(BaseModel):
+    kind: str
+    id: uuid.UUID
+    assets_referencing: int
+    draft_run_fy_labels: List[str]
+    finalized_run_fy_labels: List[str]
+    classification: str  # "none" | "future_only"
+    message: str
