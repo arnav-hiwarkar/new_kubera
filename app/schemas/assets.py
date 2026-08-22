@@ -62,6 +62,11 @@ class AssetExistingCreate(BaseModel):
     remarks: Optional[str] = None
 
 
+class AssetImportResult(BaseModel):
+    created_count: int
+    first_asset_id: Optional[uuid.UUID] = None
+
+
 # === Cost preview ===
 
 class CostPreviewRequest(BaseModel):

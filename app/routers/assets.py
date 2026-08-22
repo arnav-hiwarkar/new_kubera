@@ -14,7 +14,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +44,7 @@ from app.schemas.assets import (
     AssetDisposalRequest,
     AssetDocumentResponse,
     AssetExistingCreate,
+    AssetImportResult,
     AssetQuickAddRequest,
     AssetQuickAddResponse,
     AssetResponse,
@@ -58,6 +59,12 @@ from app.schemas.assets import (
 )
 from app.services.activity import log_activity
 from app.services.asset_costing import AcquisitionCostInput, compute_acquisition_cost
+from app.services.asset_import import (
+    ImportRejected,
+    RowError,
+    build_template_xlsx,
+    import_assets,
+)
 from app.services.asset_register import (
     apply_category_defaults,
     explode_acquisition,
@@ -77,6 +84,7 @@ from app.services.asset_validation import (
 )
 from app.services.custom_field_validator import validate_custom_fields
 from app.services.export_service import ExportColumn, generate_xlsx
+from app.services.import_service import load_sheet
 
 router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
 
@@ -307,6 +315,43 @@ async def create_existing_asset(body: AssetExistingCreate, current_user: Reader,
 
     result = await db.execute(select(Asset).where(Asset.id == unit.id))
     return result.scalars().unique().one()
+
+
+@router.get("/import/template")
+async def download_import_template(current_user: Reader):
+    content = build_template_xlsx()
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="asset_import_template.xlsx"'},
+    )
+
+
+@router.post("/import", response_model=AssetImportResult, status_code=status.HTTP_201_CREATED)
+async def import_existing_assets(
+    current_user: Reader, db: Db, file: UploadFile = File(...)
+):
+    """Atomic bulk creation of pre-existing assets from a filled template.
+
+    Any failing row rejects the whole file with a per-row error report.
+    """
+    content = await file.read()
+    try:
+        _, rows = load_sheet(file.filename or "", content, sheet_name=None)
+        created = await import_assets(db, current_user.company_id, current_user.id, rows)
+    except ImportRejected as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=e.errors)
+    except RowError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=[{"row": e.row, "message": e.message}])
+
+    for unit in created:
+        await log_activity(db, current_user.company_id, current_user.id, "asset.created",
+                           "asset", unit.id,
+                           {"asset_code": unit.asset_code, "source": "import"})
+    await db.commit()
+    return AssetImportResult(created_count=len(created),
+                             first_asset_id=created[0].id if created else None)
 
 
 @router.post("/cost-preview", response_model=CostPreviewResponse)

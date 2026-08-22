@@ -163,6 +163,7 @@ async def build_existing_asset(
     custodian_name: Optional[str] = None,
     serial_number: Optional[str] = None,
     remarks: Optional[str] = None,
+    it_block_id: Optional[uuid.UUID] = None,
 ) -> Asset:
     fy_start = await current_fy_start(db, company_id)
     validate_opening_values(
@@ -209,6 +210,8 @@ async def build_existing_asset(
         created_by=created_by,
         custom_fields={},
     )
+    # The block's rate stays with the block default at depreciation-run time.
+    unit.it_block_id = it_block_id
     await apply_category_defaults(db, unit, category.id)
     # Explicit inputs win over defaults; deviating from the Schedule II life
     # needs the statutory disclosure reason.
