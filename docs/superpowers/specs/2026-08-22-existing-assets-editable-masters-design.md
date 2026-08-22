@@ -130,8 +130,9 @@ One full-page form, one asset per submission, five sections:
 1. **Identity** — asset name\*, category\* (fixed CategoryPicker), description,
    manufacturer, brand/model, serial number.
 2. **Cost & dates** — original cost\* (entered directly; these assets carry no
-   acquisition record), purchase date, put-to-use date, capitalization /
-   available-for-use date.
+   acquisition record), purchase date (informational), put-to-use date,
+   capitalization date. `available_for_use_date` is left NULL; the engine's
+   coalescing already treats capitalization as the fallback.
 3. **Depreciation inputs** — useful life, method, residual %, IT block + rate:
    auto-filled from category defaults, editable with a mandatory override reason
    when deviating from Schedule II defaults.
@@ -140,13 +141,17 @@ One full-page form, one asset per submission, five sections:
 5. **Assignment** — branch, location, department, cost centre, custodian
    name/employee code.
 
-**Validation mirrors the depreciation engine's demands** so errors surface at
-entry, not at run time months later:
+**Validation mirrors — and where cheap, tightens — what the depreciation engine
+will later demand**, so errors surface at entry rather than at run time months
+later. The engine hard-requires only opening WDV (tax) for pre-FY assets; this
+form additionally requires the books figures because a cutover asset without
+them is incomplete by definition:
 
-- Put-to-use/capitalization date < current FY start ⇒ opening WDV (tax)\* and
-  opening accumulated depreciation required.
+- Put-to-use/capitalization date < current FY start ⇒ opening WDV (tax)\*,
+  opening WDV (books) and opening accumulated depreciation required.
 - Opening values may not exceed original cost; negatives rejected.
-- An asset claimed to predate the FY start must carry a usable date.
+- An asset claimed to predate the FY start must carry a usable date
+  (put-to-use or capitalization).
 
 ### 5.3 Backend endpoint
 
