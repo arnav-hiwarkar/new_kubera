@@ -52,6 +52,9 @@ def _state_code_from_gstin(gstin: Optional[str]) -> Optional[str]:
 
 @router.get("/it-blocks", response_model=List[ItAssetBlockResponse])
 async def list_it_blocks(current_user: CurrentReader, db: Db):
+    from app.services.asset_seed import ensure_company_masters_forked
+    await ensure_company_masters_forked(db, current_user.company_id)
+
     result = await db.execute(
         select(ItAssetBlock)
         .where(
@@ -82,6 +85,9 @@ async def create_it_block(body: ItAssetBlockCreate, current_user: CurrentAdmin, 
 
 @router.get("/categories", response_model=List[AssetCategoryResponse])
 async def list_categories(current_user: CurrentReader, db: Db, include_inactive: bool = False):
+    from app.services.asset_seed import ensure_company_masters_forked
+    await ensure_company_masters_forked(db, current_user.company_id)
+
     query = select(AssetCategory).where(
         or_(
             AssetCategory.company_id.is_(None),

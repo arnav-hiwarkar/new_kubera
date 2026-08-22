@@ -12,6 +12,8 @@ Statutory caveat for maintainers: these figures are the defaults a company start
 from, not advice. Schedule II permits a different useful life if justified, and
 the register requires a reason when an asset overrides its category default.
 """
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -234,21 +236,25 @@ def seed_global_asset_reference_data_sync(connection) -> dict:
     }
 
 
-async def seed_global_asset_reference_data(db: AsyncSession) -> dict:
-    """Create or update the global IT blocks and Schedule II category tree.
+async def seed_global_asset_reference_data(
+    db: AsyncSession, company_id: uuid.UUID | None = None
+) -> dict:
+    """Create or update the Schedule II tree and Appendix I blocks.
 
-    Caller commits. Returns a small summary for logging/verification.
+    company_id=None maintains the global template rows. With a company_id it
+    forks the same constants into that company's private scope — the mechanism
+    that gives every tenant editable masters at creation.
     """
     # --- IT blocks ---
     existing_blocks = (
-        await db.execute(select(ItAssetBlock).where(ItAssetBlock.company_id.is_(None)))
+        await db.execute(select(ItAssetBlock).where(ItAssetBlock.company_id == company_id))
     ).scalars().all()
     blocks_by_code = {b.code: b for b in existing_blocks}
 
     for code, name, rate, klass, order in IT_BLOCKS:
         block = blocks_by_code.get(code)
         if block is None:
-            block = ItAssetBlock(code=code, company_id=None)
+            block = ItAssetBlock(code=code, company_id=company_id)
             db.add(block)
             blocks_by_code[code] = block
         block.name = name
@@ -262,7 +268,7 @@ async def seed_global_asset_reference_data(db: AsyncSession) -> dict:
 
     # --- Category tree ---
     existing_cats = (
-        await db.execute(select(AssetCategory).where(AssetCategory.company_id.is_(None)))
+        await db.execute(select(AssetCategory).where(AssetCategory.company_id == company_id))
     ).scalars().all()
     # Global names are unique within a parent; key on (parent name or None, name).
     cats_by_id = {c.id: c for c in existing_cats}
@@ -278,7 +284,7 @@ async def seed_global_asset_reference_data(db: AsyncSession) -> dict:
         parent_order += 10
         parent = cats_by_key.get((None, group["name"]))
         if parent is None:
-            parent = AssetCategory(company_id=None, name=group["name"])
+            parent = AssetCategory(company_id=company_id, name=group["name"])
             db.add(parent)
             cats_by_key[(None, group["name"])] = parent
         parent.tag_prefix = group["tag_prefix"]
@@ -292,7 +298,7 @@ async def seed_global_asset_reference_data(db: AsyncSession) -> dict:
             child_order += 10
             child = cats_by_key.get((group["name"], name))
             if child is None:
-                child = AssetCategory(company_id=None, name=name, parent_id=parent.id)
+                child = AssetCategory(company_id=company_id, name=name, parent_id=parent.id)
                 db.add(child)
                 cats_by_key[(group["name"], name)] = child
             child.parent_id = parent.id
@@ -312,3 +318,30 @@ async def seed_global_asset_reference_data(db: AsyncSession) -> dict:
         "it_blocks": len(IT_BLOCKS),
         "categories": sum(1 + len(g["children"]) for g in CATEGORY_TREE),
     }
+
+
+async def ensure_company_masters_forked(db: AsyncSession, company_id: uuid.UUID) -> bool:
+    """Fork the statutory template into company scope if the company owns none.
+
+    Safety net for companies created before fork-at-creation. The unique indexes
+    on (company_id, parent_id, name) and (company_id, code) turn a concurrent
+    double-fork into IntegrityError; the loser rolls back and keeps the winner's
+    copy, so duplicates are impossible either way.
+    """
+    from sqlalchemy import func
+    from sqlalchemy.exc import IntegrityError
+
+    cats = (await db.execute(
+        select(func.count()).select_from(AssetCategory).where(AssetCategory.company_id == company_id)
+    )).scalar_one()
+    blocks = (await db.execute(
+        select(func.count()).select_from(ItAssetBlock).where(ItAssetBlock.company_id == company_id)
+    )).scalar_one()
+    if cats or blocks:
+        return False
+    try:
+        await seed_global_asset_reference_data(db, company_id=company_id)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+    return True

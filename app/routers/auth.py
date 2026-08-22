@@ -108,6 +108,11 @@ async def initialize_company(
     db.add(company)
     await db.flush()
 
+    # Every company gets its own editable copy of the statutory masters inside
+    # this transaction.
+    from app.services.asset_seed import seed_global_asset_reference_data
+    await seed_global_asset_reference_data(db, company_id=company.id)
+
     # Generate per-company KEK
     _, encrypted_kek, nonce = generate_company_kek()
     company_key = CompanyKey(
