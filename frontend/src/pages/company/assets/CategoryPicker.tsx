@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Field, Select } from '@/components/ui'
 import { useCategoryTree } from '@/api/hooks/assetMasters'
 import { months } from './assetFormat'
@@ -14,32 +14,44 @@ export interface CategoryPickerProps {
 /**
  * Two-step category → subcategory picker.
  *
- * This is the highest-leverage control on the create form: the leaf carries the
- * Schedule II useful life, SLM/WDV, residual %, income-tax block and rate, so
- * choosing here fills five statutory fields the user never has to see. The hint
- * below the select says so, otherwise those auto-filled values look like magic.
+ * `parentId` is its own piece of state: picking a parent with several
+ * subcategories must visibly stick while the leaf is still empty — deriving
+ * the parent from the (empty) leaf value snapped the selection back to the
+ * placeholder, which read as "most categories are not clickable".
  */
 export function CategoryPicker({ value, onChange, error, required, disabled }: CategoryPickerProps) {
   const { tree, isLoading } = useCategoryTree()
+  const [parentId, setParentId] = useState('')
 
-  const parentOf = useMemo(() => {
-    for (const group of tree) {
-      if (group.parent.id === value) return group.parent.id
-      if (group.children.some((c) => c.id === value)) return group.parent.id
-    }
-    return ''
-  }, [tree, value])
+  const groupOfValue = useMemo(
+    () =>
+      tree.find((g) => g.parent.id === value) ??
+      tree.find((g) => g.children.some((c) => c.id === value)),
+    [tree, value],
+  )
 
-  const selectedGroup = tree.find((g) => g.parent.id === parentOf)
-  const leaf = selectedGroup?.children.find((c) => c.id === value)
+  // Sync local selection when an external value names a different group
+  // (form reset, prefill); ignore same-group changes to avoid loops.
+  useEffect(() => {
+    setParentId(groupOfValue ? groupOfValue.parent.id : '')
+  }, [groupOfValue?.parent.id])
 
-  const hint = leaf
+  const group = tree.find((g) => g.parent.id === parentId)
+  // Zero-child groups select themselves; otherwise show the leaf only if it
+  // belongs to this group.
+  const shownLeaf =
+    group && group.children.length > 0 && group.children.some((c) => c.id === value)
+      ? value
+      : ''
+
+  const hintLeaf = group?.children.find((c) => c.id === shownLeaf)
+  const hint = hintLeaf
     ? [
-        leaf.default_useful_life_months ? `Useful life ${months(leaf.default_useful_life_months)}` : null,
-        leaf.default_dep_method ? leaf.default_dep_method.toUpperCase() : null,
-        leaf.default_it_block_code ? `IT block ${leaf.default_it_block_code}` : null,
-        leaf.default_it_block_rate != null ? `${leaf.default_it_block_rate}%` : null,
-        leaf.default_itc_treatment === 'blocked' ? 'ITC blocked' : null,
+        hintLeaf.default_useful_life_months ? `Useful life ${months(hintLeaf.default_useful_life_months)}` : null,
+        hintLeaf.default_dep_method ? hintLeaf.default_dep_method.toUpperCase() : null,
+        hintLeaf.default_it_block_code ? `IT block ${hintLeaf.default_it_block_code}` : null,
+        hintLeaf.default_it_block_rate != null ? `${hintLeaf.default_it_block_rate}%` : null,
+        hintLeaf.default_itc_treatment === 'blocked' ? 'ITC blocked' : null,
       ]
         .filter(Boolean)
         .join(' · ')
@@ -49,45 +61,38 @@ export function CategoryPicker({ value, onChange, error, required, disabled }: C
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Field label="Category" required={required} error={error}>
         <Select
-          value={parentOf}
+          value={parentId}
           error={!!error}
           disabled={disabled || isLoading}
           aria-label="Category"
           onChange={(e) => {
-            const groupId = e.target.value
-            const group = tree.find((g) => g.parent.id === groupId)
-            // Auto-select when there is only one subcategory — an extra click that
-            // never carries information.
-            if (group && group.children.length === 1) onChange(group.children[0].id)
-            else if (group && group.children.length === 0) onChange(group.parent.id)
+            const id = e.target.value
+            setParentId(id)
+            const g = tree.find((x) => x.parent.id === id)
+            if (g && g.children.length === 1) onChange(g.children[0].id)
+            else if (g && g.children.length === 0) onChange(g.parent.id)
             else onChange('')
           }}
         >
           <option value="">Select a category…</option>
           {tree.map((g) => (
-            <option key={g.parent.id} value={g.parent.id}>
-              {g.parent.name}
-            </option>
+            <option key={g.parent.id} value={g.parent.id}>{g.parent.name}</option>
           ))}
         </Select>
       </Field>
 
       <Field label="Subcategory" required={required} hint={hint}>
         <Select
-          value={leaf?.id ?? (selectedGroup && selectedGroup.children.length === 0 ? selectedGroup.parent.id : '')}
-          disabled={disabled || !selectedGroup || selectedGroup.children.length === 0}
+          value={shownLeaf}
+          disabled={disabled || !group || group.children.length === 0}
           aria-label="Subcategory"
           onChange={(e) => onChange(e.target.value)}
         >
           <option value="">
-            {selectedGroup && selectedGroup.children.length === 0
-              ? 'No subcategories'
-              : 'Select a subcategory…'}
+            {group && group.children.length === 0 ? 'No subcategories' : 'Select a subcategory…'}
           </option>
-          {(selectedGroup?.children ?? []).map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
+          {(group?.children ?? []).map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </Select>
       </Field>
