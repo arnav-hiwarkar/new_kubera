@@ -1,11 +1,13 @@
+import { useMemo, useState } from 'react'
 import { Card, Field, Input, Select, Switch, Textarea, useToast } from '@/components/ui'
+import { CalculationDrawer, ExplainLink, traceFromCostPreview } from '@/components/calc'
 import { ApiError } from '@/api/http'
 import type { AssetDetail } from '@/api/hooks/assets'
 import { useUpdateAcquisition } from '@/api/hooks/assets'
 import { useSuppliers } from '@/api/hooks/assetMasters'
 import { DISCOUNT_TYPE, humanize } from '@/api/enums'
 import type { AcquisitionUpdate } from '@/api/types'
-import { money } from '../assetFormat'
+import { GST_BASIS_LABEL, money } from '../assetFormat'
 import { numOrNull, useSectionForm } from '../useSectionForm'
 import { DerivedRow, SectionShell } from './SectionShell'
 
@@ -76,6 +78,24 @@ export function AcquisitionTab({
     },
   )
   const { values, set } = form
+
+  const [calcOpen, setCalcOpen] = useState(false)
+  const [calcStep, setCalcStep] = useState<string | undefined>(undefined)
+
+  // Every intermediate is already on `acq`, so this is presentation, not a fetch.
+  const costTrace = useMemo(
+    () =>
+      traceFromCostPreview(acq ?? {}, {
+        title: 'Acquisition cost build-up',
+        gstBasisLabel: acq?.gst_split_basis ? GST_BASIS_LABEL[acq.gst_split_basis] : undefined,
+      }),
+    [acq],
+  )
+
+  const openCalc = (step?: string) => {
+    setCalcStep(step)
+    setCalcOpen(true)
+  }
 
   if (!acq) {
     return <p className="text-sm text-text-muted">This asset has no acquisition record.</p>
@@ -437,7 +457,10 @@ export function AcquisitionTab({
       </div>
 
       <Card className="p-4">
-        <h4 className="mb-2 text-sm font-semibold text-text-primary">Cost build-up</h4>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h4 className="text-sm font-semibold text-text-primary">Cost build-up</h4>
+          <ExplainLink onClick={() => openCalc()} />
+        </div>
         <DerivedRow label="Gross basic price" value={money(acq.gross_basic_price)} />
         <DerivedRow label="Less discount" value={money(acq.discount_amount)} />
         <DerivedRow label="Net basic price" value={money(acq.net_basic_price)} hint="Taxable value" />
@@ -445,6 +468,7 @@ export function AcquisitionTab({
           label="Add capitalizable GST"
           value={money(acq.capitalizable_gst)}
           hint="GST that cannot be recovered becomes part of cost"
+          onExplain={() => openCalc('capitalizable_gst')}
         />
         <DerivedRow label="Add freight" value={money(acq.freight_cost)} />
         <DerivedRow label="Add installation" value={money(acq.installation_cost)} />
@@ -455,18 +479,28 @@ export function AcquisitionTab({
             value={money(acq.landed_cost)}
             hint="What goes on the balance sheet and depreciates"
             emphasis
+            onExplain={() => openCalc('landed_cost')}
           />
           <DerivedRow
             label="Per-unit cost"
             value={money(acq.per_unit_cost)}
             hint={`Allocated across ${acq.quantity} unit${acq.quantity === 1 ? '' : 's'}, summing exactly to the total`}
+            onExplain={() => openCalc('per_unit_cost')}
           />
           <DerivedRow
             label="Total acquisition outlay"
             value={money(acq.total_acquisition_outlay)}
             hint="Total cash paid, including recoverable GST — not the depreciation base"
+            onExplain={() => openCalc('total_acquisition_outlay')}
           />
         </div>
+
+        <CalculationDrawer
+          open={calcOpen}
+          onClose={() => setCalcOpen(false)}
+          tabs={[{ id: 'cost', label: 'Cost build-up', trace: costTrace }]}
+          focusStep={calcStep}
+        />
       </Card>
     </SectionShell>
   )

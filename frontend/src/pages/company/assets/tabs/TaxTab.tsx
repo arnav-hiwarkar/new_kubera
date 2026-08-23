@@ -1,4 +1,6 @@
+import { useMemo, useState } from 'react'
 import { Card, Field, Input, Select, Switch, useToast } from '@/components/ui'
+import { CalculationDrawer, ExplainLink, traceFromCostPreview } from '@/components/calc'
 import { ApiError } from '@/api/http'
 import type { AssetDetail } from '@/api/hooks/assets'
 import { useUpdateAcquisition } from '@/api/hooks/assets'
@@ -57,6 +59,24 @@ export function TaxTab({
     },
   )
   const { values, set } = form
+
+  const [calcOpen, setCalcOpen] = useState(false)
+  const [calcStep, setCalcStep] = useState<string | undefined>(undefined)
+
+  // Same source data as the Acquisition tab's build-up, framed as the tax question.
+  const costTrace = useMemo(
+    () =>
+      traceFromCostPreview(acq ?? {}, {
+        title: 'GST and input tax credit',
+        gstBasisLabel: acq?.gst_split_basis ? GST_BASIS_LABEL[acq.gst_split_basis] : undefined,
+      }),
+    [acq],
+  )
+
+  const openCalc = (step?: string) => {
+    setCalcStep(step)
+    setCalcOpen(true)
+  }
 
   if (!acq) {
     return <p className="text-sm text-text-muted">This asset has no acquisition record.</p>
@@ -208,25 +228,42 @@ export function TaxTab({
       )}
 
       <Card className="p-4">
-        <h4 className="mb-2 text-sm font-semibold text-text-primary">Tax summary</h4>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h4 className="text-sm font-semibold text-text-primary">GST computation</h4>
+          <ExplainLink onClick={() => openCalc()} />
+        </div>
         <DerivedRow label="Taxable value" value={money(acq.net_basic_price)} />
         <DerivedRow label="CGST" value={money(acq.cgst_amount)} />
         <DerivedRow label="SGST" value={money(acq.sgst_amount)} />
         <DerivedRow label="IGST" value={money(acq.igst_amount)} />
-        <DerivedRow label="Total GST" value={money(acq.total_gst)} emphasis />
+        <DerivedRow
+          label="Total GST"
+          value={money(acq.total_gst)}
+          emphasis
+          onExplain={() => openCalc('total_gst')}
+        />
         <div className="mt-1 border-t border-border pt-1">
           <DerivedRow
             label="Recoverable GST"
             value={money(acq.recoverable_gst)}
             hint="Claimed as credit — excluded from asset cost"
+            onExplain={() => openCalc('recoverable_gst')}
           />
           <DerivedRow
             label="Capitalizable GST"
             value={money(acq.capitalizable_gst)}
             hint="Added to asset cost and depreciated"
             emphasis
+            onExplain={() => openCalc('capitalizable_gst')}
           />
         </div>
+
+        <CalculationDrawer
+          open={calcOpen}
+          onClose={() => setCalcOpen(false)}
+          tabs={[{ id: 'gst', label: 'GST and input tax credit', trace: costTrace }]}
+          focusStep={calcStep}
+        />
       </Card>
     </SectionShell>
   )

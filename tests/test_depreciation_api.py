@@ -1358,3 +1358,225 @@ async def test_reopen_requires_reason_and_admin(client: AsyncClient):
     ).status_code in (422, 409)
 
 
+
+
+@pytest.mark.asyncio
+async def test_line_response_carries_a_calc_trace(client: AsyncClient):
+    """A computed run's lines explain themselves without a second request."""
+    env = await setup_depreciation_environment(client, "admin_trace_line@testco.com")
+    headers, fy_id = env["headers"], env["fy_id"]
+
+    run = await client.post(
+        "/api/v1/depreciation/runs", json={"financial_year_id": fy_id}, headers=headers
+    )
+    assert run.status_code == 201, run.text
+    run_id = run.json()["id"]
+
+    lines = await client.get(f"/api/v1/depreciation/runs/{run_id}/lines", headers=headers)
+    assert lines.status_code == 200, lines.text
+    line = lines.json()[0]
+
+    trace = line["calc_trace"]
+    assert trace is not None
+    assert trace["is_projection"] is False
+    assert trace["computed_at"] is not None
+    assert "Schedule II" in trace["title"]
+
+    keys = [s["key"] for s in trace["steps"]]
+    assert "depreciable_base" in keys
+    assert "depreciation_for_year" in keys
+
+    # The invariant, end to end: what the drawer will show equals what the row shows.
+    charge = next(s for s in trace["steps"] if s["key"] == "depreciation_for_year")
+    assert charge["emphasis"] is True
+    assert charge["result"] == f"{Decimal(line['depreciation_for_year']):,.2f}"
+
+
+@pytest.mark.asyncio
+async def test_it_line_response_carries_a_calc_trace(client: AsyncClient):
+    env = await setup_depreciation_environment(client, "admin_trace_itline@testco.com")
+    headers, fy_id = env["headers"], env["fy_id"]
+
+    run = await client.post(
+        "/api/v1/depreciation/runs", json={"financial_year_id": fy_id}, headers=headers
+    )
+    run_id = run.json()["id"]
+
+    it_lines = await client.get(f"/api/v1/depreciation/runs/{run_id}/it-lines", headers=headers)
+    assert it_lines.status_code == 200, it_lines.text
+    # Only the asset's own block carries figures; find it by a non-zero pool.
+    with_figures = [l for l in it_lines.json() if Decimal(l["balance_before_depreciation"]) > 0]
+    assert with_figures, "expected at least one block with a balance"
+    trace = with_figures[0]["calc_trace"]
+
+    assert trace is not None
+    assert "Income Tax" in trace["title"]
+    keys = [s["key"] for s in trace["steps"]]
+    assert "balance_before_depreciation" in keys
+    assert "total_depreciation" in keys
+
+
+@pytest.mark.asyncio
+async def test_explain_returns_a_projection_before_any_run(client: AsyncClient):
+    """The drawer is useful during data entry, not only after a run."""
+    env = await setup_depreciation_environment(client, "admin_explain_pre@testco.com")
+    headers, fy_id, asset_id = env["headers"], env["fy_id"], env["asset_id"]
+
+    res = await client.post(
+        "/api/v1/depreciation/explain",
+        json={"asset_id": asset_id, "financial_year_id": fy_id},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+
+    ca = body["companies_act"]
+    assert ca["is_projection"] is True
+    assert ca["computed_at"] is None
+    keys = [s["key"] for s in ca["steps"]]
+    assert "depreciable_base" in keys
+    assert "depreciation_for_year" in keys
+
+    # The asset in the fixture is in the PM-15 block, so the tax book is present too.
+    assert body["income_tax"] is not None
+    assert body["income_tax"]["is_projection"] is True
+    it_keys = [s["key"] for s in body["income_tax"]["steps"]]
+    assert "asset_contribution" in it_keys
+
+
+@pytest.mark.asyncio
+async def test_projection_matches_the_recorded_run(client: AsyncClient):
+    """The strongest guarantee in the feature: same assembly, same engine, same steps."""
+    env = await setup_depreciation_environment(client, "admin_explain_match@testco.com")
+    headers, fy_id, asset_id = env["headers"], env["fy_id"], env["asset_id"]
+
+    run = await client.post(
+        "/api/v1/depreciation/runs", json={"financial_year_id": fy_id}, headers=headers
+    )
+    run_id = run.json()["id"]
+    lines = await client.get(f"/api/v1/depreciation/runs/{run_id}/lines", headers=headers)
+    recorded = next(l for l in lines.json() if l["asset_id"] == asset_id)["calc_trace"]
+
+    projected = (
+        await client.post(
+            "/api/v1/depreciation/explain",
+            json={"asset_id": asset_id, "financial_year_id": fy_id},
+            headers=headers,
+        )
+    ).json()["companies_act"]
+
+    # Everything except the projection markers must be identical.
+    assert projected["title"] == recorded["title"]
+    assert projected["basis"] == recorded["basis"]
+    assert projected["steps"] == recorded["steps"]
+    assert recorded["is_projection"] is False
+    assert projected["is_projection"] is True
+
+
+@pytest.mark.asyncio
+async def test_explain_surfaces_the_engine_validation_message(client: AsyncClient):
+    """Incomplete inputs are explained, not hidden behind a generic failure."""
+    env = await setup_depreciation_environment(client, "admin_explain_422@testco.com")
+    headers, fy_id, asset_id = env["headers"], env["fy_id"], env["asset_id"]
+
+    # Strip the useful life the way an unfinished data-entry session would leave it.
+    async with TestSessionLocal() as session:
+        asset = await session.get(Asset, uuid.UUID(asset_id))
+        asset.useful_life_months = None
+        await session.commit()
+
+    res = await client.post(
+        "/api/v1/depreciation/explain",
+        json={"asset_id": asset_id, "financial_year_id": fy_id},
+        headers=headers,
+    )
+    assert res.status_code == 422, res.text
+    assert "useful life" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_explain_omits_the_tax_book_without_a_block(client: AsyncClient):
+    env = await setup_depreciation_environment(client, "admin_explain_noblock@testco.com")
+    headers, fy_id, asset_id = env["headers"], env["fy_id"], env["asset_id"]
+
+    async with TestSessionLocal() as session:
+        asset = await session.get(Asset, uuid.UUID(asset_id))
+        asset.it_block_id = None
+        await session.commit()
+
+    res = await client.post(
+        "/api/v1/depreciation/explain",
+        json={"asset_id": asset_id, "financial_year_id": fy_id},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["income_tax"] is None
+
+
+@pytest.mark.asyncio
+async def test_explain_with_draft_prior_year_run_returns_409(client: AsyncClient):
+    """A prior year stuck in draft blocks projections exactly as it blocks runs."""
+    env = await setup_depreciation_environment(client, "admin_explain_draft@testco.com")
+    headers, fy_id, asset_id = env["headers"], env["fy_id"], env["asset_id"]
+
+    fy_prior = (
+        await client.post(
+            "/api/v1/financial-years",
+            json={"label": "2023-24", "start_date": "2023-04-01", "end_date": "2024-03-31"},
+            headers=headers,
+        )
+    ).json()["id"]
+    r = await client.post(
+        "/api/v1/depreciation/runs", json={"financial_year_id": fy_prior}, headers=headers
+    )
+    assert r.status_code == 201
+
+    res = await client.post(
+        "/api/v1/depreciation/explain",
+        json={"asset_id": asset_id, "financial_year_id": fy_id},
+        headers=headers,
+    )
+    assert res.status_code == 409, res.text
+    assert "must be finalized" in res.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_explain_with_unrun_prior_year_returns_409(client: AsyncClient):
+    """Assets capitalized before the year need the prior run's opening balances."""
+    env = await setup_depreciation_environment(client, "admin_explain_norun@testco.com")
+    headers, fy_id, asset_id = env["headers"], env["fy_id"], env["asset_id"]
+
+    await client.post(
+        "/api/v1/financial-years",
+        json={"label": "2023-24", "start_date": "2023-04-01", "end_date": "2024-03-31"},
+        headers=headers,
+    )
+
+    # Move capitalization into the prior year so opening balances are required.
+    async with TestSessionLocal() as session:
+        asset = await session.get(Asset, uuid.UUID(asset_id))
+        asset.capitalization_date = date(2023, 10, 1)
+        asset.available_for_use_date = date(2023, 10, 1)
+        await session.commit()
+
+    res = await client.post(
+        "/api/v1/depreciation/explain",
+        json={"asset_id": asset_id, "financial_year_id": fy_id},
+        headers=headers,
+    )
+    assert res.status_code == 409, res.text
+    assert "No depreciation run exists" in res.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_explain_is_tenant_scoped(client: AsyncClient):
+    """Another company's asset id must not resolve."""
+    mine = await setup_depreciation_environment(client, "admin_explain_mine@testco.com")
+    theirs = await setup_depreciation_environment(client, "admin_explain_theirs@testco.com")
+
+    res = await client.post(
+        "/api/v1/depreciation/explain",
+        json={"asset_id": theirs["asset_id"], "financial_year_id": mine["fy_id"]},
+        headers=mine["headers"],
+    )
+    assert res.status_code == 404, res.text

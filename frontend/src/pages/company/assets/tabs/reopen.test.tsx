@@ -38,6 +38,8 @@ vi.mock('@/api/hooks/depreciation', () => ({
   useFinalizeDepreciationRun: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAssetDepreciationLines: () => ({ data: [], isLoading: false }),
   useReopenDepreciationRun: () => ({ mutateAsync: reopen, isPending: false }),
+  useItBlockDepreciationLines: () => ({ data: [], isLoading: false }),
+  useExplainDepreciation: () => ({ data: undefined, isLoading: false, error: null }),
 }))
 vi.mock('@/api/hooks/assets', () => ({
   useUpdateAsset: () => ({ mutateAsync: vi.fn(), isPending: false }),

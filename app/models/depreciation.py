@@ -15,7 +15,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TenantScopedMixin, TimestampMixin
@@ -105,6 +105,11 @@ class AssetDepreciationLine(Base, TimestampMixin):
     is_disposed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     gain_loss_on_disposal: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
 
+    # How this line's figures were arrived at, for display only. Nullable because
+    # lines computed before traces existed have none, and because nothing may depend
+    # on a trace being present.
+    calc_trace: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     run = relationship("DepreciationRun", back_populates="lines")
     asset = relationship("Asset", lazy="joined")
 
@@ -137,6 +142,11 @@ class ItBlockDepreciationLine(Base, TimestampMixin):
     capital_gain_or_loss: Mapped[Decimal] = mapped_column(Money, nullable=False, default=Decimal("0.00"))
     has_stcg: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     has_stcl: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # How this line's figures were arrived at, for display only. Nullable because
+    # lines computed before traces existed have none, and because nothing may depend
+    # on a trace being present.
+    calc_trace: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     run = relationship("DepreciationRun", back_populates="it_lines")
     it_block = relationship("ItAssetBlock", lazy="joined")

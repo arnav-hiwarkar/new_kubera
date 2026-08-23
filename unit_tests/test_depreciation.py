@@ -352,3 +352,115 @@ def test_slm_zero_residual_depreciates_to_zero():
     assert result.depreciation_for_year == Decimal("20000.00")
     assert result.closing_carrying_amount == Decimal("80000.00")
 
+
+
+def test_intermediates_slm_full_year():
+    """The engine exposes its workings so a trace can be built without recomputing."""
+    inp = AssetDepreciationInput(
+        asset_id="i1",
+        asset_name="Office Equipment",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2023, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="SLM",
+    )
+    result = calculate_asset_depreciation(inp, date(2024, 4, 1), date(2025, 3, 31))
+    i = result.intermediates
+
+    assert i["depreciable_base"] == Decimal("95000.00")
+    assert i["useful_years"] == Decimal("5")
+    assert i["total_fy_days"] == 365
+    assert i["active_days"] == 365
+    assert i["start_active"] == "2024-04-01"
+    assert i["end_active"] == "2025-03-31"
+    assert i["is_addition"] is False
+    assert i["annual_dep"] == Decimal("19000.00")
+    assert i["dep_before_cap"] == Decimal("19000.00")
+    # Nothing WDV-specific leaks into an SLM computation.
+    assert "wdv_rate" not in i
+    assert "nbv_at_disposal" not in i
+
+
+def test_intermediates_are_internally_consistent_part_year():
+    inp = AssetDepreciationInput(
+        asset_id="i2",
+        asset_name="New Laptop",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2024, 10, 1),
+        useful_life_months=36,
+        residual_pct=Decimal("5.00"),
+        dep_method="SLM",
+    )
+    result = calculate_asset_depreciation(inp, date(2024, 4, 1), date(2025, 3, 31))
+    i = result.intermediates
+
+    assert i["is_addition"] is True
+    assert i["active_days"] <= i["total_fy_days"]
+    assert i["start_active"] == "2024-10-01"
+    assert i["depreciable_base"] == inp.original_cost - result.residual_value
+    # The reported charge is the pro-rata figure, capped.
+    assert result.depreciation_for_year == min(i["dep_before_cap"], i["max_dep_allowed"])
+
+
+def test_intermediates_wdv_exposes_rate_and_base():
+    inp = AssetDepreciationInput(
+        asset_id="i3",
+        asset_name="Machine",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2023, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="WDV",
+        opening_accumulated_dep=Decimal("45072.00"),
+    )
+    result = calculate_asset_depreciation(inp, date(2024, 4, 1), date(2025, 3, 31))
+    i = result.intermediates
+
+    # Schedule II WDV rate: 1 - (5,000/100,000)^(1/5) = 0.4507
+    assert i["wdv_rate"] == Decimal("0.4507")
+    assert i["carrying_for_calc"] == result.opening_carrying_amount
+    assert i["annual_dep"] == result.depreciation_for_year
+
+
+def test_intermediates_disposal_exposes_nbv():
+    inp = AssetDepreciationInput(
+        asset_id="i4",
+        asset_name="Sold Van",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2022, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="SLM",
+        opening_accumulated_dep=Decimal("38000.00"),
+        disposal_date=date(2024, 9, 30),
+        disposal_type="sale",
+        sale_proceeds=Decimal("70000.00"),
+    )
+    result = calculate_asset_depreciation(inp, date(2024, 4, 1), date(2025, 3, 31))
+    i = result.intermediates
+
+    assert result.is_disposed is True
+    assert i["nbv_at_disposal"] == (
+        result.opening_carrying_amount + result.additions - result.depreciation_for_year
+    )
+    assert result.gain_loss_on_disposal == Decimal("70000.00") - i["nbv_at_disposal"]
+
+
+def test_intermediates_expose_remaining_life_workings():
+    inp = AssetDepreciationInput(
+        asset_id="i5",
+        asset_name="Old Press",
+        original_cost=Decimal("100000.00"),
+        capitalization_date=date(2020, 4, 1),
+        useful_life_months=60,
+        residual_pct=Decimal("5.00"),
+        dep_method="SLM",
+        is_pre_cutover=True,
+        opening_accumulated_dep=Decimal("57000.00"),
+    )
+    result = calculate_asset_depreciation(inp, date(2024, 4, 1), date(2025, 3, 31))
+    i = result.intermediates
+
+    assert i["total_life_days"] == 60 * 30
+    assert i["consumed"] == result.closing_accumulated_dep

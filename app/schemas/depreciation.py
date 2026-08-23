@@ -21,6 +21,31 @@ class DepreciationRunReopenRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+class CalcStepSchema(BaseModel):
+    """One line of a calculation, already formatted for display.
+
+    `formula` and `substitution` are empty for a plain input rather than a derivation.
+    """
+
+    key: str
+    group: str
+    label: str
+    formula: str
+    substitution: str
+    result: str
+    unit: str = "none"
+    emphasis: bool = False
+    note: Optional[str] = None
+
+
+class CalcTraceSchema(BaseModel):
+    title: str
+    basis: str
+    steps: List[CalcStepSchema] = []
+    is_projection: bool = False
+    computed_at: Optional[str] = None
+
+
 class AssetDepreciationLineResponse(BaseModel):
     id: uuid.UUID
     run_id: uuid.UUID
@@ -42,6 +67,7 @@ class AssetDepreciationLineResponse(BaseModel):
     is_part_year: bool
     is_disposed: bool
     gain_loss_on_disposal: Optional[Decimal] = None
+    calc_trace: Optional[CalcTraceSchema] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -64,8 +90,24 @@ class ItBlockDepreciationLineResponse(BaseModel):
     capital_gain_or_loss: Decimal
     has_stcg: bool
     has_stcl: bool
+    calc_trace: Optional[CalcTraceSchema] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DepreciationExplainRequest(BaseModel):
+    asset_id: uuid.UUID
+    financial_year_id: uuid.UUID
+
+
+class DepreciationExplainResponse(BaseModel):
+    """Traces computed on demand and never stored.
+
+    `income_tax` is absent when the asset has not been assigned to a block.
+    """
+
+    companies_act: CalcTraceSchema
+    income_tax: Optional[CalcTraceSchema] = None
 
 
 class DepreciationRunResponse(BaseModel):

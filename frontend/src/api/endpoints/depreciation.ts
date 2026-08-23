@@ -1,9 +1,16 @@
 import { companyClient } from '@/api/clients/company'
+import type { CalcTrace } from '@/components/calc'
 import type {
   DepreciationRunResponse,
   AssetDepreciationLineResponse,
   ItBlockDepreciationLineResponse,
 } from '@/api/types'
+
+/** Traces computed on demand and never stored. `income_tax` is null without a block. */
+export interface DepreciationExplain {
+  companies_act: CalcTrace
+  income_tax: CalcTrace | null
+}
 
 export const depreciationApi = {
   listRuns: () => companyClient.get<DepreciationRunResponse[]>('/api/v1/depreciation/runs'),
@@ -27,4 +34,8 @@ export const depreciationApi = {
     }),
   deleteRun: (runId: string) =>
     companyClient.delete<void>(`/api/v1/depreciation/runs/${runId}`),
+  explain: (assetId: string, financialYearId: string) =>
+    companyClient.post<DepreciationExplain>('/api/v1/depreciation/explain', {
+      body: { asset_id: assetId, financial_year_id: financialYearId },
+    }),
 }

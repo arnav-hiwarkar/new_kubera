@@ -122,3 +122,90 @@ def test_short_term_capital_loss_stcl():
     assert res.closing_wdv == Decimal("0.00")
     assert res.has_stcl
     assert res.capital_gain_or_loss == Decimal("120000.00")
+
+
+def test_intermediates_standard_branch():
+    block = ItBlockDepreciationInput(
+        block_id="b1",
+        block_name="Plant & Machinery (General)",
+        prescribed_rate=Decimal("15.00"),
+        opening_wdv=Decimal("500000.00"),
+        additions_more_than_180=Decimal("100000.00"),
+        additions_less_than_180=Decimal("40000.00"),
+        realized_from_sales=Decimal("0.00"),
+    )
+    res = calculate_it_block_depreciation(block)
+    i = res.intermediates
+
+    assert i["branch"] == "standard"
+    assert i["rate_fraction"] == Decimal("0.15")
+    assert i["half_rate_fraction"] == Decimal("0.075")
+    assert i["total_pool"] == Decimal("640000.00")
+    assert i["full_pool"] == Decimal("600000.00")
+    assert i["remaining_full_pool"] == Decimal("600000.00")
+    assert i["remaining_half_pool"] == Decimal("40000.00")
+    assert "excess_sales" not in i
+    # The split reconciles with the reported charge.
+    assert res.depreciation_full_rate == Decimal("90000.00")
+    assert res.depreciation_half_rate == Decimal("3000.00")
+    assert res.total_depreciation == res.depreciation_full_rate + res.depreciation_half_rate
+
+
+def test_intermediates_sales_eat_into_pools():
+    block = ItBlockDepreciationInput(
+        block_id="b2",
+        block_name="Furniture",
+        prescribed_rate=Decimal("10.00"),
+        opening_wdv=Decimal("100000.00"),
+        additions_more_than_180=Decimal("0.00"),
+        additions_less_than_180=Decimal("50000.00"),
+        realized_from_sales=Decimal("120000.00"),
+    )
+    res = calculate_it_block_depreciation(block)
+    i = res.intermediates
+
+    assert i["branch"] == "standard"
+    assert i["full_pool"] == Decimal("100000.00")
+    # Sales are applied to the full-rate pool first, then spill into the half-rate pool.
+    assert i["remaining_full_pool"] == Decimal("0.00")
+    assert i["remaining_half_pool"] == Decimal("30000.00")
+    assert i["excess_sales"] == Decimal("20000.00")
+
+
+def test_intermediates_stcg_branch():
+    block = ItBlockDepreciationInput(
+        block_id="b3",
+        block_name="Vehicles",
+        prescribed_rate=Decimal("15.00"),
+        opening_wdv=Decimal("50000.00"),
+        additions_more_than_180=Decimal("0.00"),
+        additions_less_than_180=Decimal("0.00"),
+        realized_from_sales=Decimal("80000.00"),
+    )
+    res = calculate_it_block_depreciation(block)
+    i = res.intermediates
+
+    assert i["branch"] == "stcg"
+    assert res.has_stcg is True
+    assert i["total_pool"] == Decimal("50000.00")
+    # The rate-application pools never came into existence on this path.
+    assert "remaining_full_pool" not in i
+
+
+def test_intermediates_stcl_branch():
+    block = ItBlockDepreciationInput(
+        block_id="b4",
+        block_name="Computers",
+        prescribed_rate=Decimal("40.00"),
+        opening_wdv=Decimal("60000.00"),
+        additions_more_than_180=Decimal("0.00"),
+        additions_less_than_180=Decimal("0.00"),
+        realized_from_sales=Decimal("10000.00"),
+        all_assets_disposed=True,
+    )
+    res = calculate_it_block_depreciation(block)
+    i = res.intermediates
+
+    assert i["branch"] == "stcl"
+    assert res.has_stcl is True
+    assert "remaining_full_pool" not in i

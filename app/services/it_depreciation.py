@@ -6,7 +6,7 @@ Computes block-level depreciation with:
 - Section 50 Short-Term Capital Gain (STCG) when sales exceed block value.
 - Section 50 Short-Term Capital Loss (STCL) when block ceases to exist (all assets disposed).
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Optional
@@ -43,6 +43,9 @@ class ItBlockDepreciationResult:
     capital_gain_or_loss: Decimal
     has_stcg: bool
     has_stcl: bool
+    # The engine's own workings, for `calc_trace_builders` to label. `branch` tells a
+    # builder which path ran, so it does not have to re-derive it from the flags.
+    intermediates: dict = field(default_factory=dict)
 
 
 def calculate_it_block_depreciation(
@@ -59,6 +62,12 @@ def calculate_it_block_depreciation(
 
     total_pool = opening + add_full + add_half
     balance_before_dep = total_pool - sales
+
+    inter: dict = {
+        "rate_fraction": rate_fraction,
+        "half_rate_fraction": half_rate_fraction,
+        "total_pool": total_pool,
+    }
 
     # Case 1: Sale proceeds exceed the entire pool -> Section 50 STCG
     if balance_before_dep < 0:
@@ -79,6 +88,7 @@ def calculate_it_block_depreciation(
             capital_gain_or_loss=stcg,
             has_stcg=True,
             has_stcl=False,
+            intermediates={**inter, "branch": "stcg"},
         )
 
     # Case 2: Block is completely empty (all assets disposed) -> Section 50 STCL
@@ -100,6 +110,7 @@ def calculate_it_block_depreciation(
             capital_gain_or_loss=stcl,
             has_stcg=False,
             has_stcl=True,
+            intermediates={**inter, "branch": "stcl"},
         )
 
     # Case 3: Standard depreciation calculation
@@ -112,6 +123,16 @@ def calculate_it_block_depreciation(
         remaining_full_pool = Decimal("0.00")
         excess_sales = sales - full_pool
         remaining_half_pool = max(Decimal("0.00"), add_half - excess_sales)
+        inter["excess_sales"] = excess_sales
+
+    inter.update(
+        {
+            "branch": "standard",
+            "full_pool": full_pool,
+            "remaining_full_pool": remaining_full_pool,
+            "remaining_half_pool": remaining_half_pool,
+        }
+    )
 
     dep_full = money(remaining_full_pool * rate_fraction)
     dep_half = money(remaining_half_pool * half_rate_fraction)
@@ -136,4 +157,5 @@ def calculate_it_block_depreciation(
         capital_gain_or_loss=Decimal("0.00"),
         has_stcg=False,
         has_stcl=False,
+        intermediates=inter,
     )

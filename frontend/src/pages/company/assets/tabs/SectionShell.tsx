@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Calculator } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { cn } from '@/lib/cn'
 
@@ -69,11 +70,14 @@ export function DerivedRow({
   value,
   hint,
   emphasis,
+  onExplain,
 }: {
   label: string
   value: ReactNode
   hint?: string
   emphasis?: boolean
+  /** Opens this figure's step in the calculation drawer. */
+  onExplain?: () => void
 }) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-1.5">
@@ -83,13 +87,27 @@ export function DerivedRow({
         </span>
         {hint && <p className="text-xs text-text-muted">{hint}</p>}
       </div>
-      <span
-        className={cn(
-          'tabular-nums',
-          emphasis ? 'text-md font-semibold text-text-primary' : 'text-sm text-text-primary',
+      <span className="flex items-baseline gap-1.5">
+        <span
+          className={cn(
+            'tabular-nums',
+            emphasis ? 'text-md font-semibold text-text-primary' : 'text-sm text-text-primary',
+          )}
+        >
+          {value}
+        </span>
+        {/* A bare icon rather than a labelled link: these rows come in runs of six or
+            more, and a link on each would crowd out the figures. */}
+        {onExplain && (
+          <button
+            type="button"
+            onClick={onExplain}
+            aria-label={`How was ${label} calculated?`}
+            className="rounded-btn p-0.5 text-text-muted hover:bg-bg-raised hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <Calculator className="h-3.5 w-3.5" />
+          </button>
         )}
-      >
-        {value}
       </span>
     </div>
   )

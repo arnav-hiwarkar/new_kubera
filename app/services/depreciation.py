@@ -4,7 +4,7 @@ Pure Decimal calculations with ROUND_HALF_UP precision.
 Handles SLM, WDV, pro-rata additions, disposals, pre-cutover balances,
 and residual value capping.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Optional
@@ -58,12 +58,19 @@ class AssetDepreciationResult:
     is_part_year: bool
     is_disposed: bool
     gain_loss_on_disposal: Optional[Decimal] = None
+    # The engine's own workings, for `calc_trace_builders` to label. Raw values only —
+    # no formatting, no prose. Kept out of the returned figures so nothing downstream
+    # can mistake a working for a result.
+    intermediates: dict = field(default_factory=dict)
 
 
 def _remaining_life_days(
     useful_life_months: int, depreciable_base: Decimal, closing_acc_dep: Decimal
-) -> int:
+) -> tuple:
     """Remaining life implied by how much of the depreciable base is left.
+
+    Returns (remaining_days, total_life_days, consumed) so a trace can show the
+    working rather than asserting the answer.
 
     The previous form subtracted only the CURRENT year's active days from the total
     life, so it ignored every prior year and the whole of a pre-cutover asset's
@@ -73,10 +80,10 @@ def _remaining_life_days(
     """
     total_life_days = useful_life_months * 30
     if depreciable_base <= 0:
-        return 0
+        return 0, total_life_days, Decimal("0.00")
     consumed = min(closing_acc_dep, depreciable_base)
     remaining = (depreciable_base - consumed) / depreciable_base
-    return max(0, int(Decimal(total_life_days) * remaining))
+    return max(0, int(Decimal(total_life_days) * remaining)), total_life_days, consumed
 
 
 def calculate_asset_depreciation(
@@ -88,12 +95,15 @@ def calculate_asset_depreciation(
     res_pct = inp.residual_pct if inp.residual_pct is not None else Decimal("5.00")
     res_val = inp.residual_value if inp.residual_value is not None else money(cost * res_pct / Decimal("100"))
     depreciable_base = cost - res_val if cost > res_val else Decimal("0.00")
+    inter: dict = {"depreciable_base": depreciable_base}
 
     cap_date = inp.capitalization_date or fy_start
     total_fy_days = (fy_end - fy_start).days + 1
+    inter["total_fy_days"] = total_fy_days
 
     # Check if addition during this FY
     is_addition = cap_date > fy_start and cap_date <= fy_end
+    inter["is_addition"] = is_addition
     opening_gross = Decimal("0.00") if is_addition else cost
 
     # A pre-owned asset exists to carry its history in. Arriving with neither a WDV
@@ -136,10 +146,15 @@ def calculate_asset_depreciation(
     else:
         active_days = (end_active - start_active).days + 1
 
+    inter["active_days"] = active_days
+    inter["start_active"] = start_active.isoformat()
+    inter["end_active"] = end_active.isoformat()
+
     is_part_year = active_days < total_fy_days and not is_disposed
 
     # Annual depreciation computation
     useful_years = Decimal(inp.useful_life_months) / Decimal("12")
+    inter["useful_years"] = useful_years
     if useful_years <= 0:
         annual_dep = Decimal("0.00")
         dep_for_year = Decimal("0.00")
@@ -165,6 +180,8 @@ def calculate_asset_depreciation(
             # falling back to cost there restarted a spent asset from scratch every
             # year, checked only by the residual cap.
             carrying_for_calc = cost if is_addition else opening_carrying
+            inter["wdv_rate"] = wdv_rate
+            inter["carrying_for_calc"] = carrying_for_calc
             raw_annual = carrying_for_calc * wdv_rate
         else:
             # SLM
@@ -179,8 +196,14 @@ def calculate_asset_depreciation(
         else:
             dep_for_year = Decimal("0.00")
 
+    inter["annual_dep"] = annual_dep
+    # The charge before the residual cap is applied. The cap is a separate, visible
+    # step in the trace, so the figure it acted on has to survive.
+    inter["dep_before_cap"] = dep_for_year
+
     # Cap depreciation so accumulated depreciation does not exceed depreciable base
     max_dep_allowed = depreciable_base - opening_acc_dep if depreciable_base > opening_acc_dep else Decimal("0.00")
+    inter["max_dep_allowed"] = max_dep_allowed
     if dep_for_year > max_dep_allowed:
         dep_for_year = max_dep_allowed
 
@@ -193,6 +216,7 @@ def calculate_asset_depreciation(
         closing_acc_dep = Decimal("0.00")
         closing_carrying = Decimal("0.00")
         nbv_at_disposal = opening_carrying + additions - dep_for_year
+        inter["nbv_at_disposal"] = nbv_at_disposal
         proceeds = inp.sale_proceeds if inp.sale_proceeds is not None else Decimal("0.00")
         gain_loss = money(proceeds - nbv_at_disposal)
     else:
@@ -206,6 +230,12 @@ def calculate_asset_depreciation(
         if cost > 0
         else Decimal("0.00")
     )
+
+    remaining_days, total_life_days, consumed = _remaining_life_days(
+        inp.useful_life_months, depreciable_base, closing_acc_dep
+    )
+    inter["total_life_days"] = total_life_days
+    inter["consumed"] = consumed
 
     return AssetDepreciationResult(
         asset_id=inp.asset_id,
@@ -221,11 +251,10 @@ def calculate_asset_depreciation(
         opening_carrying_amount=opening_carrying,
         closing_carrying_amount=closing_carrying,
         residual_value=res_val,
-        remaining_useful_life_days=_remaining_life_days(
-            inp.useful_life_months, depreciable_base, closing_acc_dep
-        ),
+        remaining_useful_life_days=remaining_days,
         effective_rate_pct=effective_rate,
         is_part_year=is_part_year,
         is_disposed=is_disposed,
         gain_loss_on_disposal=gain_loss,
+        intermediates=inter,
     )

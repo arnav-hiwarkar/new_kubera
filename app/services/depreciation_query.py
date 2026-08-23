@@ -27,6 +27,10 @@ from app.services.it_depreciation import (
     ItBlockDepreciationInput,
     calculate_it_block_depreciation,
 )
+from app.services.calc_trace_builders import (
+    build_it_block_trace,
+    build_schedule_ii_trace,
+)
 
 
 class DepreciationConflictError(ValueError):
@@ -139,6 +143,153 @@ async def _load_prior_run_lines(
     )
 
 
+def build_asset_depreciation_input(
+    asset: Asset,
+    prior_line: Optional[AssetDepreciationLine],
+) -> AssetDepreciationInput:
+    """Assemble one asset's Schedule II engine input.
+
+    Shared by the run and by the projection endpoint, so a projection cannot disagree
+    with the figure a run would record.
+    """
+    if asset.useful_life_months is None:
+        raise DepreciationDataError(
+            f"Asset {asset.id} ({asset.asset_name}) has no useful life specified"
+        )
+
+    cap_date = asset.capitalization_date or asset.available_for_use_date
+    cost = asset.original_cost if asset.original_cost is not None else Decimal("0.00")
+    residual_pct = asset.residual_pct if asset.residual_pct is not None else Decimal("5.00")
+    method = "WDV" if asset.dep_method == DepreciationMethod.wdv else "SLM"
+
+    # Once a prior run exists its closing figures are the truth and the cutover values
+    # are history, so the stated openings only apply until the asset has been run once.
+    if prior_line is not None:
+        opening_acc = prior_line.closing_accumulated_depreciation
+        opening_wdv_in = prior_line.closing_carrying_amount
+    else:
+        opening_acc = (
+            asset.opening_accumulated_depreciation
+            if asset.opening_accumulated_depreciation is not None
+            else Decimal("0.00")
+        )
+        opening_wdv_in = asset.opening_wdv
+
+    return AssetDepreciationInput(
+        asset_id=str(asset.id),
+        asset_name=asset.asset_name,
+        original_cost=cost,
+        capitalization_date=cap_date,
+        useful_life_months=asset.useful_life_months,
+        residual_pct=residual_pct,
+        residual_value=asset.residual_value,
+        dep_method=method,
+        opening_accumulated_dep=opening_acc,
+        opening_wdv=opening_wdv_in,
+        disposal_date=asset.disposal_date,
+        disposal_type=asset.disposal_type,
+        sale_proceeds=asset.sale_proceeds,
+        is_pre_cutover=asset.is_pre_cutover,
+    )
+
+
+def build_it_block_input(
+    block: ItAssetBlock,
+    block_assets: List[Asset],
+    prior_line: Optional[ItBlockDepreciationLine],
+    fy_start: date,
+    fy_end: date,
+) -> ItBlockDepreciationInput:
+    """Assemble one Income Tax block's engine input from the assets in it."""
+    rate = Decimal(str(block.dep_rate)) if block.dep_rate is not None else Decimal("15.00")
+
+    add_more = Decimal("0.00")
+    add_less = Decimal("0.00")
+    sales = Decimal("0.00")
+    has_active_assets = False
+
+    if prior_line is not None:
+        opening_wdv = prior_line.closing_wdv
+    else:
+        # First run for this block: rebuild its opening WDV from the assets' cutover
+        # figures. Only the TAX figure will do. Book WDV was previously accepted as a
+        # substitute, but the two essentially never agree in India — different rates,
+        # block-wise rather than asset-wise, additional depreciation — so borrowing it
+        # produced a wrong block base and therefore a wrong deduction, silently.
+        opening_wdv = Decimal("0.00")
+        for a in block_assets:
+            if a.disposal_date and a.disposal_date < fy_start:
+                continue
+            cap_date = a.it_put_to_use_date or a.capitalization_date or a.available_for_use_date
+            if cap_date is None:
+                # Undatable asset: it cannot be classed as opening or as an addition,
+                # so it would vanish from the block entirely.
+                raise DepreciationDataError(
+                    f"Asset {a.id} ({a.asset_name}) has no put-to-use, capitalization or "
+                    f"available-for-use date, so it cannot be placed in an Income Tax block."
+                )
+            if cap_date < fy_start:
+                if a.opening_it_wdv is None:
+                    raise DepreciationDataError(
+                        f"Asset {a.id} ({a.asset_name}) was in use before {fy_start} but has no "
+                        f"opening Income Tax WDV. Set 'Opening WDV (tax)' — the book WDV is not "
+                        f"a valid substitute for the tax written-down value."
+                    )
+                opening_wdv += a.opening_it_wdv
+
+    active_or_current_assets = [
+        a for a in block_assets if not (a.disposal_date and a.disposal_date < fy_start)
+    ]
+
+    for a in active_or_current_assets:
+        cap_date = a.it_put_to_use_date or a.capitalization_date or a.available_for_use_date
+
+        if cap_date and fy_start <= cap_date <= fy_end:
+            days_put = (fy_end - cap_date).days + 1
+            cost = a.original_cost if a.original_cost is not None else Decimal("0.00")
+            if days_put >= 180:
+                add_more += cost
+            else:
+                add_less += cost
+
+        if a.disposal_date and fy_start <= a.disposal_date <= fy_end:
+            proceeds = (
+                a.disposal_it_proceeds
+                if a.disposal_it_proceeds is not None
+                else (a.sale_proceeds if a.sale_proceeds is not None else Decimal("0.00"))
+            )
+            sales += proceeds
+        elif not a.disposal_date or a.disposal_date > fy_end:
+            has_active_assets = True
+
+    all_disposed = (len(active_or_current_assets) > 0) and (not has_active_assets)
+
+    return ItBlockDepreciationInput(
+        block_id=str(block.id),
+        block_name=block.name,
+        prescribed_rate=rate,
+        opening_wdv=opening_wdv,
+        additions_more_than_180=add_more,
+        additions_less_than_180=add_less,
+        realized_from_sales=sales,
+        all_assets_disposed=all_disposed,
+    )
+
+
+def asset_it_contribution(asset: Asset, fy_start: date, fy_end: date) -> Decimal:
+    """How much of a block's pool this one asset accounts for.
+
+    Its cost if it entered the block this year, otherwise its opening tax WDV. Shown
+    for context only — the block's depreciation is never apportioned to an asset.
+    """
+    cap_date = (
+        asset.it_put_to_use_date or asset.capitalization_date or asset.available_for_use_date
+    )
+    if cap_date and fy_start <= cap_date <= fy_end:
+        return asset.original_cost if asset.original_cost is not None else Decimal("0.00")
+    return asset.opening_it_wdv if asset.opening_it_wdv is not None else Decimal("0.00")
+
+
 async def execute_depreciation_run(
     db: AsyncSession,
     company_id: uuid.UUID,
@@ -153,6 +304,9 @@ async def execute_depreciation_run(
 
     fy_start: date = fy.start_date
     fy_end: date = fy.end_date
+    # One stamp for the whole run: traces from a single run must not disagree about
+    # when they were computed.
+    computed_at = datetime.now(timezone.utc).isoformat()
 
     # Load prior finalized run lines for carry-forward balances (with F9 gating)
     prior_asset_lines, prior_block_lines = await _load_prior_run_lines(
@@ -211,53 +365,12 @@ async def execute_depreciation_run(
         if asset.disposal_date and asset.disposal_date < fy_start:
             continue
 
-        if asset.useful_life_months is None:
-            raise DepreciationDataError(
-                f"Asset {asset.id} ({asset.asset_name}) has no useful life specified"
-            )
-        months = asset.useful_life_months
-
-        cost = asset.original_cost if asset.original_cost is not None else Decimal("0.00")
-        residual_pct = asset.residual_pct if asset.residual_pct is not None else Decimal("5.00")
-        method = "WDV" if asset.dep_method == DepreciationMethod.wdv else "SLM"
-
-        # Opening accumulated depreciation:
-        # Prior finalized run closing accumulated dep if present,
-        # else asset cutover field,
-        # else zero.
-        if asset.id in prior_asset_lines:
-            opening_acc = prior_asset_lines[asset.id].closing_accumulated_depreciation
-        elif asset.opening_accumulated_depreciation is not None:
-            opening_acc = asset.opening_accumulated_depreciation
-        else:
-            opening_acc = Decimal("0.00")
-
-        # Opening carrying amount follows the same precedence. Once a prior run exists
-        # its closing figure is the truth and the cutover value is history, so the
-        # stated opening WDV only applies until the asset has been run once.
-        if asset.id in prior_asset_lines:
-            opening_wdv_in = prior_asset_lines[asset.id].closing_carrying_amount
-        else:
-            opening_wdv_in = asset.opening_wdv
-
-        inp = AssetDepreciationInput(
-            asset_id=str(asset.id),
-            asset_name=asset.asset_name,
-            original_cost=cost,
-            capitalization_date=cap_date,
-            useful_life_months=months,
-            residual_pct=residual_pct,
-            residual_value=asset.residual_value,
-            dep_method=method,
-            opening_accumulated_dep=opening_acc,
-            opening_wdv=opening_wdv_in,
-            disposal_date=asset.disposal_date,
-            disposal_type=asset.disposal_type,
-            sale_proceeds=asset.sale_proceeds,
-            is_pre_cutover=asset.is_pre_cutover,
-        )
+        inp = build_asset_depreciation_input(asset, prior_asset_lines.get(asset.id))
 
         calc = calculate_asset_depreciation(inp, fy_start, fy_end)
+        trace = build_schedule_ii_trace(
+            inp, calc, fy_label=fy.label, computed_at=computed_at
+        )
 
         line = AssetDepreciationLine(
             run_id=run.id,
@@ -279,6 +392,7 @@ async def execute_depreciation_run(
             is_part_year=calc.is_part_year,
             is_disposed=calc.is_disposed,
             gain_loss_on_disposal=calc.gain_loss_on_disposal,
+            calc_trace=trace.to_dict(),
         )
         db.add(line)
         asset_lines.append(line)
@@ -299,82 +413,14 @@ async def execute_depreciation_run(
 
     for block in it_blocks:
         block_assets = assets_by_block.get(block.id, [])
-        rate = Decimal(str(block.dep_rate)) if block.dep_rate is not None else Decimal("15.00")
-
-        # Aggregate additions >= 180 days, additions < 180 days, and sales
-        add_more = Decimal("0.00")
-        add_less = Decimal("0.00")
-        sales = Decimal("0.00")
-        has_active_assets = False
-
-        if block.id in prior_block_lines:
-            opening_wdv = prior_block_lines[block.id].closing_wdv
-        else:
-            # First run for this block: rebuild its opening WDV from the assets'
-            # cutover figures. Only the TAX figure will do. Book WDV was previously
-            # accepted as a substitute, but the two essentially never agree in India —
-            # different rates, block-wise rather than asset-wise, additional
-            # depreciation — so borrowing it produced a wrong block base and therefore
-            # a wrong deduction, silently.
-            opening_wdv = Decimal("0.00")
-            for a in block_assets:
-                if a.disposal_date and a.disposal_date < fy_start:
-                    continue
-                cap_date = a.it_put_to_use_date or a.capitalization_date or a.available_for_use_date
-                if cap_date is None:
-                    # Undatable asset: it cannot be classed as opening or as an
-                    # addition, so it would vanish from the block entirely.
-                    raise DepreciationDataError(
-                        f"Asset {a.id} ({a.asset_name}) has no put-to-use, capitalization or "
-                        f"available-for-use date, so it cannot be placed in an Income Tax block."
-                    )
-                if cap_date < fy_start:
-                    if a.opening_it_wdv is None:
-                        raise DepreciationDataError(
-                            f"Asset {a.id} ({a.asset_name}) was in use before {fy_start} but has no "
-                            f"opening Income Tax WDV. Set 'Opening WDV (tax)' — the book WDV is not "
-                            f"a valid substitute for the tax written-down value."
-                        )
-                    opening_wdv += a.opening_it_wdv
-
-        active_or_current_assets = [
-            a for a in block_assets
-            if not (a.disposal_date and a.disposal_date < fy_start)
-        ]
-
-        for a in active_or_current_assets:
-            cap_date = a.it_put_to_use_date or a.capitalization_date or a.available_for_use_date
-
-            # Check additions during FY
-            if cap_date and fy_start <= cap_date <= fy_end:
-                days_put = (fy_end - cap_date).days + 1
-                cost = a.original_cost if a.original_cost is not None else Decimal("0.00")
-                if days_put >= 180:
-                    add_more += cost
-                else:
-                    add_less += cost
-
-            # Check sales during FY
-            if a.disposal_date and fy_start <= a.disposal_date <= fy_end:
-                proceeds = a.disposal_it_proceeds if a.disposal_it_proceeds is not None else (a.sale_proceeds if a.sale_proceeds is not None else Decimal("0.00"))
-                sales += proceeds
-            elif not a.disposal_date or a.disposal_date > fy_end:
-                has_active_assets = True
-
-        all_disposed = (len(active_or_current_assets) > 0) and (not has_active_assets)
-
-        it_inp = ItBlockDepreciationInput(
-            block_id=str(block.id),
-            block_name=block.name,
-            prescribed_rate=rate,
-            opening_wdv=opening_wdv,
-            additions_more_than_180=add_more,
-            additions_less_than_180=add_less,
-            realized_from_sales=sales,
-            all_assets_disposed=all_disposed,
+        it_inp = build_it_block_input(
+            block, block_assets, prior_block_lines.get(block.id), fy_start, fy_end
         )
 
         it_calc = calculate_it_block_depreciation(it_inp)
+        it_trace = build_it_block_trace(
+            it_inp, it_calc, fy_label=fy.label, computed_at=computed_at
+        )
 
         it_line = ItBlockDepreciationLine(
             run_id=run.id,
@@ -393,6 +439,7 @@ async def execute_depreciation_run(
             capital_gain_or_loss=it_calc.capital_gain_or_loss,
             has_stcg=it_calc.has_stcg,
             has_stcl=it_calc.has_stcl,
+            calc_trace=it_trace.to_dict(),
         )
         db.add(it_line)
         it_lines.append(it_line)

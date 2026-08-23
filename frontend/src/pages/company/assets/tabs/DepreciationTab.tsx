@@ -1,18 +1,15 @@
-import { useState } from 'react'
-import { Card, Field, Input, Select, Textarea, Button, Spinner, Modal, useToast } from '@/components/ui'
+import { Field, Input, Select, Textarea, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import type { AssetDetail } from '@/api/hooks/assets'
 import { useUpdateAsset } from '@/api/hooks/assets'
 import { useItBlocks, useAssetCategories } from '@/api/hooks/assetMasters'
-import { useFinancialYears } from '@/api/hooks/financialYears'
-import { useDepreciationRuns, useCreateDepreciationRun, useAssetDepreciationLines, useFinalizeDepreciationRun, useReopenDepreciationRun } from '@/api/hooks/depreciation'
-import { DEPRECIATION_METHOD } from '@/api/enums'
 import type { AssetUpdate } from '@/api/types'
-import { dateOrDash, money, months, num } from '../assetFormat'
+import { DEPRECIATION_METHOD } from '@/api/enums'
+import { dateOrDash, months } from '../assetFormat'
 import { numOrNull, useSectionForm } from '../useSectionForm'
-import { DerivedRow, SectionShell } from './SectionShell'
-import { Play, CheckCircle, RotateCcw } from 'lucide-react'
-import { useCompanyAuth } from '@/auth/company'
+import { SectionShell } from './SectionShell'
+import { DepreciationDerivedCard } from './DepreciationDerivedCard'
+import { DepreciationRunCard } from './DepreciationRunCard'
 
 export function DepreciationTab({
   detail,
@@ -24,62 +21,8 @@ export function DepreciationTab({
   const asset = detail.asset
   const toast = useToast()
   const update = useUpdateAsset()
-  const { profile } = useCompanyAuth()
-  const isAdmin = profile?.role === 'admin'
   const { data: blocks = [] } = useItBlocks()
   const { data: categories = [] } = useAssetCategories()
-  const { data: fys = [] } = useFinancialYears()
-  const { data: runs = [] } = useDepreciationRuns()
-  const createRun = useCreateDepreciationRun()
-  const finalizeRun = useFinalizeDepreciationRun()
-  const reopenRunMutation = useReopenDepreciationRun()
-
-  const [reopenOpen, setReopenOpen] = useState(false)
-  const [reopenReason, setReopenReason] = useState('')
-
-  const [selectedFyId, setSelectedFyId] = useState<string>(fys[0]?.id || '')
-
-  const activeFyId = selectedFyId || fys[0]?.id || ''
-  const latestRunForFy = runs.find((r) => r.financial_year_id === activeFyId)
-  const { data: runLines = [], isLoading: linesLoading } = useAssetDepreciationLines(
-    latestRunForFy?.id || '',
-  )
-  const assetLine = runLines.find((l) => l.asset_id === asset.id)
-
-  const handleRunDepreciation = async () => {
-    if (!activeFyId) {
-      toast.error('Please create or select a financial year first')
-      return
-    }
-    try {
-      await createRun.mutateAsync({ financialYearId: activeFyId })
-      toast.success('Depreciation run computed successfully')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to run depreciation')
-    }
-  }
-
-  const handleFinalize = async () => {
-    if (!latestRunForFy) return
-    try {
-      await finalizeRun.mutateAsync(latestRunForFy.id)
-      toast.success('Depreciation run finalized')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to finalize run')
-    }
-  }
-
-  const handleReopen = async () => {
-    if (!latestRunForFy || reopenReason.trim().length < 3) return
-    try {
-      await reopenRunMutation.mutateAsync({ runId: latestRunForFy.id, reason: reopenReason.trim() })
-      toast.success('Run reopened to draft')
-      setReopenOpen(false)
-      setReopenReason('')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to reopen run')
-    }
-  }
 
   const category = categories.find((c) => c.id === asset.category_id)
   const categoryLife = category?.default_useful_life_months ?? null
@@ -126,11 +69,6 @@ export function DepreciationTab({
     categoryLife !== null &&
     values.useful_life_months !== null &&
     Number(values.useful_life_months) !== categoryLife
-
-  const cost = num(asset.original_cost)
-  const residual = num(values.residual_pct)
-  const residualAmount = cost !== null && residual !== null ? (cost * residual) / 100 : null
-  const depreciableBase = cost !== null && residualAmount !== null ? cost - residualAmount : null
 
   return (
     <SectionShell
@@ -384,148 +322,14 @@ export function DepreciationTab({
         )}
       </fieldset>
 
-      {/* Depreciation Calculation & Live Schedule */}
-      <Card className="p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-          <div>
-            <h4 className="text-sm font-semibold text-text-primary">Depreciation Calculation &amp; Schedule</h4>
-            <p className="text-xs text-text-muted">
-              Schedule II computation for the financial year
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              aria-label="Select Financial Year"
-              value={activeFyId}
-              onChange={(e) => setSelectedFyId(e.target.value)}
-              className="h-8 rounded-btn border border-border-strong bg-bg-surface px-2.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              {fys.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label} ({f.status})
-                </option>
-              ))}
-            </select>
-            <Button
-              size="sm"
-              onClick={handleRunDepreciation}
-              loading={createRun.isPending}
-              disabled={!activeFyId}
-            >
-              <Play className="mr-1 h-3.5 w-3.5" />
-              Compute
-            </Button>
-            {latestRunForFy && latestRunForFy.status === 'draft' && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleFinalize}
-                loading={finalizeRun.isPending}
-              >
-                <CheckCircle className="mr-1 h-3.5 w-3.5" />
-                Finalize
-              </Button>
-            )}
-            {isAdmin && latestRunForFy && latestRunForFy.status === 'finalized' && (
-              <>
-                <Button variant="secondary" size="sm" onClick={() => setReopenOpen(true)}>
-                  <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                  Reopen
-                </Button>
-                {/* ConfirmDialog renders a static message only, so the reason
-                    field needs its own Modal-based dialog. */}
-                <Modal
-                  open={reopenOpen}
-                  onClose={() => setReopenOpen(false)}
-                  title="Reopen finalized depreciation?"
-                  size="sm"
-                  footer={
-                    <>
-                      <Button
-                        variant="secondary"
-                        onClick={() => setReopenOpen(false)}
-                        disabled={reopenRunMutation.isPending}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={handleReopen}
-                        loading={reopenRunMutation.isPending}
-                        disabled={reopenReason.trim().length < 3}
-                      >
-                        Confirm reopen
-                      </Button>
-                    </>
-                  }
-                >
-                  <p className="text-sm text-text-secondary">
-                    {latestRunForFy.financial_year_label ?? 'This year'} will flip back to draft so
-                    you can correct inputs and regenerate. Redo years oldest-first.
-                  </p>
-                  <Field
-                    className="mt-3"
-                    label="Reason (recorded in the audit log)"
-                    required
-                    hint="At least 3 characters"
-                  >
-                    <Textarea
-                      aria-label="Reason"
-                      value={reopenReason}
-                      onChange={(e) => setReopenReason(e.target.value)}
-                    />
-                  </Field>
-                </Modal>
-              </>
-            )}
-          </div>
-        </div>
+      <DepreciationRunCard assetId={asset.id} itBlockId={values.it_block_id} />
 
-        {linesLoading ? (
-          <Spinner className="mx-auto my-6 h-5 w-5" />
-        ) : assetLine ? (
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 text-xs">
-            <div className="rounded-md border border-border bg-bg-inset/50 p-2.5">
-              <span className="text-text-muted">Opening Gross Block</span>
-              <p className="mt-0.5 font-semibold text-text-primary tabular-nums">{money(String(assetLine.opening_gross_block))}</p>
-            </div>
-            <div className="rounded-md border border-border bg-bg-inset/50 p-2.5">
-              <span className="text-text-muted">Additions / Disposals</span>
-              <p className="mt-0.5 font-semibold text-text-primary tabular-nums">
-                +{money(String(assetLine.additions))} / -{money(String(assetLine.disposals))}
-              </p>
-            </div>
-            <div className="rounded-md border border-border bg-bg-inset/50 p-2.5">
-              <span className="text-text-muted">Depreciation (FY)</span>
-              <p className="mt-0.5 font-semibold text-status-action tabular-nums">{money(String(assetLine.depreciation_for_year))}</p>
-            </div>
-            <div className="rounded-md border border-border bg-bg-inset/50 p-2.5">
-              <span className="text-text-muted">Closing Carrying Amount (NBV)</span>
-              <p className="mt-0.5 font-semibold text-status-verified tabular-nums">{money(String(assetLine.closing_carrying_amount))}</p>
-            </div>
-          </div>
-        ) : (
-          <p className="mt-3 text-xs text-text-muted">
-            No calculation run recorded yet for this financial year. Click "Compute" above to execute the depreciation engine.
-          </p>
-        )}
-      </Card>
-
-      <Card className="p-4">
-        <h4 className="mb-2 text-sm font-semibold text-text-primary">Derived Parameters</h4>
-        <DerivedRow label="Original accounting cost" value={money(asset.original_cost)} />
-        <DerivedRow
-          label="Residual value"
-          value={residualAmount === null ? '—' : money(String(residualAmount))}
-          hint={residual !== null ? `${residual}% of original cost` : undefined}
-        />
-        <DerivedRow
-          label="Depreciable base"
-          value={depreciableBase === null ? '—' : money(String(depreciableBase))}
-          hint="Cost less residual value"
-          emphasis
-        />
-        <DerivedRow label="Warranty expiry" value={dateOrDash(asset.warranty_expiry_date)} />
-      </Card>
+      <DepreciationDerivedCard
+        assetId={asset.id}
+        originalCost={asset.original_cost}
+        residualPct={values.residual_pct}
+        warrantyExpiryDate={asset.warranty_expiry_date}
+      />
     </SectionShell>
   )
 }

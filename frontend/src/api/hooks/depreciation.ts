@@ -6,6 +6,8 @@ export const depreciationKeys = {
   run: (id: string) => ['depreciation', 'run', id] as const,
   lines: (id: string) => ['depreciation', 'lines', id] as const,
   itLines: (id: string) => ['depreciation', 'it-lines', id] as const,
+  explain: (assetId: string, fyId: string) =>
+    ['depreciation', 'explain', assetId, fyId] as const,
 }
 
 export function useDepreciationRuns() {
@@ -82,5 +84,23 @@ export function useDeleteDepreciationRun() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: depreciationKeys.runs })
     },
+  })
+}
+
+/**
+ * A depreciation projection for one asset and year, computed on demand.
+ *
+ * `enabled` is required rather than defaulted: this fires the engine, so it must wait
+ * until the drawer is actually open.
+ */
+export function useExplainDepreciation(assetId: string, fyId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: depreciationKeys.explain(assetId, fyId),
+    queryFn: () => depreciationApi.explain(assetId, fyId),
+    enabled: enabled && !!assetId && !!fyId,
+    // Inputs change while a user is editing the asset, so a stale projection would
+    // explain figures they have already moved past.
+    staleTime: 0,
+    retry: false,
   })
 }

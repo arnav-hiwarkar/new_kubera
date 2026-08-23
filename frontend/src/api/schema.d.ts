@@ -485,6 +485,273 @@ export interface paths {
         patch: operations["reactivate_custom_field_api_v1_custom_fields__module___field_id__reactivate_patch"];
         trace?: never;
     };
+    "/api/v1/financial-years": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Financial Years */
+        get: operations["list_financial_years_api_v1_financial_years_get"];
+        put?: never;
+        /** Create Financial Year */
+        post: operations["create_financial_year_api_v1_financial_years_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/financial-years/{fy_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Financial Year */
+        post: operations["close_financial_year_api_v1_financial_years__fy_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/financial-years/{fy_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen Financial Year */
+        post: operations["reopen_financial_year_api_v1_financial_years__fy_id__reopen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/depreciation/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Depreciation Runs */
+        get: operations["list_depreciation_runs_api_v1_depreciation_runs_get"];
+        put?: never;
+        /** Create Depreciation Run */
+        post: operations["create_depreciation_run_api_v1_depreciation_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/depreciation/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain Depreciation
+         * @description Compute one asset's depreciation trace without recording anything.
+         *
+         *     Reuses the run's own input assembly and engines, so a projection shows what a run
+         *     would produce rather than a second opinion about it.
+         */
+        post: operations["explain_depreciation_api_v1_depreciation_explain_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/depreciation/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Depreciation Run Detail */
+        get: operations["get_depreciation_run_detail_api_v1_depreciation_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Depreciation Run */
+        delete: operations["delete_depreciation_run_api_v1_depreciation_runs__run_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/depreciation/runs/{run_id}/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Asset Depreciation Lines */
+        get: operations["get_asset_depreciation_lines_api_v1_depreciation_runs__run_id__lines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/depreciation/runs/{run_id}/it-lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get It Block Depreciation Lines */
+        get: operations["get_it_block_depreciation_lines_api_v1_depreciation_runs__run_id__it_lines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/depreciation/runs/{run_id}/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finalize Run */
+        post: operations["finalize_run_api_v1_depreciation_runs__run_id__finalize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/depreciation/runs/{run_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen Run */
+        post: operations["reopen_run_api_v1_depreciation_runs__run_id__reopen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Available Asset Reports
+         * @description Returns the list of 10 available asset register reports and descriptions.
+         */
+        get: operations["list_available_asset_reports_api_v1_asset_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-reports/{report_key}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Asset Report */
+        get: operations["export_asset_report_api_v1_asset_reports__report_key__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-reports/{report_key}/preview-html": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview Asset Report Html */
+        get: operations["preview_asset_report_html_api_v1_asset_reports__report_key__preview_html_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-reports/pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Asset Report Pack */
+        post: operations["export_asset_report_pack_api_v1_asset_reports_pack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-reports/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Asset Report */
+        post: operations["archive_asset_report_api_v1_asset_reports_archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/asset-masters/it-blocks": {
         parameters: {
             query?: never;
@@ -501,6 +768,23 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asset-masters/it-blocks/{block_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update It Block */
+        patch: operations["update_it_block_api_v1_asset_masters_it_blocks__block_id__patch"];
         trace?: never;
     };
     "/api/v1/asset-masters/categories": {
@@ -608,6 +892,26 @@ export interface paths {
         patch: operations["update_lookup_api_v1_asset_masters_lookups__lookup_id__patch"];
         trace?: never;
     };
+    "/api/v1/asset-masters/{kind}/{row_id}/impact-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Impact Preview
+         * @description Facts shown inside masters edit dialogs BEFORE saving (see spec §7).
+         */
+        get: operations["impact_preview_api_v1_asset_masters__kind___row_id__impact_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assets/quick-add": {
         parameters: {
             query?: never;
@@ -625,6 +929,68 @@ export interface paths {
          *     page — nothing here blocks on statutory data the user may not have yet.
          */
         post: operations["quick_add_api_v1_assets_quick_add_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/existing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Existing Asset
+         * @description Opening entry for an asset owned before the register (or this FY).
+         *
+         *     Creates a standalone draft — no acquisition — carrying cutover balances;
+         *     approval then puts it on the books like any other asset.
+         */
+        post: operations["create_existing_asset_api_v1_assets_existing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/import/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Import Template */
+        get: operations["download_import_template_api_v1_assets_import_template_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Existing Assets
+         * @description Atomic bulk creation of pre-existing assets from a filled template.
+         *
+         *     Any failing row rejects the whole file with a per-row error report.
+         */
+        post: operations["import_existing_assets_api_v1_assets_import_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -794,6 +1160,26 @@ export interface paths {
          * @description ready -> draft, so the submitter can fix it.
          */
         post: operations["reject_asset_api_v1_assets__asset_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/dispose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dispose Asset
+         * @description Dispose of a capitalized asset (sale, scrap, write-off, etc.).
+         */
+        post: operations["dispose_asset_api_v1_assets__asset_id__dispose_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1790,6 +2176,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auditease/engagements/{engagement_id}/reports/{report_key}/preview-html": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview Report Html */
+        get: operations["preview_report_html_api_v1_auditease_engagements__engagement_id__reports__report_key__preview_html_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/reports/{report_key}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Report */
+        get: operations["export_report_api_v1_auditease_engagements__engagement_id__reports__report_key__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/reports/pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Report Pack */
+        get: operations["export_report_pack_api_v1_auditease_engagements__engagement_id__reports_pack_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/reports/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Engagement Report */
+        post: operations["archive_engagement_report_api_v1_auditease_engagements__engagement_id__reports_archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auditease/engagements/{engagement_id}/reports/generate": {
         parameters: {
             query?: never;
@@ -2776,6 +3230,59 @@ export interface components {
          * @enum {string}
          */
         AssetCondition: "new" | "good" | "fair" | "poor" | "unusable";
+        /** AssetDepreciationLineResponse */
+        AssetDepreciationLineResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Method */
+            method: string;
+            /** Opening Gross Block */
+            opening_gross_block: string;
+            /** Additions */
+            additions: string;
+            /** Disposals */
+            disposals: string;
+            /** Closing Gross Block */
+            closing_gross_block: string;
+            /** Opening Accumulated Depreciation */
+            opening_accumulated_depreciation: string;
+            /** Depreciation For Year */
+            depreciation_for_year: string;
+            /** Disposal Accumulated Depreciation */
+            disposal_accumulated_depreciation: string;
+            /** Closing Accumulated Depreciation */
+            closing_accumulated_depreciation: string;
+            /** Opening Carrying Amount */
+            opening_carrying_amount: string;
+            /** Closing Carrying Amount */
+            closing_carrying_amount: string;
+            /** Residual Value */
+            residual_value: string;
+            /** Remaining Useful Life Days */
+            remaining_useful_life_days: number;
+            /** Effective Rate Pct */
+            effective_rate_pct: string;
+            /** Is Part Year */
+            is_part_year: boolean;
+            /** Is Disposed */
+            is_disposed: boolean;
+            /** Gain Loss On Disposal */
+            gain_loss_on_disposal?: string | null;
+            calc_trace?: components["schemas"]["CalcTraceSchema"] | null;
+        };
         /**
          * AssetDetailResponse
          * @description What the tabbed detail page loads in one request.
@@ -2796,6 +3303,31 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** AssetDisposalRequest */
+        AssetDisposalRequest: {
+            /**
+             * Disposal Date
+             * Format: date
+             */
+            disposal_date: string;
+            disposal_type: components["schemas"]["AssetDisposalType"];
+            /** Sale Proceeds */
+            sale_proceeds?: number | string | null;
+            /** Buyer Name */
+            buyer_name?: string | null;
+            /** Disposal Invoice No */
+            disposal_invoice_no?: string | null;
+            /** Disposal Remarks */
+            disposal_remarks?: string | null;
+            /** Disposal It Proceeds */
+            disposal_it_proceeds?: number | string | null;
+        };
+        /**
+         * AssetDisposalType
+         * @description Statutory disposal types for Fixed Assets.
+         * @enum {string}
+         */
+        AssetDisposalType: "sale" | "scrap" | "write_off" | "loss_destruction" | "insurance_claim";
         /**
          * AssetDocRole
          * @description What an attached file is. Invoice/PO/GRN/e-way/approval attach at the
@@ -2848,6 +3380,54 @@ export interface components {
             mime_type?: string | null;
             /** Size Bytes */
             size_bytes?: number | null;
+        };
+        /** AssetExistingCreate */
+        AssetExistingCreate: {
+            /** Asset Name */
+            asset_name: string;
+            /** Category Path */
+            category_path: string[];
+            /** Original Cost */
+            original_cost: number | string;
+            /** Purchase Date */
+            purchase_date?: string | null;
+            /** Put To Use Date */
+            put_to_use_date?: string | null;
+            /** Capitalization Date */
+            capitalization_date?: string | null;
+            /** Opening Accumulated Depreciation */
+            opening_accumulated_depreciation?: number | string | null;
+            /** Opening Wdv */
+            opening_wdv?: number | string | null;
+            /** Opening It Wdv */
+            opening_it_wdv?: number | string | null;
+            /** Useful Life Months */
+            useful_life_months?: number | null;
+            /** Useful Life Override Reason */
+            useful_life_override_reason?: string | null;
+            /** Residual Pct */
+            residual_pct?: number | string | null;
+            /** Branch Id */
+            branch_id?: string | null;
+            /** Location Id */
+            location_id?: string | null;
+            /** Department Id */
+            department_id?: string | null;
+            /** Cost Centre Id */
+            cost_centre_id?: string | null;
+            /** Custodian Name */
+            custodian_name?: string | null;
+            /** Serial Number */
+            serial_number?: string | null;
+            /** Remarks */
+            remarks?: string | null;
+        };
+        /** AssetImportResult */
+        AssetImportResult: {
+            /** Created Count */
+            created_count: number;
+            /** First Asset Id */
+            first_asset_id?: string | null;
         };
         /**
          * AssetLifecycleStatus
@@ -3090,6 +3670,22 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             };
+            /** Disposal Date */
+            disposal_date?: string | null;
+            /** Disposal Type */
+            disposal_type?: string | null;
+            /** Sale Proceeds */
+            sale_proceeds?: string | null;
+            /** Buyer Name */
+            buyer_name?: string | null;
+            /** Disposal Invoice No */
+            disposal_invoice_no?: string | null;
+            /** Disposal Remarks */
+            disposal_remarks?: string | null;
+            /** Disposal Gain Loss */
+            disposal_gain_loss?: string | null;
+            /** Disposal It Proceeds */
+            disposal_it_proceeds?: string | null;
             /** Created By */
             created_by: string | null;
             /** Submitted By */
@@ -3398,6 +3994,14 @@ export interface components {
             /** File */
             file?: string | null;
         };
+        /** Body_import_existing_assets_api_v1_assets_import_post */
+        Body_import_existing_assets_api_v1_assets_import_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
         /** Body_import_sales_api_v1_sales_import_post */
         Body_import_sales_api_v1_sales_import_post: {
             /**
@@ -3609,6 +4213,57 @@ export interface components {
         BulkSerialRequest: {
             /** Assignments */
             assignments: components["schemas"]["SerialAssignment"][];
+        };
+        /**
+         * CalcStepSchema
+         * @description One line of a calculation, already formatted for display.
+         *
+         *     `formula` and `substitution` are empty for a plain input rather than a derivation.
+         */
+        CalcStepSchema: {
+            /** Key */
+            key: string;
+            /** Group */
+            group: string;
+            /** Label */
+            label: string;
+            /** Formula */
+            formula: string;
+            /** Substitution */
+            substitution: string;
+            /** Result */
+            result: string;
+            /**
+             * Unit
+             * @default none
+             */
+            unit: string;
+            /**
+             * Emphasis
+             * @default false
+             */
+            emphasis: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /** CalcTraceSchema */
+        CalcTraceSchema: {
+            /** Title */
+            title: string;
+            /** Basis */
+            basis: string;
+            /**
+             * Steps
+             * @default []
+             */
+            steps: components["schemas"]["CalcStepSchema"][];
+            /**
+             * Is Projection
+             * @default false
+             */
+            is_projection: boolean;
+            /** Computed At */
+            computed_at?: string | null;
         };
         /**
          * CompanyDeleteRequest
@@ -3994,11 +4649,122 @@ export interface components {
             /** Display Order */
             display_order?: number | null;
         };
+        /** DepreciationExplainRequest */
+        DepreciationExplainRequest: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /**
+             * Financial Year Id
+             * Format: uuid
+             */
+            financial_year_id: string;
+        };
+        /**
+         * DepreciationExplainResponse
+         * @description Traces computed on demand and never stored.
+         *
+         *     `income_tax` is absent when the asset has not been assigned to a block.
+         */
+        DepreciationExplainResponse: {
+            companies_act: components["schemas"]["CalcTraceSchema"];
+            income_tax?: components["schemas"]["CalcTraceSchema"] | null;
+        };
         /**
          * DepreciationMethod
          * @enum {string}
          */
         DepreciationMethod: "slm" | "wdv";
+        /** DepreciationRunCreate */
+        DepreciationRunCreate: {
+            /**
+             * Financial Year Id
+             * Format: uuid
+             */
+            financial_year_id: string;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** DepreciationRunReopenRequest */
+        DepreciationRunReopenRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /** DepreciationRunResponse */
+        DepreciationRunResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /**
+             * Financial Year Id
+             * Format: uuid
+             */
+            financial_year_id: string;
+            /** Financial Year Label */
+            financial_year_label?: string | null;
+            /**
+             * Book
+             * @default companies_act
+             */
+            book: string;
+            /**
+             * Run Date
+             * Format: date-time
+             */
+            run_date: string;
+            /** Status */
+            status: string;
+            /** Finalized At */
+            finalized_at?: string | null;
+            /** Finalized By */
+            finalized_by?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Total Gross Block
+             * @default 0.00
+             */
+            total_gross_block: string;
+            /**
+             * Total Depreciation
+             * @default 0.00
+             */
+            total_depreciation: string;
+            /**
+             * Total Carrying Amount
+             * @default 0.00
+             */
+            total_carrying_amount: string;
+            /**
+             * Total It Depreciation
+             * @default 0.00
+             */
+            total_it_depreciation: string;
+            /**
+             * Total It Closing Wdv
+             * @default 0.00
+             */
+            total_it_closing_wdv: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
          * DiscountType
          * @enum {string}
@@ -4157,10 +4923,89 @@ export interface components {
          * @enum {string}
          */
         EntryLineSide: "debit" | "credit";
+        /** FinancialYearCreate */
+        FinancialYearCreate: {
+            /**
+             * Label
+             * @description e.g. 2024-25 or FY 2024-25
+             */
+            label: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+        };
+        /** FinancialYearResponse */
+        FinancialYearResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Label */
+            label: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /** Status */
+            status: string;
+            /** Closed At */
+            closed_at?: string | null;
+            /** Closed By */
+            closed_by?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** ImpactPreviewResponse */
+        ImpactPreviewResponse: {
+            /** Kind */
+            kind: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Assets Referencing */
+            assets_referencing: number;
+            /** Draft Run Fy Labels */
+            draft_run_fy_labels: string[];
+            /** Finalized Run Fy Labels */
+            finalized_run_fy_labels: string[];
+            /** Classification */
+            classification: string;
+            /** Message */
+            message: string;
         };
         /** ImportResult */
         ImportResult: {
@@ -4210,11 +5055,72 @@ export interface components {
             display_order: number;
         };
         /**
+         * ItAssetBlockUpdate
+         * @description Partial edit of a company-owned Appendix I block.
+         */
+        ItAssetBlockUpdate: {
+            /** Code */
+            code?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Dep Rate */
+            dep_rate?: number | null;
+            block_class?: components["schemas"]["ItBlockClass"] | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Display Order */
+            display_order?: number | null;
+        };
+        /**
          * ItBlockClass
          * @description Appendix I groupings, used to order the block-wise tax summary.
          * @enum {string}
          */
         ItBlockClass: "building" | "furniture" | "plant_machinery" | "intangible";
+        /** ItBlockDepreciationLineResponse */
+        ItBlockDepreciationLineResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** It Block Id */
+            it_block_id: string | null;
+            /** Block Name */
+            block_name: string;
+            /** Prescribed Rate */
+            prescribed_rate: string;
+            /** Opening Wdv */
+            opening_wdv: string;
+            /** Additions More Than 180 */
+            additions_more_than_180: string;
+            /** Additions Less Than 180 */
+            additions_less_than_180: string;
+            /** Realized From Sales */
+            realized_from_sales: string;
+            /** Balance Before Depreciation */
+            balance_before_depreciation: string;
+            /** Depreciation Full Rate */
+            depreciation_full_rate: string;
+            /** Depreciation Half Rate */
+            depreciation_half_rate: string;
+            /** Total Depreciation */
+            total_depreciation: string;
+            /** Closing Wdv */
+            closing_wdv: string;
+            /** Capital Gain Or Loss */
+            capital_gain_or_loss: string;
+            /** Has Stcg */
+            has_stcg: boolean;
+            /** Has Stcl */
+            has_stcl: boolean;
+            calc_trace?: components["schemas"]["CalcTraceSchema"] | null;
+        };
         /**
          * ItcTreatment
          * @description Input Tax Credit treatment. Drives whether GST is capitalized into the
@@ -6638,6 +7544,585 @@ export interface operations {
             };
         };
     };
+    list_financial_years_api_v1_financial_years_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinancialYearResponse"][];
+                };
+            };
+        };
+    };
+    create_financial_year_api_v1_financial_years_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FinancialYearCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinancialYearResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_financial_year_api_v1_financial_years__fy_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinancialYearResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_financial_year_api_v1_financial_years__fy_id__reopen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinancialYearResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_depreciation_runs_api_v1_depreciation_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepreciationRunResponse"][];
+                };
+            };
+        };
+    };
+    create_depreciation_run_api_v1_depreciation_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepreciationRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepreciationRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explain_depreciation_api_v1_depreciation_explain_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepreciationExplainRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepreciationExplainResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_depreciation_run_detail_api_v1_depreciation_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepreciationRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_depreciation_run_api_v1_depreciation_runs__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_asset_depreciation_lines_api_v1_depreciation_runs__run_id__lines_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDepreciationLineResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_it_block_depreciation_lines_api_v1_depreciation_runs__run_id__it_lines_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItBlockDepreciationLineResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finalize_run_api_v1_depreciation_runs__run_id__finalize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepreciationRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_run_api_v1_depreciation_runs__run_id__reopen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepreciationRunReopenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepreciationRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_available_asset_reports_api_v1_asset_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    }[];
+                };
+            };
+        };
+    };
+    export_asset_report_api_v1_asset_reports__report_key__export_get: {
+        parameters: {
+            query: {
+                financial_year_id: string;
+                format?: string;
+                unit?: string;
+                lifecycle_status?: string | null;
+                operational_status?: string | null;
+                condition?: string | null;
+                category_id?: string | null;
+                location_id?: string | null;
+                branch_id?: string | null;
+                custodian_id?: string | null;
+                acquisition_id?: string | null;
+            };
+            header?: never;
+            path: {
+                report_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_asset_report_html_api_v1_asset_reports__report_key__preview_html_get: {
+        parameters: {
+            query: {
+                financial_year_id: string;
+                unit?: string;
+                lifecycle_status?: string | null;
+                operational_status?: string | null;
+                condition?: string | null;
+                category_id?: string | null;
+                location_id?: string | null;
+                branch_id?: string | null;
+                custodian_id?: string | null;
+                acquisition_id?: string | null;
+            };
+            header?: never;
+            path: {
+                report_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_asset_report_pack_api_v1_asset_reports_pack_post: {
+        parameters: {
+            query: {
+                financial_year_id: string;
+                format?: string;
+                unit?: string;
+                lifecycle_status?: string | null;
+                operational_status?: string | null;
+                condition?: string | null;
+                category_id?: string | null;
+                location_id?: string | null;
+                branch_id?: string | null;
+                custodian_id?: string | null;
+                acquisition_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_asset_report_api_v1_asset_reports_archive_post: {
+        parameters: {
+            query: {
+                report_key: string;
+                financial_year_id: string;
+                format?: string;
+                unit?: string;
+                lifecycle_status?: string | null;
+                operational_status?: string | null;
+                condition?: string | null;
+                category_id?: string | null;
+                location_id?: string | null;
+                branch_id?: string | null;
+                custodian_id?: string | null;
+                acquisition_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_it_blocks_api_v1_asset_masters_it_blocks_get: {
         parameters: {
             query?: never;
@@ -6673,6 +8158,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItAssetBlockResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_it_block_api_v1_asset_masters_it_blocks__block_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                block_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItAssetBlockUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6989,6 +8509,38 @@ export interface operations {
             };
         };
     };
+    impact_preview_api_v1_asset_masters__kind___row_id__impact_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+                row_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpactPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     quick_add_api_v1_assets_quick_add_post: {
         parameters: {
             query?: never;
@@ -7009,6 +8561,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetQuickAddResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_existing_asset_api_v1_assets_existing_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetExistingCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_import_template_api_v1_assets_import_template_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    import_existing_assets_api_v1_assets_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_existing_assets_api_v1_assets_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetImportResult"];
                 };
             };
             /** @description Validation Error */
@@ -7336,6 +8974,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dispose_asset_api_v1_assets__asset_id__dispose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetDisposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9459,6 +11132,144 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_report_html_api_v1_auditease_engagements__engagement_id__reports__report_key__preview_html_get: {
+        parameters: {
+            query?: {
+                units?: string;
+            };
+            header?: never;
+            path: {
+                engagement_id: string;
+                report_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_report_api_v1_auditease_engagements__engagement_id__reports__report_key__export_get: {
+        parameters: {
+            query?: {
+                format?: string;
+                units?: string;
+            };
+            header?: never;
+            path: {
+                engagement_id: string;
+                report_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_report_pack_api_v1_auditease_engagements__engagement_id__reports_pack_get: {
+        parameters: {
+            query?: {
+                format?: string;
+                units?: string;
+            };
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_engagement_report_api_v1_auditease_engagements__engagement_id__reports_archive_post: {
+        parameters: {
+            query?: {
+                report_key?: string;
+                format?: string;
+                units?: string;
+            };
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
