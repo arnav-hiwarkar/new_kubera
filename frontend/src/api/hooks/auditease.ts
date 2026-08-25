@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { auditeaseCompanyApi } from '@/api/endpoints/auditease'
 import type {
   AuditEngagementCreate,
-  AuditorInvite,
+  AuditorInviteCreate,
+  AuditorPermissionsUpdate,
   LedgerGroupCreate,
   LedgerGroupRename,
   BulkMapRequest,
@@ -73,9 +74,56 @@ export function useDeleteEngagement() {
 export function useInviteAuditor() {
   const invalidate = useInvalidateEngagements()
   return useMutation({
-    mutationFn: ({ id, body }: { id: string; body: AuditorInvite }) =>
+    mutationFn: ({ id, body }: { id: string; body: AuditorInviteCreate }) =>
       auditeaseCompanyApi.inviteAuditor(id, body),
     onSuccess: (_r, { id }) => invalidate(id),
+  })
+}
+
+export function useEngagementAuditors(engagementId: string) {
+  return useQuery({
+    queryKey: ['auditease', 'engagements', engagementId, 'auditors'],
+    queryFn: () => auditeaseCompanyApi.listAuditors(engagementId),
+    enabled: !!engagementId,
+  })
+}
+
+export function useInviteEngagementAuditor(engagementId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: AuditorInviteCreate) => auditeaseCompanyApi.inviteAuditor(engagementId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['auditease', 'engagements', engagementId] })
+    },
+  })
+}
+
+export function useUpdateAuditorAccess(engagementId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ auditorId, body }: { auditorId: string; body: AuditorPermissionsUpdate }) =>
+      auditeaseCompanyApi.updateAuditorAccess(engagementId, auditorId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['auditease', 'engagements', engagementId, 'auditors'] })
+    },
+  })
+}
+
+export function useRemoveEngagementAuditor(engagementId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (auditorId: string) => auditeaseCompanyApi.removeAuditor(engagementId, auditorId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['auditease', 'engagements', engagementId] })
+    },
+  })
+}
+
+export function useAuditorActivity(engagementId: string, auditorId: string | null) {
+  return useQuery({
+    queryKey: ['auditease', 'engagements', engagementId, 'auditors', auditorId, 'activity'],
+    queryFn: () => auditeaseCompanyApi.listAuditorActivity(engagementId, auditorId!),
+    enabled: !!engagementId && !!auditorId,
   })
 }
 

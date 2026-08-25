@@ -3,7 +3,10 @@ import { parseTrialBalanceView } from '@/api/contracts/trialBalance'
 import type {
   AuditEngagementResponse,
   AuditEngagementCreate,
-  AuditorInvite,
+  EngagementAuditorResponse,
+  AuditorInviteCreate,
+  AuditorPermissionsUpdate,
+  ActivityEventResponse,
   EntryApproval,
   AuditEntryResponse,
   TrialBalanceAccountResponse,
@@ -41,10 +44,23 @@ export const auditeaseCompanyApi = {
     companyClient.patch<AuditEngagementResponse>(`/api/v1/auditease/engagements/${id}/close`),
   deleteEngagement: (id: string) =>
     companyClient.delete<void>(`/api/v1/auditease/engagements/${id}`),
-  inviteAuditor: (id: string, body: AuditorInvite) =>
+  inviteAuditor: (id: string, body: AuditorInviteCreate) =>
     companyClient.post<AuditEngagementResponse>(
-      `/api/v1/auditease/engagements/${id}/invite-auditor`,
+      `/api/v1/auditease/engagements/${id}/auditors/invite`,
       { body },
+    ),
+  listAuditors: (id: string) =>
+    companyClient.get<EngagementAuditorResponse[]>(`/api/v1/auditease/engagements/${id}/auditors`),
+  updateAuditorAccess: (id: string, auditorId: string, body: AuditorPermissionsUpdate) =>
+    companyClient.patch<EngagementAuditorResponse>(
+      `/api/v1/auditease/engagements/${id}/auditors/${auditorId}`,
+      { body },
+    ),
+  removeAuditor: (id: string, auditorId: string) =>
+    companyClient.delete<void>(`/api/v1/auditease/engagements/${id}/auditors/${auditorId}`),
+  listAuditorActivity: (id: string, auditorId: string, limit = 50, offset = 0) =>
+    companyClient.get<ActivityEventResponse[]>(
+      `/api/v1/auditease/engagements/${id}/auditors/${auditorId}/activity?limit=${limit}&offset=${offset}`,
     ),
 
   // Trial balance (per engagement, server-side file import)

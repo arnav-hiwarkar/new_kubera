@@ -95,26 +95,26 @@ export function EngagementsPage() {
     {
       key: 'auditor',
       header: 'Auditor',
-      cell: (e) =>
-        e.auditor_email ? (
+      cell: (e) => {
+        const first = (e.auditors ?? []).find((a) => a.status !== 'revoked')
+        return first ? (
           <span className="flex items-center gap-2">
-            <span className="text-text-secondary">{e.auditor_email}</span>
-            {e.auditor_grant_status && (
-              <StatusBadge
-                status={e.auditor_grant_status}
-                tone={
-                  e.auditor_grant_status === 'accepted'
-                    ? 'success'
-                    : e.auditor_grant_status === 'pending'
-                      ? 'info'
-                      : 'warning'
-                }
-              />
-            )}
+            <span className="text-text-secondary">{first.email}</span>
+            <StatusBadge
+              status={first.status}
+              tone={
+                first.status === 'accepted'
+                  ? 'success'
+                  : first.status === 'pending'
+                    ? 'info'
+                    : 'warning'
+              }
+            />
           </span>
         ) : (
           <span className="text-text-muted">—</span>
-        ),
+        )
+      },
     },
     {
       key: 'created_at',
@@ -184,7 +184,9 @@ export function EngagementsPage() {
         rowKey={(e) => e.id}
         loading={isLoading}
         onRowClick={(e) => navigate(`/app/auditease/${e.id}`)}
-        searchAccessors={(e) => `${e.period_label} ${e.auditor_email ?? ''}`}
+        searchAccessors={(e) =>
+          `${e.period_label} ${(e.auditors ?? []).filter((a) => a.status !== 'revoked').map((a) => a.email).join(' ')}`
+        }
         searchPlaceholder="Search engagements…"
         emptyTitle="No engagements yet"
         emptyDescription="Create your first engagement to import a trial balance and invite an auditor."
@@ -224,7 +226,6 @@ export function EngagementsPage() {
           open
           onClose={() => setInviteFor(null)}
           engagementId={inviteFor.id}
-          currentEmail={inviteFor.auditor_email}
         />
       )}
 

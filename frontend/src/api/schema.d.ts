@@ -2035,7 +2035,7 @@ export interface paths {
         patch: operations["close_engagement_api_v1_auditease_engagements__engagement_id__close_patch"];
         trace?: never;
     };
-    "/api/v1/auditease/engagements/{engagement_id}/invite-auditor": {
+    "/api/v1/auditease/engagements/{engagement_id}/auditors/invite": {
         parameters: {
             query?: never;
             header?: never;
@@ -2046,11 +2046,63 @@ export interface paths {
         put?: never;
         /**
          * Invite Auditor
-         * @description Invite one auditor by email. If they already have an account, a grant is
-         *     created; otherwise a pending invite is stored and auto-converts on registration.
-         *     Re-inviting replaces any prior invite (one auditor per engagement).
+         * @description Invite one auditor by email without disturbing other auditors. Registered
+         *     emails get a grant (revoked grants are resurrected); unknown emails get a
+         *     pending invite that auto-converts on registration.
          */
-        post: operations["invite_auditor_api_v1_auditease_engagements__engagement_id__invite_auditor_post"];
+        post: operations["invite_auditor_api_v1_auditease_engagements__engagement_id__auditors_invite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/auditors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Engagement Auditors */
+        get: operations["list_engagement_auditors_api_v1_auditease_engagements__engagement_id__auditors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/auditors/{auditor_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Engagement Auditor */
+        delete: operations["remove_engagement_auditor_api_v1_auditease_engagements__engagement_id__auditors__auditor_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Auditor Access */
+        patch: operations["update_auditor_access_api_v1_auditease_engagements__engagement_id__auditors__auditor_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/auditors/{auditor_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Auditor Activity */
+        get: operations["get_auditor_activity_api_v1_auditease_engagements__engagement_id__auditors__auditor_id__activity_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2255,6 +2307,23 @@ export interface paths {
         put?: never;
         /** Generate Report */
         post: operations["generate_report_api_v1_auditease_engagements__engagement_id__reports_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/auditors/{auditor_id}/activity-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Auditor Activity Report */
+        get: operations["export_auditor_activity_report_api_v1_auditease_engagements__engagement_id__auditors__auditor_id__activity_report_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3098,6 +3167,32 @@ export interface components {
             /** Full Name */
             full_name: string;
         };
+        /** ActivityEventResponse */
+        ActivityEventResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Action */
+            action: string;
+            /** Entity Type */
+            entity_type: string;
+            /**
+             * Entity Id
+             * Format: uuid
+             */
+            entity_id: string;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** ActivityLogOut */
         ActivityLogOut: {
             /**
@@ -3841,10 +3936,15 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
-            /** Auditor Email */
-            auditor_email?: string | null;
-            /** Auditor Grant Status */
-            auditor_grant_status?: string | null;
+            /**
+             * Auditors
+             * @default []
+             */
+            auditors: components["schemas"]["EngagementAuditorResponse"][];
+            /** Area Permissions */
+            area_permissions?: {
+                [key: string]: boolean;
+            } | null;
         };
         /** AuditEntryCreate */
         AuditEntryCreate: {
@@ -3908,6 +4008,8 @@ export interface components {
              * Format: uuid
              */
             created_by: string;
+            /** Created By Name */
+            created_by_name?: string | null;
             /** Code */
             code: string | null;
             /** Description */
@@ -3933,10 +4035,14 @@ export interface components {
          * @enum {string}
          */
         AuditEntryStatus: "proposed" | "approved" | "rejected";
-        /** AuditorInvite */
-        AuditorInvite: {
+        /** AuditorInviteCreate */
+        AuditorInviteCreate: {
             /** Email */
             email: string;
+            /** Area Permissions */
+            area_permissions?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** AuditorOut */
         AuditorOut: {
@@ -3949,6 +4055,13 @@ export interface components {
             email: string;
             /** Name */
             name: string;
+        };
+        /** AuditorPermissionsUpdate */
+        AuditorPermissionsUpdate: {
+            /** Area Permissions */
+            area_permissions: {
+                [key: string]: unknown;
+            };
         };
         /** AuditorRegister */
         AuditorRegister: {
@@ -4908,6 +5021,25 @@ export interface components {
             /** Version Number */
             version_number: number;
         };
+        /** EngagementAuditorResponse */
+        EngagementAuditorResponse: {
+            /** Auditor Id */
+            auditor_id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Email */
+            email: string;
+            /** Status */
+            status: string;
+            /** Area Permissions */
+            area_permissions: {
+                [key: string]: boolean;
+            };
+            /** Invited At */
+            invited_at?: string | null;
+            /** Accepted At */
+            accepted_at?: string | null;
+        };
         /**
          * EngagementStatus
          * @enum {string}
@@ -5457,6 +5589,8 @@ export interface components {
              * Format: uuid
              */
             sender_id: string;
+            /** Sender Name */
+            sender_name?: string | null;
             /** Text */
             text: string;
             /** Attached Document Id */
@@ -5702,6 +5836,8 @@ export interface components {
              * Format: uuid
              */
             raised_by: string;
+            /** Raised By Name */
+            raised_by_name?: string | null;
             /** Title */
             title: string;
             /** Description */
@@ -10879,7 +11015,7 @@ export interface operations {
             };
         };
     };
-    invite_auditor_api_v1_auditease_engagements__engagement_id__invite_auditor_post: {
+    invite_auditor_api_v1_auditease_engagements__engagement_id__auditors_invite_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -10890,7 +11026,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AuditorInvite"];
+                "application/json": components["schemas"]["AuditorInviteCreate"];
             };
         };
         responses: {
@@ -10901,6 +11037,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditEngagementResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_engagement_auditors_api_v1_auditease_engagements__engagement_id__auditors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementAuditorResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_engagement_auditor_api_v1_auditease_engagements__engagement_id__auditors__auditor_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                auditor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_auditor_access_api_v1_auditease_engagements__engagement_id__auditors__auditor_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                auditor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuditorPermissionsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementAuditorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_auditor_activity_api_v1_auditease_engagements__engagement_id__auditors__auditor_id__activity_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                engagement_id: string;
+                auditor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityEventResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -11289,6 +11557,40 @@ export interface operations {
             header?: never;
             path: {
                 engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_auditor_activity_report_api_v1_auditease_engagements__engagement_id__auditors__auditor_id__activity_report_get: {
+        parameters: {
+            query?: {
+                format?: string;
+            };
+            header?: never;
+            path: {
+                engagement_id: string;
+                auditor_id: string;
             };
             cookie?: never;
         };

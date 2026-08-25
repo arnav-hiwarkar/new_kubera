@@ -72,6 +72,9 @@ export function EngagementWorkspace() {
     )
 
   const closed = eng.status === 'closed'
+  // TODO(Task 12): full plural-auditor UX polish; this is the minimal compile fix.
+  const liveAuditors = (eng.auditors ?? []).filter((a) => a.status !== 'revoked')
+  const firstLiveAuditor = liveAuditors[0]
 
   const doClose = async () => {
     try {
@@ -121,7 +124,7 @@ export function EngagementWorkspace() {
           {!closed && (
             <div className="flex shrink-0 gap-2">
               <Button variant="secondary" onClick={() => setInviteOpen(true)}>
-                {eng.auditor_email ? 'Change auditor' : 'Invite auditor'}
+                Invite auditor
               </Button>
               {(eng.status === 'invited' || eng.status === 'active') && (
                 <Button variant="secondary" onClick={() => setCloseOpen(true)}>
@@ -153,7 +156,7 @@ export function EngagementWorkspace() {
               </span>
             </div>
             <div className="mt-3"><StatusBadge status={eng.status} /></div>
-            <p className="mt-1 truncate text-sm text-text-muted">{eng.auditor_email ?? 'No auditor invited'}</p>
+            <p className="mt-1 truncate text-sm text-text-muted">{firstLiveAuditor?.email ?? 'No auditor invited'}</p>
           </Card>
           {tbIsError ? (
             <TrialBalanceLoadError
@@ -184,10 +187,10 @@ export function EngagementWorkspace() {
           />
           <StatCard
             label="Auditor"
-            display={<span className="truncate text-lg">{eng.auditor_email ? eng.auditor_email.split('@')[0] : 'None'}</span>}
+            display={<span className="truncate text-lg">{firstLiveAuditor ? firstLiveAuditor.email.split('@')[0] : 'None'}</span>}
             icon={<Users />}
             tone="neutral"
-            sub={eng.auditor_grant_status ?? (eng.auditor_email ? undefined : 'Not invited')}
+            sub={firstLiveAuditor?.status ?? 'Not invited'}
           />
         </div>
       )}
@@ -246,7 +249,6 @@ export function EngagementWorkspace() {
           open
           onClose={() => setInviteOpen(false)}
           engagementId={eng.id}
-          currentEmail={eng.auditor_email}
         />
       )}
       <ConfirmDialog
