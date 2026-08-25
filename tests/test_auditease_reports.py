@@ -218,7 +218,7 @@ async def test_auditease_adjusting_entries_ledger_name(client: AsyncClient):
     assert resp_login.status_code == 200, resp_login.text
     aud_headers = {"Authorization": f"Bearer {resp_login.json()['access_token']}"}
 
-    inv_res = await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": aud_email}, headers=headers)
+    inv_res = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": aud_email}, headers=headers)
     assert inv_res.status_code == 200, inv_res.text
 
     acc_res = await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)

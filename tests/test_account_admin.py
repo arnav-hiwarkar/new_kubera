@@ -233,7 +233,7 @@ async def _build_tenant_data(client: AsyncClient, co_headers, aud_headers):
     # document, and a query message attaching it. These are the FKs that used to
     # block a hard delete.
     await client.post(
-        f"/api/v1/auditease/engagements/{eng_id}/invite-auditor",
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
         json={"email": "purgeaud@x.com"}, headers=co_headers,
     )
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)

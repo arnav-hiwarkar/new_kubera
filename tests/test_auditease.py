@@ -263,11 +263,13 @@ async def test_engagement_lifecycle(client: AsyncClient):
     eng_id = await make_engagement(client, co_headers)
 
     # Invite moves draft -> invited
-    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "aud@a.com"}, headers=co_headers)
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud@a.com"}, headers=co_headers)
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == EngagementStatus.invited.value
-    assert resp.json()["auditor_email"] == "aud@a.com"
-    assert resp.json()["auditor_grant_status"] == GrantStatus.invited.value
+    auds = resp.json()["auditors"]
+    assert len(auds) == 1
+    assert auds[0]["email"] == "aud@a.com"
+    assert auds[0]["status"] == GrantStatus.invited.value
 
     # Auditor sees the invite
     resp = await client.get("/api/v1/auditor/engagements", headers=aud_headers)
@@ -305,7 +307,7 @@ async def test_delete_engagement_guard(client: AsyncClient):
 
     # Active engagement cannot be deleted
     eng2 = await make_engagement(client, co_headers)
-    await client.post(f"/api/v1/auditease/engagements/{eng2}/invite-auditor", json={"email": "deld@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng2}/auditors/invite", json={"email": "deld@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng2}/accept", headers=aud_headers)
     resp = await client.delete(f"/api/v1/auditease/engagements/{eng2}", headers=co_headers)
     assert resp.status_code == 409
@@ -323,10 +325,10 @@ async def test_pending_invite_autoconverts_on_registration(client: AsyncClient):
     eng_id = await make_engagement(client, co_headers)
 
     # Invite an email with no auditor account yet -> pending
-    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "future@aud.com"}, headers=co_headers)
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "future@aud.com"}, headers=co_headers)
     assert resp.status_code == 200
     assert resp.json()["status"] == EngagementStatus.invited.value
-    assert resp.json()["auditor_grant_status"] == "pending"
+    assert resp.json()["auditors"][0]["status"] == "pending"
 
     # Auditor registers with that email -> pending invite becomes a grant
     await client.post("/api/v1/auth/auditor/register", json={"email": "future@aud.com", "password": "pass1234", "name": "Future"})
@@ -352,7 +354,7 @@ async def _engagement_with_entry(client, slug, approve=False):
     eng_id = await make_engagement(client, co_headers)
     resp = await import_tb(client, eng_id, co_headers)
     ledgers = resp.json()["accounts"]
-    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor",
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
                       json={"email": f"{slug}aud@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
 
@@ -549,7 +551,7 @@ async def test_ledger_mapping(client: AsyncClient):
     assert cash_row["mapped_group_path"] == ["Assets", "Current Assets"]
 
     # auditor sees the mapping too
-    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "mapaud@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "mapaud@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
     tb = await client.get(f"/api/v1/auditor/engagements/{eng_id}/trial-balance", headers=aud_headers)
     cash_row = next(a for a in tb.json()["accounts"] if a["id"] == cash)
@@ -777,7 +779,7 @@ async def test_audit_entries(client: AsyncClient):
     eng_id = await make_engagement(client, co_headers)
     resp = await import_tb(client, eng_id, co_headers)
     ledgers = resp.json()["accounts"]
-    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "aud2@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud2@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
 
     entry_data = {
@@ -805,7 +807,7 @@ async def test_requirements_and_queries(client: AsyncClient):
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
-    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "aud3@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud3@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
 
     resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", json={"title": "Bank Statements", "description": "Provide bank statements"}, headers=aud_headers)
@@ -864,7 +866,7 @@ async def test_auditor_document_access_and_queries(client: AsyncClient):
     aud_other_headers = {"Authorization": f"Bearer {resp2.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
-    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": "aud4@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud4@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
     
     # Auditor raises a query with a file
@@ -923,7 +925,7 @@ async def _accept_auditor(client, co_headers, eng_id, email):
     await client.post("/api/v1/auth/auditor/register", json={"email": email, "password": "pass1234", "name": "A"})
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "pass1234"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
-    await client.post(f"/api/v1/auditease/engagements/{eng_id}/invite-auditor", json={"email": email}, headers=co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": email}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
     return aud_headers
 

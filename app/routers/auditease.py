@@ -9,14 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.auth import get_current_company_user
+from app.auth import get_current_company_user, require_manager_or_admin
 from app.models.company import CompanyUser
 from app.models.auditor import Auditor
+from app.models.activity_log import ActorType
 from app.models.auditease import (
     TrialBalanceAccount, LedgerGroup, AuditEngagement, AuditorEngagementGrant,
     PendingAuditorInvite, AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage,
     EngagementStatus, GrantStatus, AuditEntryStatus, EntryLineSide, RequestStatus, QueryStatus,
     SenderType, BalanceNature, TBSignConvention,
+    FULL_AREA_PERMISSIONS, AREA_LABELS,
 )
 from app.schemas.auditease import (
     TrialBalanceAccountResponse, LedgerGroupResponse, LedgerGroupCreate, LedgerGroupRename,
@@ -24,12 +26,15 @@ from app.schemas.auditease import (
     MappingImportRequest, MappingImportResult, MappingImportIssue, AuditEngagementCreate,
     AuditEngagementResponse, AuditEntryResponse, RequirementRequestResponse,
     QueryResponse, QueryMessageResponse, QueryMessageCreate,
+    EngagementAuditorResponse, AuditorInviteCreate,
     TBColumnMap, TBInspectResponse, TBImportResult, TBDiagnostics, TBRowIssue,
     TBParsedRow, TBPreviewResponse, TBReimportImpact, TrialBalanceViewResponse,
     SetSignConventionRequest,
     ReportLine, ReportTotals, ReportBalanceCheck, ReportEntrySummary,
     ReportEntriesBlock, ReportPreviewResponse,
 )
+from app.services.activity import log_activity
+from app.services.auditor_access import normalize_area_permissions
 from app.config import get_settings
 from app.services import import_service
 from app.services import ledger_groups as lg
@@ -53,34 +58,43 @@ async def _get_owned_engagement(db: AsyncSession, company_id: uuid.UUID, engagem
     return eng
 
 
-async def _hydrate_auditor_info(db: AsyncSession, eng: AuditEngagement) -> AuditEngagement:
-    """Attach auditor_email + auditor_grant_status (single-auditor model) for the response."""
-    grant_res = await db.execute(
-        select(AuditorEngagementGrant, Auditor.email)
+async def _list_auditors(db: AsyncSession, engagement_id: uuid.UUID) -> list[dict]:
+    """Every grant row (incl. revoked) plus pending unregistered invites."""
+    rows = await db.execute(
+        select(AuditorEngagementGrant, Auditor.name, Auditor.email)
         .join(Auditor, Auditor.id == AuditorEngagementGrant.auditor_id)
-        .where(
-            and_(
-                AuditorEngagementGrant.engagement_id == eng.id,
-                AuditorEngagementGrant.status != GrantStatus.revoked,
-            )
-        )
+        .where(AuditorEngagementGrant.engagement_id == engagement_id)
         .order_by(AuditorEngagementGrant.invited_at.desc())
     )
-    row = grant_res.first()
-    if row:
-        grant, email = row
-        eng.auditor_email = email
-        eng.auditor_grant_status = grant.status.value
-        return eng
-    pend_res = await db.execute(
+    out = [
+        {
+            "auditor_id": g.auditor_id,
+            "name": name,
+            "email": email,
+            "status": g.status.value,
+            "area_permissions": g.area_permissions or dict(FULL_AREA_PERMISSIONS),
+            "invited_at": g.invited_at,
+            "accepted_at": g.accepted_at,
+        }
+        for g, name, email in rows.all()
+    ]
+    pend = await db.execute(
         select(PendingAuditorInvite)
-        .where(PendingAuditorInvite.engagement_id == eng.id)
+        .where(PendingAuditorInvite.engagement_id == engagement_id)
         .order_by(PendingAuditorInvite.created_at.desc())
     )
-    pend = pend_res.scalars().first()
-    if pend:
-        eng.auditor_email = pend.email
-        eng.auditor_grant_status = "pending"
+    for p in pend.scalars().all():
+        out.append({
+            "auditor_id": None, "name": None, "email": p.email,
+            "status": "pending", "area_permissions": dict(FULL_AREA_PERMISSIONS),
+            "invited_at": p.created_at, "accepted_at": None,
+        })
+    return out
+
+
+async def _hydrate_auditors(db: AsyncSession, eng: AuditEngagement) -> AuditEngagement:
+    """Attach the `auditors` array consumed by AuditEngagementResponse."""
+    eng.auditors = await _list_auditors(db, eng.id)
     return eng
 
 
@@ -905,7 +919,7 @@ async def create_engagement(
     db.add(eng)
     await db.commit()
     await db.refresh(eng)
-    return eng
+    return await _hydrate_auditors(db, eng)
 
 
 @router.get("/engagements", response_model=List[AuditEngagementResponse])
@@ -920,7 +934,7 @@ async def list_engagements(
     )
     engagements = list(result.scalars().all())
     for eng in engagements:
-        await _hydrate_auditor_info(db, eng)
+        await _hydrate_auditors(db, eng)
     return engagements
 
 
@@ -931,7 +945,7 @@ async def get_engagement(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
-    return await _hydrate_auditor_info(db, eng)
+    return await _hydrate_auditors(db, eng)
 
 
 @router.patch("/engagements/{engagement_id}/close", response_model=AuditEngagementResponse)
@@ -956,7 +970,7 @@ async def close_engagement(
 
     await db.commit()
     await db.refresh(eng)
-    return await _hydrate_auditor_info(db, eng)
+    return await _hydrate_auditors(db, eng)
 
 
 @router.delete("/engagements/{engagement_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -985,69 +999,119 @@ async def delete_engagement(
     return None
 
 
-class AuditorInvite(BaseModel):
-    email: str
-
-
-@router.post("/engagements/{engagement_id}/invite-auditor", response_model=AuditEngagementResponse)
+@router.post("/engagements/{engagement_id}/auditors/invite", response_model=AuditEngagementResponse)
 async def invite_auditor(
     engagement_id: uuid.UUID,
-    invite: AuditorInvite,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    invite: AuditorInviteCreate,
+    current_user: Annotated[CompanyUser, Depends(require_manager_or_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Invite one auditor by email. If they already have an account, a grant is
-    created; otherwise a pending invite is stored and auto-converts on registration.
-    Re-inviting replaces any prior invite (one auditor per engagement)."""
+    """Invite one auditor by email without disturbing other auditors. Registered
+    emails get a grant (revoked grants are resurrected); unknown emails get a
+    pending invite that auto-converts on registration."""
     eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
     if eng.status == EngagementStatus.closed:
         raise HTTPException(status_code=409, detail="Cannot invite on a closed engagement")
+
+    try:
+        perms = normalize_area_permissions(invite.area_permissions)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     email = invite.email.strip().lower()
 
     aud_res = await db.execute(select(Auditor).where(func.lower(Auditor.email) == email))
     auditor = aud_res.scalar_one_or_none()
 
-    # Reject an exact duplicate: the same auditor already has an active/pending grant here.
     if auditor:
-        dup_res = await db.execute(
+        g_res = await db.execute(
             select(AuditorEngagementGrant).where(
                 and_(
                     AuditorEngagementGrant.auditor_id == auditor.id,
                     AuditorEngagementGrant.engagement_id == engagement_id,
-                    AuditorEngagementGrant.status != GrantStatus.revoked,
                 )
             )
         )
-        if dup_res.scalar_one_or_none():
+        grant = g_res.scalar_one_or_none()
+        if grant and grant.status != GrantStatus.revoked:
             raise HTTPException(status_code=400, detail="Auditor is already invited to this engagement")
-
-    # One auditor per engagement: clear any prior grant/pending before re-inviting.
-    await db.execute(
-        update(AuditorEngagementGrant)
-        .where(AuditorEngagementGrant.engagement_id == engagement_id)
-        .values(status=GrantStatus.revoked)
-    )
-    await db.execute(
-        delete(PendingAuditorInvite).where(PendingAuditorInvite.engagement_id == engagement_id)
-    )
-
-    if auditor:
-        db.add(AuditorEngagementGrant(
-            auditor_id=auditor.id,
-            engagement_id=engagement_id,
-            status=GrantStatus.invited,
-        ))
+        if grant:  # resurrect the revoked row — keeps uq_grant_auditor_engagement intact
+            grant.status = GrantStatus.invited
+            grant.invited_at = datetime.now(timezone.utc)
+            grant.accepted_at = None
+            grant.area_permissions = perms
+        else:
+            db.add(AuditorEngagementGrant(
+                auditor_id=auditor.id, engagement_id=engagement_id,
+                status=GrantStatus.invited, area_permissions=perms,
+            ))
     else:
+        pend_res = await db.execute(
+            select(PendingAuditorInvite).where(
+                and_(
+                    PendingAuditorInvite.engagement_id == engagement_id,
+                    func.lower(PendingAuditorInvite.email) == email,
+                )
+            )
+        )
+        if pend_res.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="An invite for this email is already pending")
         db.add(PendingAuditorInvite(engagement_id=engagement_id, email=email))
 
-    # Moving out of draft: the engagement is now awaiting acceptance.
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "auditor.invited", "audit_engagement", eng.id,
+        metadata_={"email": email}, actor_type=ActorType.company_user,
+        engagement_id=eng.id,
+    )
+
     if eng.status == EngagementStatus.draft:
         eng.status = EngagementStatus.invited
 
     await db.commit()
     await db.refresh(eng)
-    return await _hydrate_auditor_info(db, eng)
+    return await _hydrate_auditors(db, eng)
+
+
+@router.get("/engagements/{engagement_id}/auditors", response_model=List[EngagementAuditorResponse])
+async def list_engagement_auditors(
+    engagement_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    return await _list_auditors(db, eng.id)
+
+
+@router.delete("/engagements/{engagement_id}/auditors/{auditor_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_engagement_auditor(
+    engagement_id: uuid.UUID,
+    auditor_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(require_manager_or_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    g_res = await db.execute(
+        select(AuditorEngagementGrant).where(
+            and_(
+                AuditorEngagementGrant.auditor_id == auditor_id,
+                AuditorEngagementGrant.engagement_id == engagement_id,
+                AuditorEngagementGrant.status != GrantStatus.revoked,
+            )
+        )
+    )
+    grant = g_res.scalar_one_or_none()
+    if not grant:
+        raise HTTPException(status_code=404, detail="No active grant for this auditor on this engagement")
+
+    grant.status = GrantStatus.revoked
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "auditor.access_revoked", "auditor_engagement_grant", grant.id,
+        actor_type=ActorType.company_user, engagement_id=eng.id,
+    )
+    await db.commit()
+    return None
 
 
 # --- Entries (Approval) ---
