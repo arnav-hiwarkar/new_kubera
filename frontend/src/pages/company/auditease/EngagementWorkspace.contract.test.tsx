@@ -31,6 +31,15 @@ vi.mock('@/api/hooks/auditease', () => ({
   useListRequirements: () => ({ data: [] }),
   useListQueries: () => ({ data: [] }),
   useListEntries: () => ({ data: [] }),
+  useEngagementAuditors: () => ({ data: [], isLoading: false }),
+  useInviteEngagementAuditor: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateAuditorAccess: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoveEngagementAuditor: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAuditorActivity: () => ({ data: [], isLoading: false }),
+}))
+
+vi.mock('@/auth/company', () => ({
+  useCompanyAuth: () => ({ profile: { role: 'admin' } }),
 }))
 
 vi.mock('@/api/hooks/auditorEngagements', () => ({

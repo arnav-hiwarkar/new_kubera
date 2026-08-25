@@ -96,7 +96,8 @@ export function EngagementsPage() {
       key: 'auditor',
       header: 'Auditor',
       cell: (e) => {
-        const first = (e.auditors ?? []).find((a) => a.status !== 'revoked')
+        const live = (e.auditors ?? []).filter((a) => a.status !== 'revoked')
+        const first = live[0]
         return first ? (
           <span className="flex items-center gap-2">
             <span className="text-text-secondary">{first.email}</span>
@@ -110,6 +111,9 @@ export function EngagementsPage() {
                     : 'warning'
               }
             />
+            {live.length > 1 && (
+              <span className="text-xs text-text-muted">+{live.length - 1} more</span>
+            )}
           </span>
         ) : (
           <span className="text-text-muted">—</span>

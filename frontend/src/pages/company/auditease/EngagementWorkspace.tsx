@@ -24,6 +24,7 @@ import {
   useToast,
 } from '@/components/ui'
 import { ApiError } from '@/api/http'
+import { useCompanyAuth } from '@/auth/company'
 import { useEngagement, useCompanyTrialBalance, useCloseEngagement, useSetSignConvention } from '@/api/hooks/auditease'
 import { TrialBalanceTable } from '@/components/auditease/TrialBalanceTable'
 import { BalanceStatCards } from '@/components/auditease/BalanceStatCards'
@@ -35,14 +36,17 @@ import { RequirementsTab } from './RequirementsTab'
 import { QueriesTab } from './QueriesTab'
 import { AuditEntriesTab } from './AuditEntriesTab'
 import { ReportsTab } from './ReportsTab'
+import { AuditorsTab } from './AuditorsTab'
 import { useListRequirements, useListQueries, useListEntries } from '@/api/hooks/auditease'
 
-type Tab = 'overview' | 'trial-balance' | 'mapping' | 'entries' | 'requirements' | 'queries' | 'reports'
+type Tab = 'overview' | 'trial-balance' | 'mapping' | 'entries' | 'requirements' | 'queries' | 'auditors' | 'reports'
 
 export function EngagementWorkspace() {
   const { engagementId = '' } = useParams()
   const navigate = useNavigate()
   const toast = useToast()
+  const { profile } = useCompanyAuth()
+  const canManageAuditors = profile?.role === 'admin' || profile?.role === 'manager'
 
   const { data: eng, isLoading } = useEngagement(engagementId)
   const {
@@ -72,9 +76,10 @@ export function EngagementWorkspace() {
     )
 
   const closed = eng.status === 'closed'
-  // TODO(Task 12): full plural-auditor UX polish; this is the minimal compile fix.
-  const liveAuditors = (eng.auditors ?? []).filter((a) => a.status !== 'revoked')
-  const firstLiveAuditor = liveAuditors[0]
+  const liveAuditors = (eng.auditors ?? []).filter(
+    (a) => a.status === 'invited' || a.status === 'accepted' || a.status === 'pending',
+  )
+  const auditorCountLabel = liveAuditors.length === 1 ? '1 auditor' : `${liveAuditors.length} auditors`
 
   const doClose = async () => {
     try {
@@ -93,6 +98,7 @@ export function EngagementWorkspace() {
     { id: 'entries', label: 'Entries', icon: <FileText />, count: entries.filter((e) => e.status === 'proposed').length },
     { id: 'requirements', label: 'Requirements', icon: <ListChecks />, count: reqs.filter((r) => r.status === 'open').length },
     { id: 'queries', label: 'Queries', icon: <MessagesSquare />, count: queries.filter((q) => q.status === 'open').length },
+    { id: 'auditors', label: 'Auditors', icon: <Users /> },
     { id: 'reports', label: 'Reports', icon: <FileBarChart /> },
   ]
 
@@ -123,9 +129,11 @@ export function EngagementWorkspace() {
           </div>
           {!closed && (
             <div className="flex shrink-0 gap-2">
-              <Button variant="secondary" onClick={() => setInviteOpen(true)}>
-                Invite auditor
-              </Button>
+              {canManageAuditors && (
+                <Button variant="secondary" onClick={() => setInviteOpen(true)}>
+                  Invite auditor
+                </Button>
+              )}
               {(eng.status === 'invited' || eng.status === 'active') && (
                 <Button variant="secondary" onClick={() => setCloseOpen(true)}>
                   Close
@@ -156,7 +164,9 @@ export function EngagementWorkspace() {
               </span>
             </div>
             <div className="mt-3"><StatusBadge status={eng.status} /></div>
-            <p className="mt-1 truncate text-sm text-text-muted">{firstLiveAuditor?.email ?? 'No auditor invited'}</p>
+            <p className="mt-1 truncate text-sm text-text-muted">
+              {liveAuditors.length > 0 ? auditorCountLabel : 'No auditor invited'}
+            </p>
           </Card>
           {tbIsError ? (
             <TrialBalanceLoadError
@@ -186,11 +196,11 @@ export function EngagementWorkspace() {
             tone="warning"
           />
           <StatCard
-            label="Auditor"
-            display={<span className="truncate text-lg">{firstLiveAuditor ? firstLiveAuditor.email.split('@')[0] : 'None'}</span>}
+            label="Auditors"
+            display={<span className="truncate text-lg">{liveAuditors.length > 0 ? auditorCountLabel : 'None'}</span>}
             icon={<Users />}
             tone="neutral"
-            sub={firstLiveAuditor?.status ?? 'Not invited'}
+            sub={liveAuditors[0] ? `${liveAuditors[0].status}${liveAuditors.length > 1 ? ` +${liveAuditors.length - 1} more` : ''}` : 'Not invited'}
           />
         </div>
       )}
@@ -235,6 +245,7 @@ export function EngagementWorkspace() {
       {tab === 'requirements' && <RequirementsTab engagementId={eng.id} />}
       {tab === 'queries' && <QueriesTab engagementId={eng.id} />}
       {tab === 'entries' && <AuditEntriesTab engagementId={eng.id} />}
+      {tab === 'auditors' && <AuditorsTab engagementId={eng.id} canManage={canManageAuditors} />}
       {tab === 'reports' && <ReportsTab engagementId={eng.id} />}
 
       {importOpen && (
