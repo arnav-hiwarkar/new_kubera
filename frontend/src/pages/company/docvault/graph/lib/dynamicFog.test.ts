@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { computeGraphExtent } from './dynamicFog'
+import * as THREE from 'three'
+import { computeGraphExtent, DynamicFogController } from './dynamicFog'
+import { getGraphTheme } from './theme'
 import type { GraphNode } from '../types/graph'
 
 function docNode(overrides: Partial<GraphNode> = {}): GraphNode {
@@ -64,5 +66,85 @@ describe('computeGraphExtent', () => {
     expect(extent.centroid.y).toBeCloseTo(8 / 3, 6)
     expect(extent.radius).toBeGreaterThan(5)
     expect(extent.radius).toBeLessThan(6)
+  })
+})
+
+function positionedPair(halfSpread: number): GraphNode[] {
+  return [
+    docNode({ id: 'doc_a', rawId: 'a', x: -halfSpread, y: 0, z: 0 }),
+    docNode({ id: 'doc_b', rawId: 'b', x: halfSpread, y: 0, z: 0 }),
+  ]
+}
+
+const DARK = getGraphTheme('dark')
+
+describe('DynamicFogController', () => {
+  it('converges to theme floors for small graphs close to camera', () => {
+    const fog = new THREE.Fog('#000000', DARK.fogNear, DARK.fogFar)
+    const controller = new DynamicFogController()
+    const nodes = positionedPair(5) // radius ~5, camera at origin → camDist 0
+    for (let i = 0; i < 300; i++) {
+      controller.update(fog, new THREE.Vector3(0, 0, 0), nodes, DARK)
+    }
+    expect(fog.near).toBeCloseTo(DARK.fogNear, 4)
+    expect(fog.far).toBeCloseTo(DARK.fogFar, 4)
+  })
+
+  it('scale factor is never below 1', () => {
+    const fog = new THREE.Fog('#000000', DARK.fogNear, DARK.fogFar)
+    const controller = new DynamicFogController()
+    const s = controller.update(
+      fog,
+      new THREE.Vector3(0, 0, 0),
+      positionedPair(5),
+      DARK,
+    )
+    expect(s).toBeGreaterThanOrEqual(1)
+  })
+
+  it('stretches fog beyond floors for large graphs viewed from afar', () => {
+    const fog = new THREE.Fog('#000000', DARK.fogNear, DARK.fogFar)
+    const controller = new DynamicFogController()
+    const nodes = positionedPair(500) // radius ~500
+    const camPos = new THREE.Vector3(0, 0, 2000) // camDist 2000
+    for (let i = 0; i < 300; i++) {
+      controller.update(fog, camPos, nodes, DARK)
+    }
+    // Targets: near = 2000 + 0.2*500 = 2100, far = 2000 + 3*500 = 3500
+    expect(fog.near).toBeCloseTo(2100, 0)
+    expect(fog.far).toBeCloseTo(3500, 0)
+  })
+
+  it('moves monotonically toward its target each frame', () => {
+    const fog = new THREE.Fog('#000000', DARK.fogNear, DARK.fogFar)
+    const controller = new DynamicFogController()
+    const nodes = positionedPair(500)
+    const camPos = new THREE.Vector3(0, 0, 2000)
+    let previous = fog.far
+    for (let i = 0; i < 50; i++) {
+      controller.update(fog, camPos, nodes, DARK)
+      expect(fog.far).toBeGreaterThanOrEqual(previous)
+      expect(fog.far).toBeLessThanOrEqual(3500)
+      previous = fog.far
+    }
+  })
+
+  it('picks up nodes spreading apart without special-casing reloads', () => {
+    const fog = new THREE.Fog('#000000', DARK.fogNear, DARK.fogFar)
+    const controller = new DynamicFogController()
+    const nodes = positionedPair(5)
+    const camPos = new THREE.Vector3(0, 0, 350)
+    for (let i = 0; i < 100; i++) {
+      controller.update(fog, camPos, nodes, DARK)
+    }
+    expect(fog.far).toBeCloseTo(DARK.fogFar, 2)
+    // Simulation spreads the pair apart to ±500
+    nodes[0].x = -500
+    nodes[1].x = 500
+    for (let i = 0; i < 300; i++) {
+      controller.update(fog, camPos, nodes, DARK)
+    }
+    // New target: 350 + 3*500 = 1850 > floor 900
+    expect(fog.far).toBeCloseTo(1850, 0)
   })
 })

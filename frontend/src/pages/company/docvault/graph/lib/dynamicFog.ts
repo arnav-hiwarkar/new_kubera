@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { GraphNode } from '../types/graph'
+import type { GraphTheme } from './theme'
 
 // Fog stretches relative to camera distance and graph spread; theme values
 // are floors so small graphs keep the static appearance.
@@ -56,4 +57,36 @@ export function computeGraphExtent(nodes: GraphNode[]): GraphExtent | null {
     if (dist > radius) radius = dist
   }
   return { centroid: new THREE.Vector3(cx, cy, cz), radius }
+}
+
+// Keeps a THREE.Fog aligned with the graph's current spread. Runs an O(n)
+// extent pass every EXTENT_INTERVAL_FRAMES frames (and every frame until the
+// first successful pass, e.g. before the simulation places nodes), then lerps
+// fog.near/fog.far toward targets anchored to the camera position. Returns
+// the label fade scale factor S >= 1.
+export class DynamicFogController {
+  private extent: GraphExtent | null = null
+  private frameCount = 0
+
+  update(
+    fog: THREE.Fog,
+    cameraPosition: THREE.Vector3,
+    nodes: GraphNode[],
+    theme: GraphTheme,
+  ): number {
+    this.frameCount += 1
+    if (this.extent === null || this.frameCount % EXTENT_INTERVAL_FRAMES === 0) {
+      this.extent = computeGraphExtent(nodes)
+    }
+    let nearTarget = theme.fogNear
+    let farTarget = theme.fogFar
+    if (this.extent) {
+      const camDist = cameraPosition.distanceTo(this.extent.centroid)
+      nearTarget = Math.max(nearTarget, camDist + NEAR_SPREAD * this.extent.radius)
+      farTarget = Math.max(farTarget, camDist + FAR_SPREAD * this.extent.radius)
+    }
+    fog.near += (nearTarget - fog.near) * LERP_RATE
+    fog.far += (farTarget - fog.far) * LERP_RATE
+    return Math.max(1, fog.far / theme.fogFar)
+  }
 }
