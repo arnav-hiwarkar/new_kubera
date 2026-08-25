@@ -456,6 +456,7 @@ export function AuditorEntriesTab({ engagementId }: { engagementId: string }) {
                       <StatusBadge status={entry.status} />
                       <span className="text-xs text-text-muted">
                         Proposed on {new Date(entry.created_at).toLocaleDateString()}
+                        {entry.created_by_name && <> · {entry.created_by_name}</>}
                       </span>
                     </div>
                   </div>

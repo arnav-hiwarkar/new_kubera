@@ -54,6 +54,7 @@ export function RequirementsTab({ engagementId }: { engagementId: string }) {
                 <StatusBadge status={req.status} />
                 <span className="text-xs text-text-secondary">
                   {new Date(req.created_at).toLocaleDateString()}
+                  {req.raised_by_name && <> · {req.raised_by_name}</>}
                 </span>
               </div>
             </div>

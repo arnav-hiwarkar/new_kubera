@@ -49,13 +49,15 @@ export function AuditorEngagementWorkspace() {
       />
     )
 
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: <ClipboardCheck /> },
-    { id: 'trial-balance', label: 'Trial Balance', icon: <BookOpen /> },
-    { id: 'entries', label: 'Entries', icon: <FileText />, count: entries.length },
-    { id: 'requirements', label: 'Requirements', icon: <ListChecks />, count: reqs.filter((r) => r.status === 'open').length },
-    { id: 'queries', label: 'Queries', icon: <MessagesSquare />, count: queries.filter((q) => q.status === 'open').length },
+  const perms = eng.area_permissions ?? {}
+  const baseTabs = [
+    { id: 'overview', label: 'Overview', icon: <ClipboardCheck />, area: undefined },
+    { id: 'trial-balance', label: 'Trial Balance', icon: <BookOpen />, area: 'trial_balance' },
+    { id: 'entries', label: 'Entries', icon: <FileText />, area: 'entries', count: entries.length },
+    { id: 'requirements', label: 'Requirements', icon: <ListChecks />, area: 'requirements', count: reqs.filter((r) => r.status === 'open').length },
+    { id: 'queries', label: 'Queries', icon: <MessagesSquare />, area: 'queries', count: queries.filter((q) => q.status === 'open').length },
   ]
+  const tabs = baseTabs.filter((t) => !t.area || perms[t.area] !== false)
 
   return (
     <div className="flex flex-col gap-6">

@@ -167,7 +167,7 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
                 return (
                   <div key={msg.id} className={cn("flex flex-col", isAuditor ? "items-end" : "items-start")}>
                     <div className="mb-1 text-xs text-text-muted">
-                      {isAuditor ? 'You (Auditor)' : 'Company'} · {new Date(msg.created_at).toLocaleTimeString()}
+                      {msg.sender_name ?? (isAuditor ? 'You (Auditor)' : 'Company')} · {new Date(msg.created_at).toLocaleTimeString()}
                     </div>
                     <div
                       className={cn(

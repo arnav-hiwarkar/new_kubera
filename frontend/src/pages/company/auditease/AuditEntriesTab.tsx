@@ -51,6 +51,7 @@ export function AuditEntriesTab({ engagementId }: { engagementId: string }) {
                     <StatusBadge status={entry.status} />
                     <span className="text-xs text-text-muted">
                       Created on {new Date(entry.created_at).toLocaleDateString()}
+                      {entry.created_by_name && <> · {entry.created_by_name}</>}
                     </span>
                   </div>
                 </div>
