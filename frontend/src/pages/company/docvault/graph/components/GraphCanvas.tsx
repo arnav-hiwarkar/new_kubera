@@ -6,6 +6,7 @@ import type { GraphData, GraphLink, GraphNode } from '../types/graph'
 import { createNodeSprite } from '../lib/textSprite'
 import { getGraphTheme, type GraphThemeMode } from '../lib/theme'
 import { buildNeighborSet, dimOpacity, resolveDimState } from '../lib/dimState'
+import { DynamicFogController, LABEL_FADE_START, LABEL_FADE_END } from '../lib/dynamicFog'
 
 export interface GraphCanvasProps {
   data: GraphData
@@ -53,6 +54,7 @@ export function GraphCanvas({
   const containerRef = useRef<HTMLDivElement>(null)
   const graphObjRef = useRef<ForceGraph3DInstance | null>(null)
   const spritesRef = useRef<Map<string, THREE.Sprite>>(new Map())
+  const fogControllerRef = useRef<DynamicFogController | null>(null)
   const dataRef = useRef<GraphData>(data)
   dataRef.current = data
 
@@ -273,6 +275,7 @@ export function GraphCanvas({
       scene.add(dirLight)
       scene.fog = new THREE.Fog(themeObj.background, themeObj.fogNear, themeObj.fogFar)
     }
+    fogControllerRef.current = new DynamicFogController()
 
     // Bloom in dark mode only — degrade silently on failure
     if (themeRef.current === 'dark') {
@@ -296,6 +299,13 @@ export function GraphCanvas({
       const cam = graph.camera()
       if (!cam) return
       const t = getGraphTheme(themeRef.current)
+      const fog = scene ? (scene.fog as THREE.Fog | null) : null
+      const labelScale =
+        fog && fogControllerRef.current
+          ? fogControllerRef.current.update(fog, cam.position, dataRef.current.nodes, t)
+          : 1
+      const labelFadeStart = LABEL_FADE_START * labelScale
+      const labelFadeEnd = LABEL_FADE_END * labelScale
       const now = performance.now() / 1000
       const pulse = Math.sin((now * Math.PI * 2) / 1.4) // ~1.4s cycle
 
@@ -344,8 +354,9 @@ export function GraphCanvas({
           const isBucket = node.type === 'bucket'
           let lodOpacity = 1
           if (!isBucket) {
-            if (dist >= 420) lodOpacity = 0
-            else if (dist > 200) lodOpacity = (420 - dist) / (420 - 200)
+            if (dist >= labelFadeEnd) lodOpacity = 0
+            else if (dist > labelFadeStart)
+              lodOpacity = (labelFadeEnd - dist) / (labelFadeEnd - labelFadeStart)
           }
           sprite.material.opacity = opacity * Math.max(0, Math.min(1, lodOpacity))
           sprite.visible = sprite.material.opacity > 0.001
@@ -377,6 +388,7 @@ export function GraphCanvas({
     return () => {
       if (intervalId !== undefined) clearInterval(intervalId)
       window.removeEventListener('resize', handleResize)
+      fogControllerRef.current = null
       if (graph) {
         graph._destructor?.()
       }
@@ -409,7 +421,13 @@ export function GraphCanvas({
     graph.backgroundColor(t.background)
     const scene = graph.scene()
     if (scene) {
-      scene.fog = new THREE.Fog(t.background, t.fogNear, t.fogFar)
+      const prevFog = scene.fog as THREE.Fog | null
+      const nextFog = new THREE.Fog(t.background, t.fogNear, t.fogFar)
+      if (prevFog) {
+        nextFog.near = prevFog.near
+        nextFog.far = prevFog.far
+      }
+      scene.fog = nextFog
       scene.traverse((obj) => {
         if ((obj as THREE.AmbientLight).isAmbientLight) (obj as THREE.AmbientLight).intensity = t.ambientIntensity
         if ((obj as THREE.DirectionalLight).isDirectionalLight) (obj as THREE.DirectionalLight).intensity = t.directionalIntensity
