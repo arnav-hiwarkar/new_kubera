@@ -201,3 +201,31 @@ async def test_area_enforcement_blocks_disabled_areas(client: AsyncClient):
     assert resp.status_code == 200, resp.text
     resp = await client.get(f"/api/v1/auditor/engagements/{eng_id}/entries", headers=aud)
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_workspace_actions_are_logged(client: AsyncClient):
+    await create_test_company(client, email="lg@a.com", password="pass1234")
+    co = _headers(await get_company_token(client, email="lg@a.com", password="pass1234"))
+    eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
+    aud = await _register_login(client, "logger@a.com")
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "logger@a.com"}, headers=co)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud)
+
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+                      json={"description": "Bank statements"}, headers=aud)
+    req_id = (await client.get(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", headers=aud)).json()[0]["id"]
+    await client.delete(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}", headers=aud)
+
+    q = await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries",
+                          data={"initial_message": "hello"}, headers=aud)
+    assert q.status_code == 200, q.text
+    query_id = q.json()["id"]
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries/{query_id}/messages",
+                      data={"text": "any update?"}, headers=aud)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries/{query_id}/close", headers=aud)
+
+    rows = await client.get("/api/v1/activity-log?limit=100", headers=co)
+    got = {r["action"] for r in rows.json()}
+    assert {"auditor.grant_accepted", "requirement.raised", "requirement.deleted",
+            "query.opened", "query.replied", "query.closed"} <= got

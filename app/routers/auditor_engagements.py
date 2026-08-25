@@ -27,6 +27,8 @@ from app.schemas.auditease import (
 from app.schemas.docvault import DocumentResponse
 from app.services import document_access as doc_access
 from app.services.auditor_access import area_enabled
+from app.models.activity_log import ActorType
+from app.services.activity import log_activity
 from app.encryption import decrypt_dek, decrypt_file_data
 from app.routers.docvault import get_company_kek
 
@@ -132,6 +134,10 @@ async def accept_engagement(
     if eng and eng.status == EngagementStatus.invited:
         eng.status = EngagementStatus.active
 
+    await log_activity(db, eng.company_id, current_auditor.id,
+                 "auditor.grant_accepted", "audit_engagement", engagement_id,
+                 actor_type=ActorType.auditor, engagement_id=engagement_id)
+
     await db.commit()
     return {"message": "Engagement accepted"}
 
@@ -193,7 +199,12 @@ async def create_entry(
             side=line.side,
             amount=line.amount
         ))
-        
+
+    await log_activity(db, eng.company_id, current_auditor.id,
+                 "entry.created", "audit_entry", db_entry.id,
+                 metadata_={"description": db_entry.description},
+                 actor_type=ActorType.auditor, engagement_id=engagement_id)
+
     await db.commit()
     await db.refresh(db_entry)
     
@@ -249,7 +260,11 @@ async def delete_auditor_entry(
         
     if entry.status != AuditEntryStatus.proposed:
         raise HTTPException(status_code=400, detail="Only proposed entries can be deleted")
-        
+
+    await log_activity(db, check.company_id, current_auditor.id,
+                 "entry.deleted", "audit_entry", entry.id,
+                 actor_type=ActorType.auditor, engagement_id=eng_id)
+
     await db.delete(entry)
     await db.commit()
     return None
@@ -262,7 +277,7 @@ async def create_requirement(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id, area="requirements")
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id, area="requirements")
     
     db_req = RequirementRequest(
         engagement_id=engagement_id,
@@ -271,6 +286,13 @@ async def create_requirement(
         description=req.description
     )
     db.add(db_req)
+    await db.flush()
+
+    await log_activity(db, eng.company_id, current_auditor.id,
+                 "requirement.raised", "requirement_request", db_req.id,
+                 metadata_={"title": db_req.title},
+                 actor_type=ActorType.auditor, engagement_id=engagement_id)
+
     await db.commit()
     await db.refresh(db_req)
     return db_req
@@ -307,7 +329,7 @@ async def delete_requirement(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id, area="requirements")
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id, area="requirements")
     
     result = await db.execute(select(RequirementRequest).where(and_(RequirementRequest.id == req_id, RequirementRequest.engagement_id == engagement_id, RequirementRequest.raised_by == current_auditor.id)))
     db_req = result.scalar_one_or_none()
@@ -315,7 +337,11 @@ async def delete_requirement(
         raise HTTPException(status_code=404, detail="Requirement request not found")
     if db_req.status != RequestStatus.open:
         raise HTTPException(status_code=400, detail="Cannot delete a fulfilled requirement request")
-        
+
+    await log_activity(db, eng.company_id, current_auditor.id,
+                 "requirement.deleted", "requirement_request", db_req.id,
+                 actor_type=ActorType.auditor, engagement_id=engagement_id)
+
     await db.delete(db_req)
     await db.commit()
     return {"message": "Requirement request deleted"}
@@ -390,6 +416,11 @@ async def create_query(
         attached_document_id=attached_document_id
     )
     db.add(msg)
+
+    await log_activity(db, eng.company_id, current_auditor.id,
+                 "query.opened", "query", db_query.id,
+                 actor_type=ActorType.auditor, engagement_id=engagement_id)
+
     await db.commit()
     
     res = await db.execute(select(Query).options(selectinload(Query.messages)).where(Query.id == db_query.id))
@@ -427,6 +458,11 @@ async def add_query_message(
         attached_document_id=attached_document_id
     )
     db.add(db_msg)
+
+    await log_activity(db, eng.company_id, current_auditor.id,
+                 "query.replied", "query", query_id,
+                 actor_type=ActorType.auditor, engagement_id=engagement_id)
+
     await db.commit()
     await db.refresh(db_msg)
     return db_msg
@@ -450,7 +486,7 @@ async def close_query(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id, area="queries")
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id, area="queries")
     q_res = await db.execute(select(Query).options(selectinload(Query.messages)).where(and_(Query.id == query_id, Query.engagement_id == engagement_id)))
     query = q_res.scalar_one_or_none()
     if not query:
@@ -459,6 +495,11 @@ async def close_query(
         raise HTTPException(status_code=403, detail="Only the opener can close this query")
         
     query.status = QueryStatus.closed
+
+    await log_activity(db, eng.company_id, current_auditor.id,
+                 "query.closed", "query", query_id,
+                 actor_type=ActorType.auditor, engagement_id=engagement_id)
+
     await db.commit()
     await db.refresh(query)
     return query
@@ -511,7 +552,12 @@ async def download_document(
     ciphertext = file_content[12:]
     
     plaintext = decrypt_file_data(ciphertext, nonce, raw_dek)
-    
+
+    await log_activity(db, doc_full.company_id, current_auditor.id,
+                 "document.downloaded", "document", document_id,
+                 metadata_={"filename": version.original_filename},
+                 actor_type=ActorType.auditor)
+
     return Response(
         content=plaintext, 
         media_type=version.mime_type,
