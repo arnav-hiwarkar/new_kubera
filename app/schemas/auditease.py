@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.auditease import (
-    EngagementStatus, GrantStatus, AuditEntryStatus, EntryLineSide, RequestStatus,
+    EngagementStatus, AuditEntryStatus, EntryLineSide, RequestStatus,
     QueryStatus, SenderType, BalanceNature, TBSignConvention,
 )
 
@@ -323,6 +323,16 @@ class AuditEngagementBase(BaseModel):
 class AuditEngagementCreate(AuditEngagementBase):
     pass
 
+class EngagementAuditorResponse(BaseModel):
+    auditor_id: Optional[uuid.UUID] = None  # None for pending unregistered invites
+    name: Optional[str] = None
+    email: str
+    # one of: invited | accepted | revoked | pending (not yet registered)
+    status: str
+    area_permissions: dict[str, bool]
+    invited_at: Optional[datetime] = None
+    accepted_at: Optional[datetime] = None
+
 class AuditEngagementResponse(AuditEngagementBase):
     id: uuid.UUID
     company_id: uuid.UUID
@@ -330,20 +340,27 @@ class AuditEngagementResponse(AuditEngagementBase):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
-    # Populated by the company-side router for the single invited/accepted auditor.
-    # grant status is one of: invited | accepted | revoked | pending (not yet registered)
-    auditor_email: Optional[str] = None
-    auditor_grant_status: Optional[str] = None
+    # Company view: everyone ever granted (including revoked). Populated by the
+    # router via attribute injection before serialization.
+    auditors: List[EngagementAuditorResponse] = []
+    # Auditor view only: the requesting auditor's own area map for this engagement.
+    area_permissions: Optional[dict[str, bool]] = None
     model_config = {"from_attributes": True}
 
-class AuditorEngagementGrantResponse(BaseModel):
+class AuditorInviteCreate(BaseModel):
+    email: str
+    area_permissions: Optional[dict] = None  # None = full access
+
+class AuditorPermissionsUpdate(BaseModel):
+    area_permissions: dict
+
+class ActivityEventResponse(BaseModel):
     id: uuid.UUID
-    auditor_id: uuid.UUID
-    engagement_id: uuid.UUID
-    status: GrantStatus
-    invited_at: datetime
-    accepted_at: Optional[datetime]
-    model_config = {"from_attributes": True}
+    action: str
+    entity_type: str
+    entity_id: uuid.UUID
+    metadata: Optional[dict] = None
+    created_at: datetime
 
 
 # --- Entries ---
@@ -390,6 +407,7 @@ class AuditEntryResponse(BaseModel):
     id: uuid.UUID
     engagement_id: uuid.UUID
     created_by: uuid.UUID
+    created_by_name: Optional[str] = None
     code: Optional[str]
     description: str
     status: AuditEntryStatus
@@ -410,6 +428,7 @@ class RequirementRequestResponse(BaseModel):
     id: uuid.UUID
     engagement_id: uuid.UUID
     raised_by: uuid.UUID
+    raised_by_name: Optional[str] = None
     title: str
     description: str
     status: RequestStatus
@@ -427,6 +446,7 @@ class QueryMessageResponse(BaseModel):
     query_id: uuid.UUID
     sender_type: SenderType
     sender_id: uuid.UUID
+    sender_name: Optional[str] = None
     text: str
     attached_document_id: Optional[uuid.UUID]
     created_at: datetime
