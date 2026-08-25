@@ -1738,3 +1738,65 @@ async def generate_report(
     
     return {"id": str(doc.id), "url": f"/api/v1/docvault/documents/{doc.id}/download"}
 
+
+@router.get("/engagements/{engagement_id}/auditors/{auditor_id}/activity-report")
+async def export_auditor_activity_report(
+    engagement_id: uuid.UUID,
+    auditor_id: uuid.UUID,
+    format: str = "xlsx",
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)] = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    from fastapi.responses import StreamingResponse
+
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+
+    aud_res = await db.execute(select(Auditor).where(Auditor.id == auditor_id))
+    auditor = aud_res.scalar_one_or_none()
+    if not auditor:
+        raise HTTPException(status_code=404, detail="Auditor not found")
+
+    ev_res = await db.execute(
+        select(ActivityLog)
+        .where(
+            and_(
+                ActivityLog.company_id == current_user.company_id,
+                ActivityLog.engagement_id == engagement_id,
+                ActivityLog.actor_type == ActorType.auditor,
+                ActivityLog.actor_id == auditor_id,
+            )
+        )
+        .order_by(ActivityLog.created_at.asc())
+    )
+    events = [
+        {"action": r.action, "entity_type": r.entity_type,
+         "metadata": r.metadata_, "created_at": r.created_at}
+        for r in ev_res.scalars().all()
+    ]
+
+    from app.services.reporting.activity_report import build_auditor_activity_report
+
+    company = await db.get(Company, current_user.company_id)
+    company_name = ((company.legal_name if company else None) or (company.name if company else None) or "Company")
+    doc = build_auditor_activity_report(
+        events, auditor.name, auditor.email, company_name, eng.period_label,
+    )
+
+    safe_period = eng.period_label.replace(" ", "_").replace("/", "-")
+    if format == "pdf":
+        pdf_bytes = render_pdf(doc)
+        filename = f"auditor_activity_{safe_period}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    stream = write_document(doc)
+    filename = f"auditor_activity_{safe_period}.xlsx"
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+

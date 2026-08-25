@@ -311,3 +311,24 @@ async def test_auditor_endpoints_cross_tenant_isolated(client: AsyncClient):
     assert (await client.get(base, headers=co2)).status_code == 404
     assert (await client.get(f"{base}/{_u.uuid4()}/activity", headers=co2)).status_code == 404
     assert (await client.get(f"{base}/{_u.uuid4()}/activity-report?format=xlsx", headers=co2)).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_activity_report_exports_xlsx_and_pdf(client: AsyncClient):
+    await create_test_company(client, email="rp@a.com", password="pass1234")
+    co = _headers(await get_company_token(client, email="rp@a.com", password="pass1234"))
+    eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
+    aud = await _register_login(client, "reporter@a.com")
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "reporter@a.com"}, headers=co)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud)
+    aud_id = (await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co)).json()[0]["auditor_id"]
+
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors/{aud_id}/activity-report?format=xlsx", headers=co)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/vnd.openxmlformats")
+    assert len(resp.content) > 200
+
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors/{aud_id}/activity-report?format=pdf", headers=co)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content[:5] == b"%PDF-"
