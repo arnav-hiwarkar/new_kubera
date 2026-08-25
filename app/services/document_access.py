@@ -12,7 +12,8 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.docvault import Bucket, Document, DocumentAccessOverride, PrincipalType
-from app.models.auditease import AuditEngagement, AuditorEngagementGrant, GrantStatus
+from app.models.auditease import AuditEngagement, AuditorEngagementGrant, GrantStatus, EngagementStatus
+from app.services.auditor_access import area_enabled
 
 AUDIT_BUCKET_NAME = "Audit Attachments"
 
@@ -104,17 +105,17 @@ async def auditor_can_access_document(
         return None
 
     grant = await db.execute(
-        select(AuditorEngagementGrant.id)
+        select(AuditorEngagementGrant.area_permissions)
         .join(AuditEngagement, AuditEngagement.id == AuditorEngagementGrant.engagement_id)
         .where(
             and_(
                 AuditorEngagementGrant.auditor_id == auditor_id,
                 AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted]),
                 AuditEngagement.company_id == doc.company_id,
+                AuditEngagement.status != EngagementStatus.closed,
             )
         )
-        .limit(1)
     )
-    if not grant.first():
+    if not any(area_enabled(p, "documents") for p in grant.scalars().all()):
         return None
     return doc

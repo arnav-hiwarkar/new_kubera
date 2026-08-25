@@ -26,7 +26,7 @@ from app.schemas.auditease import (
     MappingImportRequest, MappingImportResult, MappingImportIssue, AuditEngagementCreate,
     AuditEngagementResponse, AuditEntryResponse, RequirementRequestResponse,
     QueryResponse, QueryMessageResponse, QueryMessageCreate,
-    EngagementAuditorResponse, AuditorInviteCreate,
+    EngagementAuditorResponse, AuditorInviteCreate, AuditorPermissionsUpdate,
     TBColumnMap, TBInspectResponse, TBImportResult, TBDiagnostics, TBRowIssue,
     TBParsedRow, TBPreviewResponse, TBReimportImpact, TrialBalanceViewResponse,
     SetSignConventionRequest,
@@ -1081,6 +1081,51 @@ async def list_engagement_auditors(
 ):
     eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
     return await _list_auditors(db, eng.id)
+
+
+@router.patch("/engagements/{engagement_id}/auditors/{auditor_id}", response_model=EngagementAuditorResponse)
+async def update_auditor_access(
+    engagement_id: uuid.UUID,
+    auditor_id: uuid.UUID,
+    body: AuditorPermissionsUpdate,
+    current_user: Annotated[CompanyUser, Depends(require_manager_or_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    try:
+        perms = normalize_area_permissions(body.area_permissions)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    g_res = await db.execute(
+        select(AuditorEngagementGrant).where(
+            and_(
+                AuditorEngagementGrant.auditor_id == auditor_id,
+                AuditorEngagementGrant.engagement_id == engagement_id,
+                AuditorEngagementGrant.status != GrantStatus.revoked,
+            )
+        )
+    )
+    grant = g_res.scalar_one_or_none()
+    if not grant:
+        raise HTTPException(status_code=404, detail="No active grant for this auditor on this engagement")
+
+    grant.area_permissions = perms
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "auditor.permissions_updated", "auditor_engagement_grant", grant.id,
+        metadata_={"area_permissions": perms},
+        actor_type=ActorType.company_user, engagement_id=eng.id,
+    )
+    await db.commit()
+
+    aud_res = await db.execute(select(Auditor).where(Auditor.id == auditor_id))
+    auditor = aud_res.scalar_one()
+    return {
+        "auditor_id": auditor.id, "name": auditor.name, "email": auditor.email,
+        "status": grant.status.value, "area_permissions": grant.area_permissions,
+        "invited_at": grant.invited_at, "accepted_at": grant.accepted_at,
+    }
 
 
 @router.delete("/engagements/{engagement_id}/auditors/{auditor_id}", status_code=status.HTTP_204_NO_CONTENT)

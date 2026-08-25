@@ -136,3 +136,68 @@ async def test_invite_on_closed_engagement_409(client: AsyncClient):
     await client.patch(f"/api/v1/auditease/engagements/{eng_id}/close", headers=co)
     resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "x@a.com"}, headers=co)
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_area_enforcement_blocks_disabled_areas(client: AsyncClient):
+    import csv, io
+
+    await create_test_company(client, email="ae@a.com", password="pass1234")
+    co = _headers(await get_company_token(client, email="ae@a.com", password="pass1234"))
+    eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
+
+    # Import a minimal TB so trial-balance endpoints have data
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Ledger Name", "Closing"])
+    w.writerow(["Sales", "100000"])
+    await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/trial-balance/import",
+        data={"column_map": '{"ledger_name": "Ledger Name", "closing_balance": "Closing"}'},
+        files={"file": ("tb.csv", buf.getvalue(), "text/csv")},
+        headers=co,
+    )
+
+    aud = await _register_login(client, "restricted@a.com")
+    await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+        json={"email": "restricted@a.com", "area_permissions": {}},
+        headers=co,
+    )
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud)
+
+    # Every gated surface 403s with the clear message
+    checks = [
+        ("GET", f"/api/v1/auditor/engagements/{eng_id}/trial-balance", None),
+        ("GET", f"/api/v1/auditor/engagements/{eng_id}/entries", None),
+        ("POST", f"/api/v1/auditor/engagements/{eng_id}/entries",
+         {"code": "ADJ1", "description": "d", "lines": []}),
+        ("GET", f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", None),
+        ("POST", f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+         {"description": "need docs"}),
+        ("GET", f"/api/v1/auditor/engagements/{eng_id}/queries", None),
+    ]
+    for method, url, body in checks:
+        if method == "GET":
+            resp = await client.get(url, headers=aud)
+        else:
+            resp = await client.post(url, json=body, headers=aud)
+        assert resp.status_code == 403, f"{method} {url} -> {resp.status_code}"
+        assert "removed by the company" in resp.json()["detail"]
+
+    # Accept + listing still work (no area gate)
+    resp = await client.get("/api/v1/auditor/engagements", headers=aud)
+    assert resp.status_code == 200 and len(resp.json()) == 1
+    item = resp.json()[0]
+    assert item["area_permissions"]["entries"] is False
+
+    # Company widens access -> entries endpoint opens up
+    aud_id = (await client.get(f"/api/v1/auditease/engagements/{eng_id}", headers=co)).json()["auditors"][0]["auditor_id"]
+    resp = await client.patch(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/{aud_id}",
+        json={"area_permissions": {"entries": True}},
+        headers=co,
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.get(f"/api/v1/auditor/engagements/{eng_id}/entries", headers=aud)
+    assert resp.status_code == 200

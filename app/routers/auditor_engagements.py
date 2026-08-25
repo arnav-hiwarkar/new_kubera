@@ -15,7 +15,8 @@ from app.models.docvault import Document, DocumentVersion
 from app.models.auditease import (
     AuditEngagement, AuditorEngagementGrant, AuditEntry, AuditEntryLine,
     RequirementRequest, Query, QueryMessage, TrialBalanceAccount,
-    EngagementStatus, GrantStatus, AuditEntryStatus, RequestStatus, QueryStatus, SenderType
+    EngagementStatus, GrantStatus, AuditEntryStatus, RequestStatus, QueryStatus, SenderType,
+    AREA_LABELS
 )
 from app.schemas.auditease import (
     AuditEngagementResponse, AuditEntryCreate, AuditEntryResponse,
@@ -25,15 +26,21 @@ from app.schemas.auditease import (
 )
 from app.schemas.docvault import DocumentResponse
 from app.services import document_access as doc_access
+from app.services.auditor_access import area_enabled
 from app.encryption import decrypt_dek, decrypt_file_data
 from app.routers.docvault import get_company_kek
 
 router = APIRouter(prefix="/api/v1/auditor", tags=["auditease-auditor"])
 
 
-async def check_auditor_access(db: AsyncSession, auditor_id: uuid.UUID, engagement_id: uuid.UUID) -> AuditEngagement:
-    result = await db.execute(
-        select(AuditEngagement)
+async def check_auditor_access(
+    db: AsyncSession,
+    auditor_id: uuid.UUID,
+    engagement_id: uuid.UUID,
+    area: str | None = None,
+) -> AuditEngagement:
+    query = (
+        select(AuditEngagement, AuditorEngagementGrant.area_permissions)
         .join(AuditorEngagementGrant, AuditEngagement.id == AuditorEngagementGrant.engagement_id)
         .where(
             and_(
@@ -44,9 +51,15 @@ async def check_auditor_access(db: AsyncSession, auditor_id: uuid.UUID, engageme
             )
         )
     )
-    eng = result.scalar_one_or_none()
-    if not eng:
+    row = (await db.execute(query)).first()
+    if not row:
         raise HTTPException(status_code=403, detail="No access to this engagement")
+    eng, perms = row
+    if area is not None and not area_enabled(perms, area):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your access to {AREA_LABELS.get(area, area)} was removed by the company.",
+        )
     return eng
 
 
@@ -56,7 +69,7 @@ async def list_engagements(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     result = await db.execute(
-        select(AuditEngagement, AuditorEngagementGrant.status)
+        select(AuditEngagement, AuditorEngagementGrant.status, AuditorEngagementGrant.area_permissions)
         .join(AuditorEngagementGrant, AuditEngagement.id == AuditorEngagementGrant.engagement_id)
         .where(
             and_(
@@ -67,16 +80,16 @@ async def list_engagements(
         )
         .order_by(AuditEngagement.created_at.desc())
     )
-    
+
     rows = result.all()
     out = []
-    for eng, grant_status in rows:
+    for eng, grant_status, perms in rows:
         # If the grant is accepted, the engagement is active from the auditor's perspective.
         # This prevents Pydantic validation errors since 'accepted' is not a valid EngagementStatus.
         display_status = grant_status
         if grant_status == GrantStatus.accepted:
             display_status = EngagementStatus.active
-            
+
         out.append({
             "id": eng.id,
             "company_id": eng.company_id,
@@ -84,7 +97,8 @@ async def list_engagements(
             "status": display_status,
             "created_by": eng.created_by,
             "created_at": eng.created_at,
-            "updated_at": eng.updated_at
+            "updated_at": eng.updated_at,
+            "area_permissions": perms or {},
         })
     return out
 
@@ -132,7 +146,7 @@ async def get_trial_balance(
 
     Read-only for the auditor: correcting a sign convention is a company action.
     """
-    eng = await check_auditor_access(db, current_auditor.id, engagement_id)
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id, area="trial_balance")
     from app.services import trial_balance_query as tbq
 
     figures = await tbq.load_engagement_figures(db, eng.company_id, engagement_id)
@@ -155,7 +169,7 @@ async def create_entry(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    eng = await check_auditor_access(db, current_auditor.id, engagement_id)
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id, area="entries")
     
     # Check debits == credits
     total_debit = sum(l.amount for l in entry.lines if l.side == "debit")
@@ -198,7 +212,7 @@ async def list_auditor_entries(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    await check_auditor_access(db, current_auditor.id, engagement_id, area="entries")
     result = await db.execute(
         select(AuditEntry)
         .options(selectinload(AuditEntry.lines).selectinload(AuditEntryLine.ledger))
@@ -214,16 +228,20 @@ async def delete_auditor_entry(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
+    eng_res = await db.execute(select(AuditEntry.engagement_id).where(AuditEntry.id == entry_id))
+    eng_id = eng_res.scalar_one_or_none()
+    check = None
+    if eng_id:
+        try:
+            check = await check_auditor_access(db, current_auditor.id, eng_id, area="entries")
+        except HTTPException as e:
+            if e.status_code != 403:
+                raise
+    if check is None:
+        raise HTTPException(status_code=404, detail="Entry not found or access denied")
+
     result = await db.execute(
-        select(AuditEntry)
-        .join(AuditorEngagementGrant, AuditorEngagementGrant.engagement_id == AuditEntry.engagement_id)
-        .where(
-            and_(
-                AuditEntry.id == entry_id,
-                AuditorEngagementGrant.auditor_id == current_auditor.id,
-                AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted])
-            )
-        )
+        select(AuditEntry).where(and_(AuditEntry.id == entry_id, AuditEntry.engagement_id == eng_id))
     )
     entry = result.scalar_one_or_none()
     if not entry:
@@ -244,7 +262,7 @@ async def create_requirement(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    await check_auditor_access(db, current_auditor.id, engagement_id, area="requirements")
     
     db_req = RequirementRequest(
         engagement_id=engagement_id,
@@ -266,7 +284,7 @@ async def update_requirement(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    await check_auditor_access(db, current_auditor.id, engagement_id, area="requirements")
     
     result = await db.execute(select(RequirementRequest).where(and_(RequirementRequest.id == req_id, RequirementRequest.engagement_id == engagement_id, RequirementRequest.raised_by == current_auditor.id)))
     db_req = result.scalar_one_or_none()
@@ -289,7 +307,7 @@ async def delete_requirement(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    await check_auditor_access(db, current_auditor.id, engagement_id, area="requirements")
     
     result = await db.execute(select(RequirementRequest).where(and_(RequirementRequest.id == req_id, RequirementRequest.engagement_id == engagement_id, RequirementRequest.raised_by == current_auditor.id)))
     db_req = result.scalar_one_or_none()
@@ -309,7 +327,7 @@ async def list_queries(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    await check_auditor_access(db, current_auditor.id, engagement_id, area="queries")
     
     result = await db.execute(
         select(Query)
@@ -327,7 +345,7 @@ async def get_query(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    await check_auditor_access(db, current_auditor.id, engagement_id, area="queries")
     
     result = await db.execute(
         select(Query)
@@ -348,7 +366,7 @@ async def create_query(
     initial_message: Annotated[str, Form(...)],
     file: Annotated[Optional[UploadFile], File()] = None,
 ):
-    eng = await check_auditor_access(db, current_auditor.id, engagement_id)
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id, area="queries")
     
     db_query = Query(
         engagement_id=engagement_id,
@@ -387,7 +405,7 @@ async def add_query_message(
     text: Annotated[str, Form(...)],
     file: Annotated[Optional[UploadFile], File()] = None,
 ):
-    eng = await check_auditor_access(db, current_auditor.id, engagement_id)
+    eng = await check_auditor_access(db, current_auditor.id, engagement_id, area="queries")
     
     q_res = await db.execute(select(Query).where(and_(Query.id == query_id, Query.engagement_id == engagement_id)))
     query = q_res.scalar_one_or_none()
@@ -420,7 +438,7 @@ async def list_requirements(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    await check_auditor_access(db, current_auditor.id, engagement_id, area="requirements")
     reqs = await db.execute(select(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id))
     return reqs.scalars().all()
 
@@ -432,7 +450,7 @@ async def close_query(
     current_auditor: Annotated[Auditor, Depends(get_current_auditor)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    await check_auditor_access(db, current_auditor.id, engagement_id)
+    await check_auditor_access(db, current_auditor.id, engagement_id, area="queries")
     q_res = await db.execute(select(Query).options(selectinload(Query.messages)).where(and_(Query.id == query_id, Query.engagement_id == engagement_id)))
     query = q_res.scalar_one_or_none()
     if not query:
