@@ -37,6 +37,9 @@ class ActivityLog(Base):
     entity_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False
     )
+    engagement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     metadata_: Mapped[dict | None] = mapped_column(
         "metadata", JSONB, nullable=True
     )

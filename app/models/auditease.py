@@ -2,7 +2,7 @@ import uuid
 import enum
 from decimal import Decimal
 from datetime import datetime, timezone
-from sqlalchemy import String, ForeignKey, Boolean, Enum as SAEnum, Integer, Numeric, Text, DateTime
+from sqlalchemy import String, ForeignKey, Boolean, Enum as SAEnum, Integer, Numeric, Text, DateTime, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -64,6 +64,28 @@ class QueryStatus(str, enum.Enum):
 class SenderType(str, enum.Enum):
     company_user = "company_user"
     auditor = "auditor"
+
+
+class AuditorAccessArea(str, enum.Enum):
+    """Workspace areas a company can toggle per auditor on a grant."""
+    trial_balance = "trial_balance"
+    entries = "entries"
+    requirements = "requirements"
+    queries = "queries"
+    documents = "documents"
+
+
+AUDITOR_AREAS: tuple[str, ...] = tuple(a.value for a in AuditorAccessArea)
+
+FULL_AREA_PERMISSIONS: dict[str, bool] = {a: True for a in AUDITOR_AREAS}
+
+AREA_LABELS: dict[str, str] = {
+    "trial_balance": "Trial Balance",
+    "entries": "Entries",
+    "requirements": "Requirements",
+    "queries": "Queries",
+    "documents": "Documents",
+}
 
 
 # --- Trial Balance & Ledger ---
@@ -155,6 +177,9 @@ class AuditEngagement(Base, TimestampMixin, TenantScopedMixin):
 
 class AuditorEngagementGrant(Base):
     __tablename__ = "auditor_engagement_grants"
+    __table_args__ = (
+        UniqueConstraint("auditor_id", "engagement_id", name="uq_grant_auditor_engagement"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     auditor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auditors.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -162,6 +187,15 @@ class AuditorEngagementGrant(Base):
     status: Mapped[GrantStatus] = mapped_column(SAEnum(GrantStatus, name="grant_status"), default=GrantStatus.invited, nullable=False)
     invited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Which workspace areas this auditor may use. Missing/false = denied. The
+    # server_default backfills pre-existing single-auditor rows to full access,
+    # preserving today's behavior exactly.
+    area_permissions: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text('\'{"trial_balance": true, "entries": true, "requirements": true, "queries": true, "documents": true}\'::jsonb'),
+        default=lambda: dict(FULL_AREA_PERMISSIONS),
+    )
 
 
 class PendingAuditorInvite(Base):

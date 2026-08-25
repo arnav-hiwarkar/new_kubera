@@ -20,6 +20,7 @@ async def log_activity(
     entity_id: uuid.UUID,
     metadata_: Optional[dict] = None,
     actor_type: ActorType = ActorType.company_user,
+    engagement_id: Optional[uuid.UUID] = None,
 ) -> None:
     """Queue an activity row. Does not commit — the caller's transaction owns it,
     so a failed operation cannot leave an orphan audit entry."""
@@ -32,5 +33,6 @@ async def log_activity(
             entity_type=entity_type,
             entity_id=entity_id,
             metadata_=metadata_,
+            engagement_id=engagement_id,
         )
     )
