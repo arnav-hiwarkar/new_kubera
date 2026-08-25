@@ -229,3 +229,85 @@ async def test_workspace_actions_are_logged(client: AsyncClient):
     got = {r["action"] for r in rows.json()}
     assert {"auditor.grant_accepted", "requirement.raised", "requirement.deleted",
             "query.opened", "query.replied", "query.closed"} <= got
+
+
+@pytest.mark.asyncio
+async def test_per_auditor_activity_feed_filters_and_paginates(client: AsyncClient):
+    await create_test_company(client, email="pf@a.com", password="pass1234")
+    co = _headers(await get_company_token(client, email="pf@a.com", password="pass1234"))
+    eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
+    aud_a = await _register_login(client, "alfa@a.com")
+    await _register_login(client, "bravo@a.com")
+    for email, h in (("alfa@a.com", aud_a), ("bravo@a.com", await _register_login(client, "bravo@a.com"))):
+        await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": email}, headers=co)
+        await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=h)
+
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+                      json={"description": "alfa doc"}, headers=aud_a)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+                      json={"description": "bravo doc"},
+                      headers=await _register_login(client, "bravo@a.com"))
+
+    auds = (await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co)).json()
+    alfa = next(a for a in auds if a["email"] == "alfa@a.com")
+
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors/{alfa['auditor_id']}/activity", headers=co)
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()
+    assert len(rows) >= 2  # accepted + raised
+    assert all(r["action"] in ("auditor.grant_accepted", "requirement.raised") for r in rows)
+    assert rows[0]["created_at"] >= rows[-1]["created_at"]
+    # Pagination shape
+    resp = await client.get(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/{alfa['auditor_id']}/activity?limit=1&offset=1",
+        headers=co,
+    )
+    assert len(resp.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_close_revokes_everyone_and_logs_event(client: AsyncClient):
+    await create_test_company(client, email="cz@a.com", password="pass1234")
+    co = _headers(await get_company_token(client, email="cz@a.com", password="pass1234"))
+    eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
+    aud = await _register_login(client, "closethis@a.com")
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "closethis@a.com"}, headers=co)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud)
+
+    resp = await client.patch(f"/api/v1/auditease/engagements/{eng_id}/close", headers=co)
+    assert resp.status_code == 200
+    auds = resp.json()["auditors"]
+    assert len(auds) == 1 and auds[0]["status"] == "revoked"
+
+    rows = (await client.get("/api/v1/activity-log?limit=100", headers=co)).json()
+    assert any(r["action"] == "engagement.closed" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_patch_unknown_auditor_404(client: AsyncClient):
+    import uuid as _u
+    await create_test_company(client, email="nf@a.com", password="pass1234")
+    co = _headers(await get_company_token(client, email="nf@a.com", password="pass1234"))
+    eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
+    resp = await client.patch(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/{_u.uuid4()}",
+        json={"area_permissions": {"entries": True}},
+        headers=co,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_auditor_endpoints_cross_tenant_isolated(client: AsyncClient):
+    import uuid as _u
+
+    await create_test_company(client, email="ten1@a.com", password="pass1234")
+    await create_test_company(client, email="ten2@a.com", password="pass1234")
+    co2 = _headers(await get_company_token(client, email="ten2@a.com", password="pass1234"))
+    co1 = _headers(await get_company_token(client, email="ten1@a.com", password="pass1234"))
+    eng1 = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co1)).json()["id"]
+
+    base = f"/api/v1/auditease/engagements/{eng1}/auditors"
+    assert (await client.get(base, headers=co2)).status_code == 404
+    assert (await client.get(f"{base}/{_u.uuid4()}/activity", headers=co2)).status_code == 404
+    assert (await client.get(f"{base}/{_u.uuid4()}/activity-report?format=xlsx", headers=co2)).status_code == 404

@@ -12,7 +12,7 @@ from app.database import get_db
 from app.auth import get_current_company_user, require_manager_or_admin
 from app.models.company import CompanyUser
 from app.models.auditor import Auditor
-from app.models.activity_log import ActorType
+from app.models.activity_log import ActorType, ActivityLog
 from app.models.auditease import (
     TrialBalanceAccount, LedgerGroup, AuditEngagement, AuditorEngagementGrant,
     PendingAuditorInvite, AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage,
@@ -27,6 +27,7 @@ from app.schemas.auditease import (
     AuditEngagementResponse, AuditEntryResponse, RequirementRequestResponse,
     QueryResponse, QueryMessageResponse, QueryMessageCreate,
     EngagementAuditorResponse, AuditorInviteCreate, AuditorPermissionsUpdate,
+    ActivityEventResponse,
     TBColumnMap, TBInspectResponse, TBImportResult, TBDiagnostics, TBRowIssue,
     TBParsedRow, TBPreviewResponse, TBReimportImpact, TrialBalanceViewResponse,
     SetSignConventionRequest,
@@ -968,6 +969,19 @@ async def close_engagement(
         delete(PendingAuditorInvite).where(PendingAuditorInvite.engagement_id == engagement_id)
     )
 
+    revoked_ids_res = await db.execute(
+        select(AuditorEngagementGrant.auditor_id).where(
+            and_(AuditorEngagementGrant.engagement_id == engagement_id,
+                 AuditorEngagementGrant.status == GrantStatus.revoked)
+        )
+    )
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "engagement.closed", "audit_engagement", eng.id,
+        metadata_={"revoked_auditor_ids": [str(a) for a in revoked_ids_res.scalars().all()]},
+        actor_type=ActorType.company_user, engagement_id=eng.id,
+    )
+
     await db.commit()
     await db.refresh(eng)
     return await _hydrate_auditors(db, eng)
@@ -1157,6 +1171,41 @@ async def remove_engagement_auditor(
     )
     await db.commit()
     return None
+
+
+@router.get("/engagements/{engagement_id}/auditors/{auditor_id}/activity", response_model=List[ActivityEventResponse])
+async def get_auditor_activity(
+    engagement_id: uuid.UUID,
+    auditor_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 50,
+    offset: int = 0,
+):
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+    res = await db.execute(
+        select(ActivityLog)
+        .where(
+            and_(
+                ActivityLog.company_id == current_user.company_id,
+                ActivityLog.engagement_id == engagement_id,
+                ActivityLog.actor_type == ActorType.auditor,
+                ActivityLog.actor_id == auditor_id,
+            )
+        )
+        .order_by(ActivityLog.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return [
+        {
+            "id": r.id, "action": r.action, "entity_type": r.entity_type,
+            "entity_id": r.entity_id, "metadata": r.metadata_, "created_at": r.created_at,
+        }
+        for r in res.scalars().all()
+    ]
 
 
 # --- Entries (Approval) ---
