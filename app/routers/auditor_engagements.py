@@ -26,7 +26,7 @@ from app.schemas.auditease import (
 )
 from app.schemas.docvault import DocumentResponse
 from app.services import document_access as doc_access
-from app.services.auditor_access import area_enabled
+from app.services.auditor_access import area_enabled, attach_actor_names, attach_sender_names
 from app.models.activity_log import ActorType
 from app.services.activity import log_activity
 from app.encryption import decrypt_dek, decrypt_file_data
@@ -214,7 +214,9 @@ async def create_entry(
         .options(selectinload(AuditEntry.lines).selectinload(AuditEntryLine.ledger))
         .where(AuditEntry.id == db_entry.id)
     )
-    return res.scalar_one()
+    entry = res.scalar_one()
+    await attach_actor_names(db, [entry], "created_by", "created_by_name")
+    return entry
 
 
 @router.get("/engagements/{engagement_id}/entries", response_model=List[AuditEntryResponse])
@@ -230,7 +232,9 @@ async def list_auditor_entries(
         .where(AuditEntry.engagement_id == engagement_id)
         .order_by(AuditEntry.created_at.desc())
     )
-    return result.scalars().all()
+    entries = result.scalars().all()
+    await attach_actor_names(db, entries, "created_by", "created_by_name")
+    return entries
 
 
 @router.delete("/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -295,6 +299,7 @@ async def create_requirement(
 
     await db.commit()
     await db.refresh(db_req)
+    await attach_actor_names(db, [db_req], "raised_by", "raised_by_name")
     return db_req
 
 
@@ -319,6 +324,7 @@ async def update_requirement(
     db_req.description = req.description
     await db.commit()
     await db.refresh(db_req)
+    await attach_actor_names(db, [db_req], "raised_by", "raised_by_name")
     return db_req
 
 
@@ -361,7 +367,10 @@ async def list_queries(
         .where(Query.engagement_id == engagement_id)
         .order_by(Query.updated_at.desc())
     )
-    return result.scalars().all()
+    query_list = result.scalars().all()
+    for q in query_list:
+        await attach_sender_names(db, q.messages)
+    return query_list
 
 
 @router.get("/engagements/{engagement_id}/queries/{query_id}", response_model=QueryResponse)
@@ -381,6 +390,7 @@ async def get_query(
     db_query = result.scalar_one_or_none()
     if not db_query:
         raise HTTPException(status_code=404, detail="Query not found")
+    await attach_sender_names(db, db_query.messages)
     return db_query
 
 
@@ -424,7 +434,9 @@ async def create_query(
     await db.commit()
     
     res = await db.execute(select(Query).options(selectinload(Query.messages)).where(Query.id == db_query.id))
-    return res.scalar_one()
+    query = res.scalar_one()
+    await attach_sender_names(db, query.messages)
+    return query
 
 
 @router.post("/engagements/{engagement_id}/queries/{query_id}/messages", response_model=QueryMessageResponse)
@@ -465,6 +477,7 @@ async def add_query_message(
 
     await db.commit()
     await db.refresh(db_msg)
+    await attach_sender_names(db, [db_msg])
     return db_msg
 
 
@@ -476,7 +489,9 @@ async def list_requirements(
 ):
     await check_auditor_access(db, current_auditor.id, engagement_id, area="requirements")
     reqs = await db.execute(select(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id))
-    return reqs.scalars().all()
+    req_list = reqs.scalars().all()
+    await attach_actor_names(db, req_list, "raised_by", "raised_by_name")
+    return req_list
 
 
 @router.post("/engagements/{engagement_id}/queries/{query_id}/close", response_model=QueryResponse)
@@ -502,6 +517,7 @@ async def close_query(
 
     await db.commit()
     await db.refresh(query)
+    await attach_sender_names(db, query.messages)
     return query
 
 

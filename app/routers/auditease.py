@@ -35,7 +35,7 @@ from app.schemas.auditease import (
     ReportEntriesBlock, ReportPreviewResponse,
 )
 from app.services.activity import log_activity
-from app.services.auditor_access import normalize_area_permissions
+from app.services.auditor_access import attach_actor_names, attach_sender_names, normalize_area_permissions
 from app.config import get_settings
 from app.services import import_service
 from app.services import ledger_groups as lg
@@ -1243,7 +1243,9 @@ async def approve_reject_entry(
         .options(selectinload(AuditEntry.lines).selectinload(AuditEntryLine.ledger))
         .where(AuditEntry.id == entry_id)
     )
-    return result.scalar_one()
+    entry = result.scalar_one()
+    await attach_actor_names(db, [entry], "created_by", "created_by_name")
+    return entry
 
 
 @router.get("/engagements/{engagement_id}/entries", response_model=List[AuditEntryResponse])
@@ -1259,7 +1261,9 @@ async def list_entries(
         .where(AuditEntry.engagement_id == engagement_id)
         .order_by(AuditEntry.created_at.desc())
     )
-    return result.scalars().all()
+    entries = result.scalars().all()
+    await attach_actor_names(db, entries, "created_by", "created_by_name")
+    return entries
 
 
 # --- Requirements ---
@@ -1276,7 +1280,9 @@ async def list_requirements(
         raise HTTPException(status_code=404, detail="Engagement not found")
         
     reqs = await db.execute(select(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id))
-    return reqs.scalars().all()
+    req_list = reqs.scalars().all()
+    await attach_actor_names(db, req_list, "raised_by", "raised_by_name")
+    return req_list
 
 
 class RequirementFulfill(BaseModel):
@@ -1336,7 +1342,10 @@ async def list_queries(
         raise HTTPException(status_code=404, detail="Engagement not found")
         
     queries = await db.execute(select(Query).options(selectinload(Query.messages)).where(Query.engagement_id == engagement_id))
-    return queries.scalars().all()
+    query_list = queries.scalars().all()
+    for q in query_list:
+        await attach_sender_names(db, q.messages)
+    return query_list
 
 
 @router.post("/engagements/{engagement_id}/queries/{query_id}/messages", response_model=QueryMessageResponse)

@@ -332,3 +332,25 @@ async def test_activity_report_exports_xlsx_and_pdf(client: AsyncClient):
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
     assert resp.content[:5] == b"%PDF-"
+
+
+@pytest.mark.asyncio
+async def test_creator_names_in_shared_workspace(client: AsyncClient):
+    await create_test_company(client, email="nm@a.com", password="pass1234")
+    co = _headers(await get_company_token(client, email="nm@a.com", password="pass1234"))
+    eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
+    aud = await _register_login(client, "named@a.com")
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "named@a.com"}, headers=co)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud)
+
+    req = (await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+                             json={"description": "ledgers"}, headers=aud)).json()
+    assert req["raised_by_name"] == "Named"
+
+    # Company side sees the same attribution
+    reqs = (await client.get(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests", headers=co)).json()
+    assert reqs[0]["raised_by_name"] == "Named"
+
+    q = (await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries",
+                           data={"initial_message": "hi"}, headers=aud)).json()
+    assert q["messages"][0]["sender_name"] == "Named"
