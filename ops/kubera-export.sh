@@ -58,12 +58,18 @@ if [ "$NO_MAINTENANCE" != "1" ]; then
   dr_run python3 maintenance.py on
 fi
 
-if [ "$DRY_RUN" != "1" ]; then
-  API_CID="$(docker compose ps -q api)"
-  [ -n "$API_CID" ] || die "api container not found — is the stack up?"
-else
-  API_CID="DRYRUN-API-CID"
+# Locate the api container (its volumes are read via --volumes-from).
+# Accepts a STOPPED leftover container too (-a): e.g. after a prior aborted
+# migration — we are about to stop it anyway. If it doesn't exist at all,
+# bring it up once (first-boot case), then re-check.
+API_CID="$(docker compose ps -aq api | head -n1)"
+if [ -z "$API_CID" ]; then
+  log "api container not found — starting it once to attach vault volume..."
+  dr_run docker compose up -d api
+  sleep 3
+  API_CID="$(docker compose ps -aq api | head -n1)"
 fi
+[ -n "$API_CID" ] || die "no api container even after 'up -d api' — is docker-compose.yml intact?"
 dr_run docker compose stop api worker beat
 
 # --- Database dump (custom format, compressed) ---
