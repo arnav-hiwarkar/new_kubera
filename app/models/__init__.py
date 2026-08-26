@@ -15,3 +15,5 @@ from app.models.custom_fields import CustomFieldDefinition
 from app.models.assets import Asset
 from app.models.sales import SalesRecord
 from app.models.kra import KRAItem
+from app.models.lead import Lead, LeadStatus
+
