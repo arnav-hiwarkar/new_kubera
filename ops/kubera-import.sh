@@ -79,9 +79,8 @@ install_setup() {
 
 restore_vault() {
   log "restoring vault files..."
-  dr_run docker compose up -d postgres
-  dr_run docker compose run --rm -T --entrypoint sh api \
-    -c "mkdir -p /data/vault && tar xzf - -C /data/vault"
+  dr_run bash -c "docker compose up -d postgres"
+  dr_run bash -c "cat '$BUNDLE/vault.tar.gz' | docker compose run --rm -T --entrypoint sh api -c 'mkdir -p /data/vault && tar xzf - -C /data/vault'"
 }
 
 restore_db() {
