@@ -138,6 +138,7 @@ services:
       - "443:443"
     environment:
       - DOMAIN=${DOMAIN}
+      - LANDING_DOMAIN=${LANDING_DOMAIN:-kuberacompliance.com}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data

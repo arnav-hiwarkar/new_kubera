@@ -1,4 +1,7 @@
-{$DOMAIN:localhost}, {$LANDING_DOMAIN:kuberacompliance.com} {
+{$DOMAIN} {
     reverse_proxy gateway:80
 }
 
+{$LANDING_DOMAIN} {
+    reverse_proxy gateway:80
+}
