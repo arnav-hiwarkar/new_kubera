@@ -1,4 +1,5 @@
 import { Shield, ArrowUpRight, Lock } from 'lucide-react'
+import { getAppUrl } from '@/lib/domain'
 
 interface LandingHeaderProps {
   onRequestAccess: () => void
@@ -57,7 +58,7 @@ export function LandingHeader({ onRequestAccess }: LandingHeaderProps) {
         {/* CTA Buttons */}
         <div className="flex items-center gap-3">
           <a
-            href="/login"
+            href={getAppUrl('/login')}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:border-slate-300 hover:bg-slate-50"
           >
             <Lock className="h-3.5 w-3.5 text-slate-400" />

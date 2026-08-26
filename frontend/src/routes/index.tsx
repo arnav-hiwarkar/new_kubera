@@ -1,8 +1,9 @@
-import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom'
+import { createBrowserRouter, Navigate, Outlet, type RouteObject } from 'react-router-dom'
 import { companyRoutes } from './company.routes'
 import { auditorRoutes } from './auditor.routes'
 import { LandingPage } from '@/pages/landing/LandingPage'
 import { OwnerLeadsPage } from '@/pages/owner/OwnerLeadsPage'
+import { isMarketingDomain, getAppUrl } from '@/lib/domain'
 
 /**
  * Dispatches root path based on hostname:
@@ -19,14 +20,33 @@ export function RootDispatcher() {
   return <LandingPage />
 }
 
+/**
+ * Domain isolation guard:
+ * If a visitor on the marketing domain (kuberacompliance.com) attempts to access
+ * internal app routes (/app/*, /login, /auditor/*), redirect them immediately to app.kuberacompliance.com.
+ */
+export function DomainIsolatedApp() {
+  if (typeof window !== 'undefined' && isMarketingDomain()) {
+    const targetUrl = getAppUrl(window.location.pathname + window.location.search)
+    window.location.replace(targetUrl)
+    return null
+  }
+  return <Outlet />
+}
+
 /** The full route table. Exported so tests can mount it with a memory router. */
 export const appRoutes: RouteObject[] = [
   { path: '/', element: <RootDispatcher /> },
   { path: '/landing', element: <LandingPage /> },
   { path: '/internal/owner-vault', element: <OwnerLeadsPage /> },
-  companyRoutes,
-  auditorRoutes,
-  { path: '*', element: <Navigate to="/app" replace /> },
+  {
+    element: <DomainIsolatedApp />,
+    children: [
+      companyRoutes,
+      auditorRoutes,
+    ],
+  },
+  { path: '*', element: <Navigate to="/" replace /> },
 ]
 
 /**
