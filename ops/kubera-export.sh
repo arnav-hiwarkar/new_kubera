@@ -25,6 +25,19 @@ done
 require_repo
 load_env "$PWD/.env"
 
+# Source-safety net: on ANY failed exit (except dry-run), tell the operator how
+# to bring the OLD server back. The old data itself is never modified or deleted.
+on_exit_hint() {
+  rc=$?
+  if [ "$rc" != "0" ] && [ "${DRY_RUN:-0}" != "1" ]; then
+    warn "export FAILED (exit $rc). Old data is untouched; service may be frozen."
+    warn "Unfreeze the old server now with:"
+    warn "  cd $PWD && docker compose up -d api worker beat && python3 maintenance.py off"
+    warn "Then fix the issue and re-run this script (it creates a fresh bundle)."
+  fi
+}
+trap on_exit_hint EXIT
+
 TS="$(date +%Y%m%d-%H%M%S)"
 BUNDLE="${DEST:-$HOME/kubera-migration-$TS}"
 if [ "$DRY_RUN" != "1" ]; then

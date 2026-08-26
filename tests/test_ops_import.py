@@ -52,6 +52,20 @@ def test_missing_bundle_dir_fails_cleanly(tmp_path):
     assert "not found" in r.stderr.lower()
 
 
+def test_relative_bundle_path_supported(tmp_path):
+    """DR use-case: run from another dir with ./bundle — path must be absolutized."""
+    bundle = make_bundle(tmp_path)
+    write_checksums(bundle)
+    # cwd = tmp_path, so './bundle' resolves; script invoked by absolute path.
+    r = subprocess.run(
+        ["bash", str(REPO_ROOT / "ops" / "kubera-import.sh"), "./bundle", "--dry-run"],
+        capture_output=True, text=True, cwd=tmp_path,
+        env={**os.environ, "HOME": str(tmp_path)},
+    )
+    assert r.returncode == 0, r.stderr
+    assert str(bundle) in r.stdout  # plan references the ABSOLUTE bundle path
+
+
 def test_corrupt_checksum_aborts_before_docker(tmp_path):
     bundle = make_bundle(tmp_path)
     write_checksums(bundle)
@@ -82,6 +96,11 @@ def test_domain_rewrite_appears_in_dry_run_plan(tmp_path):
     #  one belongs to restore_vault's "up -d postgres".)
     assert out.index("get.docker.com") < out.index("pg_restore")
     assert out.index("pg_restore") < out.rindex("docker compose up -d")
+    assert "readyz" in out
+    # Idempotent restore + real health wait are part of the plan.
+    # (%q quoting escapes spaces, so assert tokens, not the literal flag pair.)
+    assert "clean" in out and "if-exists" in out
+    assert "timeout 300s" in out
     assert out.index("readyz") < out.lower().index("verification")
 
 

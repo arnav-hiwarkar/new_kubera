@@ -31,6 +31,8 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$BUNDLE" ] || die "usage: kubera-import.sh BUNDLE_DIR [options]"
 [ -d "$BUNDLE" ] || die "bundle dir not found: $BUNDLE"
+# Absolutize: we cd into DEST later, so a relative BUNDLE path would break.
+BUNDLE="$(cd "$BUNDLE" && pwd)"
 
 # ---------- Preconditions: verify BEFORE touching anything ----------
 log "verifying bundle integrity..."
@@ -39,6 +41,13 @@ load_env "$BUNDLE/env"
 [ -n "${ROOT_MASTER_KEK:-}" ] || die "bundle env has empty ROOT_MASTER_KEK — refusing"
 log "kek fingerprint: $(kek_fingerprint)"
 
+# Privilege helper: bare-box setup needs root; use sudo when run as a normal user.
+PRIV=""
+if [ "$(id -u)" != "0" ]; then
+  need_cmd sudo
+  PRIV="sudo"
+fi
+
 install_setup() {
   if [ "$DRY_RUN" = "1" ]; then
     echo "DRYRUN: ensure Docker Engine + Compose v2 (get.docker.com installer if missing)"
@@ -46,13 +55,24 @@ install_setup() {
     echo "DRYRUN: mkdir -p $DEST"
     return 0
   fi
-  if ! docker compose version >/dev/null 2>&1; then
+  local docker_ok=0
+  docker ps >/dev/null 2>&1 && docker_ok=1
+  if [ "$docker_ok" != "1" ]; then
     log "installing Docker Engine + Compose v2 (official installer)..."
     need_cmd curl
-    bash -c "curl -fsSL https://get.docker.com | sh"
+    bash -c "curl -fsSL https://get.docker.com | $PRIV sh"
+    # Allow the invoking user to drive docker without sudo on future runs.
+    if [ "$(id -u)" != "0" ] && ! id -nG "$USER" | grep -qw docker; then
+      $PRIV usermod -aG docker "$USER" || true
+      warn "added '$USER' to the docker group — it activates on next login."
+      warn "Run 'newgrp docker' OR log out/in, then RE-RUN this importer:"
+      warn "  it is safe to re-run (checksums re-verified, restore is idempotent)."
+      exit 3
+    fi
+    die "docker installed but not usable yet — re-run this importer"
   fi
   if ! command -v git >/dev/null 2>&1; then
-    apt-get update && apt-get install -y git
+    $PRIV apt-get update && $PRIV apt-get install -y git
   fi
   mkdir -p "$DEST"
 }
@@ -68,7 +88,8 @@ restore_db() {
   log "restoring database..."
   dr_run bash -c "docker compose up -d postgres"
   dr_run bash -c 'until docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" >/dev/null 2>&1; do sleep 2; done'
-  dr_run bash -c "cat '$BUNDLE/db.dump' | docker compose exec -T postgres pg_restore -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" --no-owner --exit-on-error"
+  # --clean --if-exists makes re-runs safe: objects are dropped before restore.
+  dr_run bash -c "cat '$BUNDLE/db.dump' | docker compose exec -T postgres pg_restore -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" --no-owner --clean --if-exists --exit-on-error"
 }
 
 start_stack() {
@@ -77,8 +98,20 @@ start_stack() {
 }
 
 wait_healthy() {
-  log "waiting for healthchecks..."
-  dr_run bash -c 'for i in $(seq 1 60); do sleep 5; docker compose ps --format "{{.Name}}" >/dev/null 2>&1 && break; done'
+  log "waiting for the API to become ready (first start builds images; up to ~5 min)..."
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "DRYRUN: poll http://127.0.0.1:8000/readyz until HTTP 200 (timeout 300s)"
+    return 0
+  fi
+  local i
+  for i in $(seq 1 60); do
+    if curl -fsS http://127.0.0.1:8000/readyz >/dev/null 2>&1; then
+      log "API is ready."
+      return 0
+    fi
+    sleep 5
+  done
+  die "API did not become ready within 300s — check: docker compose ps && docker compose logs api"
 }
 
 verify_against_manifest() {

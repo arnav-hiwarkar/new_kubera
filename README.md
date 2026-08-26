@@ -305,6 +305,21 @@ python3 maintenance.py off` to unfreeze it.
 Useful flags: `--keep-live` (export without leaving the old stack frozen),
 `--keep-bundle`, `--no-maintenance`, `--dry-run`.
 
+**Requirements & notes for the target box:**
+- SSH as **root**, or a sudo-capable user. The importer installs Docker via the
+  official installer when missing; if it adds your user to the `docker` group you'll
+  be asked to re-login (`newgrp docker`) and **re-run the importer — that is safe**
+  (checksums are re-verified; the restore drops-and-recreates objects idempotently).
+- Open ports **80 and 443** before starting, or Let's Encrypt issuance will fail.
+- The bundle transfer resumes if interrupted (`rsync --partial --checksum`);
+  every stage is safe to re-run.
+- Redis state (sessions, rate-limit counters) is intentionally not migrated:
+  users just log in again on the new server.
+
+**Source safety:** the old server's data is never modified or deleted by any of
+these scripts. If an export fails midway, the script prints the exact command to
+unfreeze the old stack (`docker compose up -d api worker beat && python3 maintenance.py off`).
+
 Caddy provisions Let's Encrypt certificates automatically — just set `DOMAIN`,
 point DNS, open ports 80/443. Never let two servers serve the same domain at once.
 
