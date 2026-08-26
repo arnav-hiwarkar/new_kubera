@@ -71,8 +71,8 @@ install_setup() {
     fi
     die "docker installed but not usable yet — re-run this importer"
   fi
-  if ! command -v git >/dev/null 2>&1; then
-    $PRIV apt-get update && $PRIV apt-get install -y git
+  if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+    $PRIV apt-get update && $PRIV apt-get install -y git curl
   fi
   mkdir -p "$DEST"
 }
@@ -104,7 +104,8 @@ wait_healthy() {
   fi
   local i
   for i in $(seq 1 120); do
-    if curl -fsS http://127.0.0.1:8000/readyz >/dev/null 2>&1; then
+    if docker compose exec -T api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=5)" >/dev/null 2>&1 || \
+       (command -v curl >/dev/null 2>&1 && curl -fsS http://127.0.0.1:8000/readyz >/dev/null 2>&1); then
       log "API is ready."
       return 0
     fi
@@ -115,7 +116,7 @@ wait_healthy() {
 
 verify_against_manifest() {
   log "probing readiness..."
-  dr_run bash -c "curl -fsS http://127.0.0.1:8000/readyz"
+  dr_run bash -c "docker compose exec -T api python -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/readyz\", timeout=5)' 2>/dev/null || curl -fsS http://127.0.0.1:8000/readyz"
   if [ "$DRY_RUN" = "1" ]; then
     echo "VERIFICATION PASSED (dry-run: live manifest comparisons skipped)"
     return 0
