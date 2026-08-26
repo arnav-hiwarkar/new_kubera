@@ -25,7 +25,6 @@ import type {
   MappingImportRequest,
   MappingImportResult,
   RequirementRequestResponse,
-  RequirementFulfill,
   QueryResponse,
   QueryMessageResponse,
   ReportPreviewResponse,
@@ -134,9 +133,18 @@ export const auditeaseCompanyApi = {
     companyClient.get<RequirementRequestResponse[]>(
       `/api/v1/auditease/engagements/${engagementId}/requirement-requests`,
     ),
-  fulfillRequirement: (engagementId: string, reqId: string, body: RequirementFulfill) =>
+  respondRequirement: (
+    engagementId: string,
+    reqId: string,
+    body: { text_answer?: string; document_id?: string },
+  ) =>
+    companyClient.post<RequirementRequestResponse>(
+      `/api/v1/auditease/engagements/${engagementId}/requirement-requests/${reqId}/respond`,
+      { body },
+    ),
+  setRequirementEta: (engagementId: string, reqId: string, body: { company_eta: string | null }) =>
     companyClient.patch<RequirementRequestResponse>(
-      `/api/v1/auditease/engagements/${engagementId}/requirement-requests/${reqId}/fulfill`,
+      `/api/v1/auditease/engagements/${engagementId}/requirement-requests/${reqId}/eta`,
       { body },
     ),
   listQueries: (engagementId: string) =>

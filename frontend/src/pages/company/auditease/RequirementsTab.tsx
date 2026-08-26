@@ -1,26 +1,26 @@
 import { useState } from 'react'
 import { Button, Card, StatusBadge, Spinner, useToast, EmptyState, Select } from '@/components/ui'
 import { ApiError } from '@/api/http'
-import { useListRequirements, useFulfillRequirement } from '@/api/hooks/auditease'
+import { useListRequirements, useRespondToRequirement } from '@/api/hooks/auditease'
 import { useDocuments, useDownloadDocument } from '@/api/hooks/docvault'
 
 export function RequirementsTab({ engagementId }: { engagementId: string }) {
   const toast = useToast()
   const { data: reqs = [], isLoading } = useListRequirements(engagementId)
   const { data: docs = [] } = useDocuments()
-  const fulfillReq = useFulfillRequirement()
+  const respondReq = useRespondToRequirement()
   const downloadDoc = useDownloadDocument()
   
   const [selectedDocs, setSelectedDocs] = useState<Record<string, string>>({})
 
-  const handleFulfill = async (reqId: string) => {
+  const handleRespond = async (reqId: string) => {
     const docId = selectedDocs[reqId]
     if (!docId) return
     try {
-      await fulfillReq.mutateAsync({ engagementId, reqId, body: { document_id: docId } })
-      toast.success('Requirement fulfilled')
+      await respondReq.mutateAsync({ engagementId, reqId, body: { document_id: docId } })
+      toast.success('Response submitted')
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Error fulfilling requirement')
+      toast.error(err instanceof ApiError ? err.message : 'Error submitting response')
     }
   }
 
@@ -60,7 +60,7 @@ export function RequirementsTab({ engagementId }: { engagementId: string }) {
             </div>
             
             <div className="flex w-full flex-col items-end gap-2 sm:w-1/3">
-              {req.status === 'open' ? (
+              {req.status === 'pending' ? (
                 <div className="flex w-full items-end gap-2">
                   <div className="flex-1">
                     <Select
@@ -74,15 +74,15 @@ export function RequirementsTab({ engagementId }: { engagementId: string }) {
                     </Select>
                   </div>
                   <Button
-                    onClick={() => handleFulfill(req.id)}
-                    disabled={!selectedDocs[req.id] || fulfillReq.isPending}
+                    onClick={() => handleRespond(req.id)}
+                    disabled={!selectedDocs[req.id] || respondReq.isPending}
                   >
                     Fulfill
                   </Button>
                 </div>
               ) : (
-                req.fulfilled_document_id && (
-                  <Button variant="secondary" onClick={() => handleDownload(req.fulfilled_document_id!)}>
+                req.latest_response?.document_id && (
+                  <Button variant="secondary" onClick={() => handleDownload(req.latest_response!.document_id!)}>
                     Download Document
                   </Button>
                 )

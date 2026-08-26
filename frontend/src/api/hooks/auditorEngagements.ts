@@ -86,6 +86,54 @@ export function useAuditorCreateRequirement() {
   })
 }
 
+export function useAuditorUpdateRequirement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, reqId, body }: { engagementId: string; reqId: string; body: import('@/api/types').RequirementRequestCreate }) =>
+      auditorEngagementsApi.updateRequirement(engagementId, reqId, body),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditor', 'requirements', engagementId] }),
+  })
+}
+
+export function useAuditorDeleteRequirement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, reqId }: { engagementId: string; reqId: string }) =>
+      auditorEngagementsApi.deleteRequirement(engagementId, reqId),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditor', 'requirements', engagementId] }),
+  })
+}
+
+export function useAuditorReviewRequirement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, reqId, body }: { engagementId: string; reqId: string; body: { action: 'accept' | 'clarify'; note?: string } }) =>
+      auditorEngagementsApi.reviewRequirement(engagementId, reqId, body),
+    onSuccess: (_r, { engagementId }) => {
+      qc.invalidateQueries({ queryKey: ['auditor', 'requirements', engagementId] })
+      qc.invalidateQueries({ queryKey: ['company', 'activity'] })
+    },
+  })
+}
+
+export function useAuditorDownloadImportTemplate() {
+  return useMutation({
+    mutationFn: (engagementId: string) => auditorEngagementsApi.downloadImportTemplate(engagementId),
+  })
+}
+
+export function useAuditorBulkImportRequirements() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, formData }: { engagementId: string; formData: FormData }) =>
+      auditorEngagementsApi.bulkImportRequirements(engagementId, formData),
+    onSuccess: (_r, { engagementId }) =>
+      qc.invalidateQueries({ queryKey: ['auditor', 'requirements', engagementId] }),
+  })
+}
+
 // --- Queries ---
 
 export function useAuditorListQueries(engagementId: string) {

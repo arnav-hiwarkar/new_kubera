@@ -194,9 +194,8 @@ export interface TBColumnMap {
   decimal_style?: 'auto' | 'dot' | 'comma'
   credit_sign?: 'auto' | 'negative' | 'positive'
 }
-export type RequirementRequestResponse = S['RequirementRequestResponse']
 export type RequirementRequestCreate = S['RequirementRequestCreate']
-export type RequirementFulfill = S['RequirementFulfill']
+export type RequirementRequestResponse = S['RequirementRequestResponse']
 export type QueryResponse = S['QueryResponse']
 export type QueryMessageResponse = S['QueryMessageResponse']
 

@@ -42,6 +42,32 @@ export const auditorEngagementsApi = {
       `/api/v1/auditor/engagements/${id}/requirement-requests`,
       { body },
     ),
+  updateRequirement: (id: string, reqId: string, body: RequirementRequestCreate) =>
+    auditorClient.put<RequirementRequestResponse>(
+      `/api/v1/auditor/engagements/${id}/requirement-requests/${reqId}`,
+      { body },
+    ),
+  deleteRequirement: (id: string, reqId: string) =>
+    auditorClient.delete<void>(`/api/v1/auditor/engagements/${id}/requirement-requests/${reqId}`),
+  reviewRequirement: (
+    id: string,
+    reqId: string,
+    body: { action: 'accept' | 'clarify'; note?: string },
+  ) =>
+    auditorClient.post<RequirementRequestResponse>(
+      `/api/v1/auditor/engagements/${id}/requirement-requests/${reqId}/review`,
+      { body },
+    ),
+  downloadImportTemplate: (id: string) =>
+    auditorClient.get<Blob>(
+      `/api/v1/auditor/engagements/${id}/requirement-requests/import-template`,
+      { responseType: 'blob' },
+    ),
+  bulkImportRequirements: (id: string, formData: FormData) =>
+    auditorClient.post<{ created_count: number }>(
+      `/api/v1/auditor/engagements/${id}/requirement-requests/import`,
+      { formData },
+    ),
   listQueries: (id: string) =>
     auditorClient.get<QueryResponse[]>(`/api/v1/auditor/engagements/${id}/queries`),
   createQuery: (id: string, formData: FormData) =>

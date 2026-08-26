@@ -2160,7 +2160,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auditease/engagements/{engagement_id}/requirement-requests/{req_id}/fulfill": {
+    "/api/v1/auditease/engagements/{engagement_id}/requirement-requests/{req_id}/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Respond Requirement */
+        post: operations["respond_requirement_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__respond_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditease/engagements/{engagement_id}/requirement-requests/{req_id}/eta": {
         parameters: {
             query?: never;
             header?: never;
@@ -2173,8 +2190,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Fulfill Requirement */
-        patch: operations["fulfill_requirement_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__fulfill_patch"];
+        /** Set Requirement Eta */
+        patch: operations["set_requirement_eta_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__eta_patch"];
         trace?: never;
     };
     "/api/v1/auditease/engagements/{engagement_id}/queries": {
@@ -2452,6 +2469,57 @@ export interface paths {
         post?: never;
         /** Delete Requirement */
         delete: operations["delete_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditor/engagements/{engagement_id}/requirement-requests/{req_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Requirement */
+        post: operations["review_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditor/engagements/{engagement_id}/requirement-requests/import-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Requirement Import Template */
+        get: operations["download_requirement_import_template_api_v1_auditor_engagements__engagement_id__requirement_requests_import_template_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditor/engagements/{engagement_id}/requirement-requests/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Requirements Endpoint */
+        post: operations["import_requirements_endpoint_api_v1_auditor_engagements__engagement_id__requirement_requests_import_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4106,9 +4174,19 @@ export interface components {
             initial_message: string;
             /** File */
             file?: string | null;
+            /** Requirement Id */
+            requirement_id?: string | null;
         };
         /** Body_import_existing_assets_api_v1_assets_import_post */
         Body_import_existing_assets_api_v1_assets_import_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
+        /** Body_import_requirements_endpoint_api_v1_auditor_engagements__engagement_id__requirement_requests_import_post */
+        Body_import_requirements_endpoint_api_v1_auditor_engagements__engagement_id__requirement_requests_import_post: {
             /**
              * File
              * Format: binary
@@ -4385,6 +4463,11 @@ export interface components {
         CompanyDeleteRequest: {
             /** Confirm Name */
             confirm_name: string;
+        };
+        /** CompanyEtaUpdate */
+        CompanyEtaUpdate: {
+            /** Company Eta */
+            company_eta?: string | null;
         };
         /**
          * CompanyInitRequest
@@ -5055,6 +5138,12 @@ export interface components {
          * @enum {string}
          */
         EntryLineSide: "debit" | "credit";
+        /**
+         * ExpectedFormat
+         * @description Hint for how the company should answer. Never enforced.
+         * @enum {string}
+         */
+        ExpectedFormat: "text" | "file" | "any";
         /** FinancialYearCreate */
         FinancialYearCreate: {
             /**
@@ -5618,6 +5707,8 @@ export interface components {
              * Format: uuid
              */
             opened_by: string;
+            /** Requirement Id */
+            requirement_id?: string | null;
             status: components["schemas"]["QueryStatus"];
             /**
              * Created At
@@ -5803,21 +5894,36 @@ export interface components {
          * RequestStatus
          * @enum {string}
          */
-        RequestStatus: "open" | "fulfilled";
-        /** RequirementFulfill */
-        RequirementFulfill: {
-            /**
-             * Document Id
-             * Format: uuid
-             */
-            document_id: string;
-        };
+        RequestStatus: "pending" | "submitted" | "clarification_needed" | "accepted";
         /** RequirementRequestCreate */
         RequirementRequestCreate: {
             /** Description */
             description: string;
             /** Title */
             title?: string | null;
+            /**
+             * Priority
+             * @default 1
+             */
+            priority: number;
+            /** Due Date */
+            due_date?: string | null;
+            /** Additional Details */
+            additional_details?: string | null;
+            /** Period From */
+            period_from?: string | null;
+            /** Period To */
+            period_to?: string | null;
+            /** Entity */
+            entity?: string | null;
+            /** Responsible Person Id */
+            responsible_person_id?: string | null;
+            /** @default any */
+            expected_format: components["schemas"]["ExpectedFormat"];
+            /** Auditor Notes */
+            auditor_notes?: string | null;
+            /** Parent Requirement Id */
+            parent_requirement_id?: string | null;
         };
         /** RequirementRequestResponse */
         RequirementRequestResponse: {
@@ -5843,8 +5949,50 @@ export interface components {
             /** Description */
             description: string;
             status: components["schemas"]["RequestStatus"];
-            /** Fulfilled Document Id */
-            fulfilled_document_id: string | null;
+            /** Seq Number */
+            seq_number?: number | null;
+            /** Requirement Id Str */
+            requirement_id_str?: string | null;
+            /**
+             * Priority
+             * @default 1
+             */
+            priority: number;
+            /** Due Date */
+            due_date?: string | null;
+            /** Company Eta */
+            company_eta?: string | null;
+            /** Additional Details */
+            additional_details?: string | null;
+            /** Period From */
+            period_from?: string | null;
+            /** Period To */
+            period_to?: string | null;
+            /** Entity */
+            entity?: string | null;
+            /** Responsible Person Id */
+            responsible_person_id?: string | null;
+            /** Responsible Person Name */
+            responsible_person_name?: string | null;
+            /** @default any */
+            expected_format: components["schemas"]["ExpectedFormat"];
+            /** Auditor Notes */
+            auditor_notes?: string | null;
+            /** Parent Requirement Id */
+            parent_requirement_id?: string | null;
+            /** Clarification Note */
+            clarification_note?: string | null;
+            latest_response?: components["schemas"]["RequirementResponseOut"] | null;
+            /**
+             * Responses
+             * @default []
+             */
+            responses: components["schemas"]["RequirementResponseOut"][];
+            /**
+             * Linked Query Count
+             * @default 0
+             */
+            linked_query_count: number;
             /**
              * Created At
              * Format: date-time
@@ -5855,6 +6003,49 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** RequirementRespond */
+        RequirementRespond: {
+            /** Text Answer */
+            text_answer?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+        };
+        /** RequirementResponseOut */
+        RequirementResponseOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Requirement Id
+             * Format: uuid
+             */
+            requirement_id: string;
+            /** Responded By */
+            responded_by?: string | null;
+            /** Responded By Name */
+            responded_by_name?: string | null;
+            /** Text Answer */
+            text_answer?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** RequirementReviewCreate */
+        RequirementReviewCreate: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "accept" | "clarify";
+            /** Note */
+            note?: string | null;
         };
         /** SalesImportInspectResponse */
         SalesImportInspectResponse: {
@@ -11279,7 +11470,7 @@ export interface operations {
             };
         };
     };
-    fulfill_requirement_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__fulfill_patch: {
+    respond_requirement_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__respond_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -11291,7 +11482,43 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RequirementFulfill"];
+                "application/json": components["schemas"]["RequirementRespond"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequirementRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_requirement_eta_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__eta_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                req_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyEtaUpdate"];
             };
         };
         responses: {
@@ -11914,6 +12141,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                req_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementReviewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequirementRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_requirement_import_template_api_v1_auditor_engagements__engagement_id__requirement_requests_import_template_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_requirements_endpoint_api_v1_auditor_engagements__engagement_id__requirement_requests_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_requirements_endpoint_api_v1_auditor_engagements__engagement_id__requirement_requests_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

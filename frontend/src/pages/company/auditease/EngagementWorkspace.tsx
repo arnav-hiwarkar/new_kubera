@@ -96,7 +96,7 @@ export function EngagementWorkspace() {
     { id: 'trial-balance', label: 'Trial Balance', icon: <BookOpen /> },
     { id: 'mapping', label: 'Chart of Accounts', icon: <Network /> },
     { id: 'entries', label: 'Entries', icon: <FileText />, count: entries.filter((e) => e.status === 'proposed').length },
-    { id: 'requirements', label: 'Requirements', icon: <ListChecks />, count: reqs.filter((r) => r.status === 'open').length },
+    { id: 'requirements', label: 'Requirements', icon: <ListChecks />, count: reqs.filter((r) => r.status === 'pending').length },
     { id: 'queries', label: 'Queries', icon: <MessagesSquare />, count: queries.filter((q) => q.status === 'open').length },
     { id: 'auditors', label: 'Auditors', icon: <Users /> },
     { id: 'reports', label: 'Reports', icon: <FileBarChart /> },
@@ -179,7 +179,7 @@ export function EngagementWorkspace() {
           )}
           <StatCard
             label="Open requirements"
-            value={reqs.filter((r) => r.status === 'open').length}
+            value={reqs.filter((r) => r.status === 'pending').length}
             icon={<ListChecks />}
             tone="info"
           />

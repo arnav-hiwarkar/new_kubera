@@ -16,7 +16,7 @@ export function RequirementsTab({ engagementId }: { engagementId: string }) {
     e.preventDefault()
     if (!description.trim()) return
     try {
-      await createReq.mutateAsync({ engagementId, body: { description: description.trim() } })
+      await createReq.mutateAsync({ engagementId, body: { description: description.trim(), priority: 1, expected_format: 'any' } })
       setDescription('')
       toast.success('Requirement requested')
     } catch (err) {
@@ -76,8 +76,8 @@ export function RequirementsTab({ engagementId }: { engagementId: string }) {
                   </span>
                 </div>
               </div>
-              {req.status === 'fulfilled' && req.fulfilled_document_id && (
-                <Button variant="secondary" onClick={() => handleDownload(req.fulfilled_document_id!)}>
+              {req.status === 'accepted' && req.latest_response?.document_id && (
+                <Button variant="secondary" onClick={() => handleDownload(req.latest_response!.document_id!)}>
                   Download
                 </Button>
               )}
