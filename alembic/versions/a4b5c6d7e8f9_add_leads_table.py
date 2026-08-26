@@ -6,7 +6,7 @@ Create Date: 2026-08-26
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects import postgresql
 
 revision = "a4b5c6d7e8f9"
 down_revision = "9f2c1a7d4e55"
@@ -15,28 +15,41 @@ depends_on = None
 
 
 def upgrade() -> None:
-    lead_status_enum = sa.Enum("new", "contacted", "converted", "archived", name="lead_status")
-    lead_status_enum.create(op.get_bind(), checkfirst=True)
-
-    op.create_table(
-        "leads",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("email", sa.String(255), nullable=False),
-        sa.Column("company_name", sa.String(255), nullable=True),
-        sa.Column("phone", sa.String(50), nullable=True),
-        sa.Column("entities_count", sa.Integer(), nullable=True),
-        sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("status", sa.Enum("new", "contacted", "converted", "archived", name="lead_status"), nullable=False, server_default="new"),
-        sa.Column("ip_address", sa.String(100), nullable=True),
-        sa.Column("user_agent", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now(), nullable=False),
+    # 1. Create enum type if it does not exist
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'lead_status') THEN
+                CREATE TYPE lead_status AS ENUM ('new', 'contacted', 'converted', 'archived');
+            END IF;
+        END $$;
+        """
     )
-    op.create_index("ix_leads_email", "leads", ["email"])
-    op.create_index("ix_leads_status", "leads", ["status"])
-    op.create_index("ix_leads_created_at", "leads", [sa.text("created_at DESC")])
+
+    # 2. Create leads table if it does not exist
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS leads (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email VARCHAR(255) NOT NULL,
+            company_name VARCHAR(255),
+            phone VARCHAR(50),
+            entities_count INTEGER,
+            notes TEXT,
+            status lead_status NOT NULL DEFAULT 'new',
+            ip_address VARCHAR(100),
+            user_agent TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """
+    )
+    op.execute("CREATE INDEX IF NOT EXISTS ix_leads_email ON leads (email);")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_leads_status ON leads (status);")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_leads_created_at ON leads (created_at DESC);")
 
 
 def downgrade() -> None:
-    op.drop_table("leads")
-    op.execute("DROP TYPE IF EXISTS lead_status")
+    op.execute("DROP TABLE IF EXISTS leads CASCADE;")
+    op.execute("DROP TYPE IF EXISTS lead_status;")
