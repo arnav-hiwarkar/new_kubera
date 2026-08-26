@@ -100,7 +100,7 @@ def test_domain_rewrite_appears_in_dry_run_plan(tmp_path):
     # Idempotent restore + real health wait are part of the plan.
     # (%q quoting escapes spaces, so assert tokens, not the literal flag pair.)
     assert "clean" in out and "if-exists" in out
-    assert "timeout 300s" in out
+    assert "timeout 600s" in out
     assert out.index("readyz") < out.lower().index("verification")
 
 

@@ -97,20 +97,20 @@ start_stack() {
 }
 
 wait_healthy() {
-  log "waiting for the API to become ready (first start builds images; up to ~5 min)..."
+  log "waiting for the API to become ready (first start builds images; up to ~10 min)..."
   if [ "$DRY_RUN" = "1" ]; then
-    echo "DRYRUN: poll http://127.0.0.1:8000/readyz until HTTP 200 (timeout 300s)"
+    echo "DRYRUN: poll http://127.0.0.1:8000/readyz until HTTP 200 (timeout 600s)"
     return 0
   fi
   local i
-  for i in $(seq 1 60); do
+  for i in $(seq 1 120); do
     if curl -fsS http://127.0.0.1:8000/readyz >/dev/null 2>&1; then
       log "API is ready."
       return 0
     fi
     sleep 5
   done
-  die "API did not become ready within 300s — check: docker compose ps && docker compose logs api"
+  die "API did not become ready within 600s — check: docker compose ps && docker compose logs api"
 }
 
 verify_against_manifest() {
