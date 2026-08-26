@@ -339,12 +339,15 @@ def test_bad_expected_format_rejected():
         parse_rows([["X", None, None, None, None, None, None, None, "smoke signal"]])
 
 
-def test_forward_parent_reference_rejected():
-    with pytest.raises(RowError):
-        parse_rows([
-            ["Child", None, None, None, None, None, None, None, None, None, "REQ-999"],
-            ["Parent"],
-        ])
+def test_parent_ref_parsed_structurally_even_if_unknown():
+    """parse_rows validates FORMAT only. Whether REQ-999 exists or precedes the
+    row is referential knowledge enforced by import_requirements."""
+    payloads = parse_rows([
+        ["Child", None, None, None, None, None, None, None, None, None, "REQ-999"],
+        ["Parent"],
+    ])
+    assert payloads[0]["parent_seq"] == 999
+    assert payloads[1]["parent_seq"] is None
 
 
 def test_blank_spacer_rows_tolerated():
@@ -508,11 +511,11 @@ def parse_rows(rows: List[list]) -> List[dict]:
                 parts = ref.upper().split("-")
                 if len(parts) != 2 or parts[0] != "REQ" or not parts[1].isdigit():
                     raise ValueError(f"Parent '{ref}' is not a REQ-xxx id")
-                seq = int(parts[1])
-                if seq >= n - 1:
-                    raise ValueError(
-                        f"Parent '{ref}' must already exist or appear in an earlier row")
-                p["parent_seq"] = seq
+                # Format-only here: whether the parent exists / precedes this row
+                # is referential knowledge — import_requirements enforces it.
+                p["parent_seq"] = int(parts[1])
+            else:
+                p["parent_seq"] = None
             else:
                 p["parent_seq"] = None
         except ValueError as e:
@@ -1508,7 +1511,7 @@ async def test_requirement_bulk_import_roundtrip(client: AsyncClient):
     assert by_desc["Bulk req B"]["priority"] == 4
     assert by_desc["Child of A"]["parent_requirement_id"] == by_desc["Bulk req A"]["id"]
 
-    # all-or-nothing: one bad row aborts everything
+    # all-or-nothing: one bad row aborts everything (bad date + unresolvable parent ref)
     wb2 = openpyxl.load_workbook(io.BytesIO(build_template_xlsx()))
     ws2 = wb2["Requirements"]
     ws2.delete_rows(2)

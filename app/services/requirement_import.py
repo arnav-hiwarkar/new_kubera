@@ -144,11 +144,9 @@ def parse_rows(rows: List[list]) -> List[dict]:
                 parts = ref.upper().split("-")
                 if len(parts) != 2 or parts[0] != "REQ" or not parts[1].isdigit():
                     raise ValueError(f"Parent '{ref}' is not a REQ-xxx id")
-                seq = int(parts[1])
-                if seq > len(rows) + 1:
-                    raise ValueError(
-                        f"Parent '{ref}' must already exist or appear in an earlier row")
-                p["parent_seq"] = seq
+                # Format-only here: whether the parent exists / precedes this row
+                # is referential knowledge — import_requirements enforces it.
+                p["parent_seq"] = int(parts[1])
             else:
                 p["parent_seq"] = None
         except ValueError as e:
