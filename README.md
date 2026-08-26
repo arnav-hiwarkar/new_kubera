@@ -17,6 +17,7 @@ Kubera is a comprehensive **multi-tenant** platform featuring DocVault, AuditEas
 4. [Deploy (server / production)](#deploy-server--production)
 5. [Zero-downtime maintenance mode](#zero-downtime-maintenance-mode)
 6. [Everyday operations](#everyday-operations)
+6.5. [Server migration & disaster recovery](#server-migration--disaster-recovery)
 7. [Local development (uv)](#local-development-uv)
 8. [Database migrations](#database-migrations)
 9. [Creating companies & users](#creating-companies--users)
@@ -276,6 +277,58 @@ So the common case — *"I just want to run the server"* — is simply:
 ```bash
 docker compose up -d
 ```
+
+---
+
+## Server migration & disaster recovery
+
+All state (Postgres, encrypted vault files, secrets) lives in one **bundle** produced by
+`ops/kubera-export.sh`. Migration and disaster recovery are the same operation:
+*make a bundle, run the importer.*
+
+### Migrate to a new server (one command, run on the OLD server)
+
+```bash
+./ops/kubera-migrate.sh ash@NEW-SERVER-IP --domain audit.example-new.com
+```
+
+What it does: maintenance mode → freeze writes → dump Postgres + archive vault +
+copy `.env` (carries `ROOT_MASTER_KEK` — without it vault data is unreadable) →
+verified transfer over SSH → installs Docker + repo on the bare target → restores,
+starts the stack, verifies row/file counts against the manifest.
+
+Then: point DNS at the new server, log in, open a tenant document, and only then
+retire the old stack. Rollback before the DNS flip is trivial — the old server never
+stopped serving anything you care about; just `docker compose up -d api worker beat &&
+python3 maintenance.py off` to unfreeze it.
+
+Useful flags: `--keep-live` (export without leaving the old stack frozen),
+`--keep-bundle`, `--no-maintenance`, `--dry-run`.
+
+Caddy provisions Let's Encrypt certificates automatically — just set `DOMAIN`,
+point DNS, open ports 80/443. Never let two servers serve the same domain at once.
+
+### Disaster recovery snapshot (any time)
+
+```bash
+./ops/kubera-export.sh                 # bundle in ~/kubera-migration-<ts>
+./ops/kubera-export.sh --no-maintenance  # same, without the public countdown page
+```
+
+Freezes writes briefly (schedule in low-traffic windows). Copy the bundle anywhere safe;
+it contains secrets — treat it accordingly (700/600 perms are set for you).
+
+### Restore from a bundle (any machine with Docker)
+
+Clone/copy the repo to the machine, then from the repo root:
+
+```bash
+./ops/kubera-import.sh /path/to/kubera-migration-<ts>           # bundled DOMAIN
+./ops/kubera-import.sh /path/to/bundle --domain audit.example.com
+```
+
+The importer verifies checksums **before** touching anything and compares row counts,
+vault file counts, and the KEK fingerprint against the manifest afterwards.
 
 ---
 
