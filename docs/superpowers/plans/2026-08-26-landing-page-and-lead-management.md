@@ -27,11 +27,11 @@ Spec: `docs/superpowers/specs/2026-08-26-landing-page-and-lead-management-design
 - Index email, status, and created_at.
 - Run Alembic migration to update schema.
 
-- [ ] **Step 1: Write model test in `tests/test_lead_model.py`**
-- [ ] **Step 2: Create `app/models/lead.py` and register in `app/models/__init__.py`**
-- [ ] **Step 3: Create Alembic migration revision**
-- [ ] **Step 4: Run tests with `.venv/bin/pytest tests/test_lead_model.py -v`**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write model test in `tests/test_lead_model.py`**
+- [x] **Step 2: Create `app/models/lead.py` and register in `app/models/__init__.py`**
+- [x] **Step 3: Create Alembic migration revision**
+- [x] **Step 4: Run tests with `.venv/bin/pytest tests/test_lead_model.py -v`**
+- [x] **Step 5: Commit changes**
 
 ---
 
@@ -52,11 +52,11 @@ Spec: `docs/superpowers/specs/2026-08-26-landing-page-and-lead-management-design
   - Parameterized ORM write.
 - Register router in `app/main.py`.
 
-- [ ] **Step 1: Write API tests in `tests/test_leads_api.py` (testing rate limits, honeypot, validation, anti-enumeration)**
-- [ ] **Step 2: Implement schemas in `app/schemas/lead.py`**
-- [ ] **Step 3: Implement endpoints in `app/routers/leads.py` and include in `app/main.py`**
-- [ ] **Step 4: Run tests with `.venv/bin/pytest tests/test_leads_api.py -v`**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write API tests in `tests/test_leads_api.py` (testing rate limits, honeypot, validation, anti-enumeration)**
+- [x] **Step 2: Implement schemas in `app/schemas/lead.py`**
+- [x] **Step 3: Implement endpoints in `app/routers/leads.py` and include in `app/main.py`**
+- [x] **Step 4: Run tests with `.venv/bin/pytest tests/test_leads_api.py -v`**
+- [x] **Step 5: Commit changes**
 
 ---
 
@@ -74,11 +74,11 @@ Spec: `docs/superpowers/specs/2026-08-26-landing-page-and-lead-management-design
   - `POST /api/v1/owner/leads/{id}/provision`: Initialize company, create per-company KEK, mint 48h activation key, mark lead `converted`, return activation link.
 - Create standalone operator CLI `list_leads.py`.
 
-- [ ] **Step 1: Write tests in `tests/test_owner_leads.py`**
-- [ ] **Step 2: Implement owner endpoints in `app/routers/leads.py`**
-- [ ] **Step 3: Create `list_leads.py` operator CLI script**
-- [ ] **Step 4: Run tests with `.venv/bin/pytest tests/test_owner_leads.py -v`**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write tests in `tests/test_owner_leads.py`**
+- [x] **Step 2: Implement owner endpoints in `app/routers/leads.py`**
+- [x] **Step 3: Create `list_leads.py` operator CLI script**
+- [x] **Step 4: Run tests with `.venv/bin/pytest tests/test_owner_leads.py -v`**
+- [x] **Step 5: Commit changes**
 
 ---
 
@@ -103,10 +103,10 @@ Spec: `docs/superpowers/specs/2026-08-26-landing-page-and-lead-management-design
 - Build single-field email capture and lead modal with loading states and micro-interactions.
 - Add "Go to App / Log In" CTA buttons.
 
-- [ ] **Step 1: Write frontend component tests in `LandingPage.test.tsx`**
-- [ ] **Step 2: Implement Landing Page components and micro-animations**
-- [ ] **Step 3: Run frontend tests**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write frontend component tests in `LandingPage.test.tsx`**
+- [x] **Step 2: Implement Landing Page components and micro-animations**
+- [x] **Step 3: Run frontend tests**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -122,10 +122,10 @@ Spec: `docs/superpowers/specs/2026-08-26-landing-page-and-lead-management-design
 - Display real-time leads table with status badges, search, and "Provision Company" modal.
 - Ensure route is unlinked from public menus, headers, and footer.
 
-- [ ] **Step 1: Write test for OwnerLeadsPage**
-- [ ] **Step 2: Implement `OwnerLeadsPage.tsx` and configure route in `frontend/src/routes/index.tsx`**
-- [ ] **Step 3: Run frontend tests**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test for OwnerLeadsPage**
+- [x] **Step 2: Implement `OwnerLeadsPage.tsx` and configure route in `frontend/src/routes/index.tsx`**
+- [x] **Step 3: Run frontend tests**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -141,7 +141,7 @@ Spec: `docs/superpowers/specs/2026-08-26-landing-page-and-lead-management-design
 - Configure hostname detection so `kuberacompliance.com` renders the landing page and `app.kuberacompliance.com` navigates to app login.
 - Support direct `/landing` path across any domain for testing.
 
-- [ ] **Step 1: Update `Caddyfile` and `.env.example`**
-- [ ] **Step 2: Update router dispatch logic in `frontend/src/routes/index.tsx`**
-- [ ] **Step 3: Run full backend and frontend test suites**
-- [ ] **Step 4: Commit and push changes to GitHub**
+- [x] **Step 1: Update `Caddyfile` and `.env.example`**
+- [x] **Step 2: Update router dispatch logic in `frontend/src/routes/index.tsx`**
+- [x] **Step 3: Run full backend and frontend test suites**
+- [x] **Step 4: Commit and push changes to GitHub**
