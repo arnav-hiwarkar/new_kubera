@@ -58,3 +58,33 @@ def test_no_maintenance_flag_skips_toggle(tmp_path):
              "--no-maintenance"], cwd=sandbox)
     assert r.returncode == 0
     assert "maintenance.py on" not in r.stdout
+
+
+import shutil
+
+import pytest
+
+
+@pytest.mark.skipif(
+    shutil.which("docker") is None or os.environ.get("KUBERA_OPS_ROUNDTRIP") != "1",
+    reason="opt-in live-stack smoke: set KUBERA_OPS_ROUNDTRIP=1 with dev stack up",
+)
+class TestLiveExportSmoke:
+    def test_export_produces_verifiable_bundle(self, tmp_path):
+        r = run(["--dest", str(tmp_path / "bundle"), "--no-maintenance"])
+        assert r.returncode == 0, r.stderr
+        bundle = Path(r.stdout.strip().splitlines()[-1])
+        assert (bundle / "db.dump").stat().st_size > 0
+        assert (bundle / "vault.tar.gz").exists()
+        manifest = (bundle / "manifest.json").read_text()
+        assert '"kek_fingerprint"' in manifest
+        # Checksum file validates.
+        chk = subprocess.run(
+            ["bash", "-c",
+             f'source "{REPO_ROOT}/ops/lib.sh"; verify_bundle "{bundle}"'],
+            capture_output=True, text=True,
+        )
+        assert chk.returncode == 0, chk.stderr
+        # NOTE: export stops api/worker/beat on the dev stack — bring them back.
+        subprocess.run(["docker", "compose", "up", "-d", "api", "worker", "beat"],
+                       cwd=REPO_ROOT, capture_output=True)
