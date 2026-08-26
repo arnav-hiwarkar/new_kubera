@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeCounts, percentComplete } from './RequirementsProgress'
+import { computeCounts, percentComplete } from './progress'
 
 const req = (status: string) => ({ status })
 

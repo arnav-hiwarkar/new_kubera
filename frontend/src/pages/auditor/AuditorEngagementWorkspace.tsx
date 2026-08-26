@@ -54,7 +54,7 @@ export function AuditorEngagementWorkspace() {
     { id: 'overview', label: 'Overview', icon: <ClipboardCheck />, area: undefined },
     { id: 'trial-balance', label: 'Trial Balance', icon: <BookOpen />, area: 'trial_balance' },
     { id: 'entries', label: 'Entries', icon: <FileText />, area: 'entries', count: entries.length },
-    { id: 'requirements', label: 'Requirements', icon: <ListChecks />, area: 'requirements', count: reqs.filter((r) => r.status === 'pending').length },
+    { id: 'requirements', label: 'Requirements', icon: <ListChecks />, area: 'requirements', count: reqs.filter((r) => r.status !== 'accepted').length },
     { id: 'queries', label: 'Queries', icon: <MessagesSquare />, area: 'queries', count: queries.filter((q) => q.status === 'open').length },
   ]
   const tabs = baseTabs.filter((t) => !t.area || perms[t.area] !== false)
@@ -114,7 +114,7 @@ export function AuditorEngagementWorkspace() {
           )}
           <StatCard
             label="Open requirements"
-            value={reqs.filter((r) => r.status === 'pending').length}
+            value={reqs.filter((r) => r.status !== 'accepted').length}
             icon={<ListChecks />}
             tone="info"
           />
@@ -134,7 +134,9 @@ export function AuditorEngagementWorkspace() {
           : <TrialBalanceTable view={tbView} loading={tbLoading} readonly={true} />
       )}
       {tab === 'entries' && <AuditorEntriesTab engagementId={eng.id} />}
-      {tab === 'requirements' && <RequirementsTab engagementId={eng.id} />}
+      {tab === 'requirements' && (
+        <RequirementsTab engagementId={eng.id} canQuery={perms.queries !== false} />
+      )}
       {tab === 'queries' && <QueriesTab engagementId={eng.id} />}
     </div>
   )

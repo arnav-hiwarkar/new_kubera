@@ -1,11 +1,13 @@
 import { motion } from 'framer-motion'
 import { CountUp } from '@/components/ui'
+import {
+  computeCounts,
+  percentComplete,
+  type RequirementLite,
+  type RequestStatusFilter,
+} from './progress'
 
-export type RequestStatusFilter = 'pending' | 'submitted' | 'clarification_needed' | 'accepted'
-
-export interface RequirementLite {
-  status: string
-}
+export type { RequestStatusFilter } from './progress'
 
 const BUCKETS: { key: RequestStatusFilter; label: string; bar: string; dot: string }[] = [
   { key: 'accepted', label: 'Accepted', bar: 'bg-status-verified', dot: 'bg-status-verified' },
@@ -13,20 +15,6 @@ const BUCKETS: { key: RequestStatusFilter; label: string; bar: string; dot: stri
   { key: 'clarification_needed', label: 'Clarification', bar: 'bg-status-pending', dot: 'bg-status-pending' },
   { key: 'pending', label: 'Pending', bar: 'bg-border-strong', dot: 'bg-text-muted' },
 ]
-
-export function computeCounts(requirements: RequirementLite[]): Record<RequestStatusFilter, number> {
-  const counts = { accepted: 0, submitted: 0, clarification_needed: 0, pending: 0 }
-  for (const r of requirements) {
-    if (r.status in counts) counts[r.status as RequestStatusFilter] += 1
-  }
-  return counts
-}
-
-export function percentComplete(requirements: RequirementLite[]): number {
-  if (!requirements.length) return 0
-  const accepted = requirements.filter((r) => r.status === 'accepted').length
-  return Math.round((accepted / requirements.length) * 100)
-}
 
 export function RequirementsProgress({
   requirements,

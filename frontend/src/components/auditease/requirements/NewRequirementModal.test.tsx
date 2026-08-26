@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRequirementPayload, validateRequirementForm } from './NewRequirementModal'
+import { buildRequirementPayload, validateRequirementForm } from './requirementForm'
 
 describe('validateRequirementForm', () => {
   const base = {
