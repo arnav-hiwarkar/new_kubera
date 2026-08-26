@@ -1,4 +1,4 @@
-import { Check, Shield, ArrowRight, Sparkles } from 'lucide-react'
+import { Check, ArrowRight, Sparkles } from 'lucide-react'
 
 interface PricingSectionProps {
   onRequestAccess: () => void
