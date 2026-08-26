@@ -58,18 +58,6 @@ if [ "$NO_MAINTENANCE" != "1" ]; then
   dr_run python3 maintenance.py on
 fi
 
-# Locate the api container (its volumes are read via --volumes-from).
-# Accepts a STOPPED leftover container too (-a): e.g. after a prior aborted
-# migration — we are about to stop it anyway. If it doesn't exist at all,
-# bring it up once (first-boot case), then re-check.
-API_CID="$(docker compose ps -aq api | head -n1)"
-if [ -z "$API_CID" ]; then
-  log "api container not found — starting it once to attach vault volume..."
-  dr_run docker compose up -d api
-  sleep 3
-  API_CID="$(docker compose ps -aq api | head -n1)"
-fi
-[ -n "$API_CID" ] || die "no api container even after 'up -d api' — is docker-compose.yml intact?"
 dr_run docker compose stop api worker beat
 
 # --- Database dump (custom format, compressed) ---
@@ -83,11 +71,11 @@ fi
 
 # --- Vault tarball (contents rooted at /data/vault) ---
 if [ "$DRY_RUN" = "1" ]; then
-  echo "DRYRUN: tar czf $BUNDLE/vault.tar.gz via volumes-from $API_CID"
+  echo "DRYRUN: tar czf $BUNDLE/vault.tar.gz from vault_data volume"
 else
   log "archiving vault..."
-  dr_run docker run --rm --volumes-from "$API_CID" alpine:3 \
-    tar czf - -C /data/vault . > "$BUNDLE/vault.tar.gz"
+  dr_run docker compose run --rm --no-deps -T --entrypoint sh api \
+    -c "tar czf - -C /data/vault ." > "$BUNDLE/vault.tar.gz"
 fi
 
 # --- Secrets ---
@@ -102,8 +90,8 @@ else
   log "writing manifest..."
   GIT_SHA="$(git -C "$PWD" rev-parse HEAD 2>/dev/null || echo unknown)"
   KEK_FP="$(kek_fingerprint)"
-  VAULT_FILES="$(docker run --rm --volumes-from "$API_CID" alpine:3 \
-    sh -c 'find /data/vault -type f | wc -l')"
+  VAULT_FILES="$(docker compose run --rm --no-deps -T --entrypoint sh api \
+    -c 'find /data/vault -type f | wc -l')"
   COUNTS=""
   for t in companies documents document_versions audit_engagements; do
     c="$(docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
