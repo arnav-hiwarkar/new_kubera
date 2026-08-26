@@ -1,11 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.auditease import (
     EngagementStatus, AuditEntryStatus, EntryLineSide, RequestStatus,
-    QueryStatus, SenderType, BalanceNature, TBSignConvention,
+    QueryStatus, SenderType, BalanceNature, TBSignConvention, ExpectedFormat,
 )
 
 
@@ -423,6 +423,28 @@ class AuditEntryResponse(BaseModel):
 class RequirementRequestCreate(BaseModel):
     description: str
     title: Optional[str] = None
+    priority: int = Field(default=1, ge=1, le=5)
+    due_date: Optional[date] = None
+    additional_details: Optional[str] = None
+    period_from: Optional[date] = None
+    period_to: Optional[date] = None
+    entity: Optional[str] = None
+    responsible_person_id: Optional[uuid.UUID] = None
+    expected_format: ExpectedFormat = ExpectedFormat.any
+    auditor_notes: Optional[str] = None
+    parent_requirement_id: Optional[uuid.UUID] = None
+
+
+class RequirementResponseOut(BaseModel):
+    id: uuid.UUID
+    requirement_id: uuid.UUID
+    responded_by: Optional[uuid.UUID] = None
+    responded_by_name: Optional[str] = None
+    text_answer: Optional[str] = None
+    document_id: Optional[uuid.UUID] = None
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
 
 class RequirementRequestResponse(BaseModel):
     id: uuid.UUID
@@ -433,6 +455,24 @@ class RequirementRequestResponse(BaseModel):
     description: str
     status: RequestStatus
     fulfilled_document_id: Optional[uuid.UUID]
+    seq_number: Optional[int] = None
+    requirement_id_str: Optional[str] = None   # display id e.g. REQ-001; routers set this
+    priority: int = 1
+    due_date: Optional[date] = None
+    company_eta: Optional[date] = None
+    additional_details: Optional[str] = None
+    period_from: Optional[date] = None
+    period_to: Optional[date] = None
+    entity: Optional[str] = None
+    responsible_person_id: Optional[uuid.UUID] = None
+    responsible_person_name: Optional[str] = None
+    expected_format: ExpectedFormat = ExpectedFormat.any
+    auditor_notes: Optional[str] = None
+    parent_requirement_id: Optional[uuid.UUID] = None
+    clarification_note: Optional[str] = None
+    latest_response: Optional[RequirementResponseOut] = None
+    responses: List[RequirementResponseOut] = []
+    linked_query_count: int = 0
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}

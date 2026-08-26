@@ -1,8 +1,8 @@
 import uuid
 import enum
 from decimal import Decimal
-from datetime import datetime, timezone
-from sqlalchemy import String, ForeignKey, Boolean, Enum as SAEnum, Integer, Numeric, Text, DateTime, UniqueConstraint, text
+from datetime import date, datetime, timezone
+from sqlalchemy import String, ForeignKey, Boolean, Enum as SAEnum, Integer, Numeric, Text, DateTime, Date, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -56,6 +56,12 @@ class TBSignConvention(str, enum.Enum):
 class RequestStatus(str, enum.Enum):
     open = "open"
     fulfilled = "fulfilled"
+
+class ExpectedFormat(str, enum.Enum):
+    """Hint for how the company should answer. Never enforced."""
+    text = "text"
+    file = "file"
+    any = "any"
 
 class QueryStatus(str, enum.Enum):
     open = "open"
@@ -254,6 +260,50 @@ class RequirementRequest(Base, TimestampMixin):
     status: Mapped[RequestStatus] = mapped_column(SAEnum(RequestStatus, name="request_status"), default=RequestStatus.open, nullable=False)
     fulfilled_document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
 
+    # --- lifecycle metadata (Task 3 swaps the enum + drops fulfilled_document_id) ---
+    seq_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    company_eta: Mapped[date | None] = mapped_column(Date, nullable=True)
+    additional_details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    period_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    entity: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    responsible_person_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
+    expected_format: Mapped[ExpectedFormat] = mapped_column(SAEnum(ExpectedFormat, name="expected_format"), default=ExpectedFormat.any, nullable=False, server_default="any")
+    auditor_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parent_requirement_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("requirement_requests.id", ondelete="RESTRICT"), nullable=True)
+    clarification_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    def __init__(self, **kwargs):
+        # SQLAlchemy applies Python-side column defaults at flush, not at
+        # construction; seed the two lifecycle defaults eagerly so a freshly
+        # built (unflushed) instance already reads with them.
+        super().__init__(**kwargs)
+        if kwargs.get("priority") is None:
+            self.priority = 1
+        if kwargs.get("expected_format") is None:
+            self.expected_format = ExpectedFormat.any
+
+    @property
+    def requirement_id(self) -> str:
+        return f"REQ-{self.seq_number or 0:03d}"
+
+
+class RequirementResponse(Base):
+    """One company submission against a requirement. Append-only: a
+    clarification loop produces multiple rows, preserving the audit trail."""
+    __tablename__ = "requirement_responses"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    requirement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("requirement_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Nullable only for legacy rows backfilled from old `fulfilled` requirements,
+    # where the original respondent was never recorded.
+    responded_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
+    text_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
 
 class Query(Base, TimestampMixin):
     __tablename__ = "queries"
@@ -261,6 +311,7 @@ class Query(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     engagement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("audit_engagements.id", ondelete="CASCADE"), nullable=False, index=True)
     opened_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auditors.id"), nullable=False)
+    requirement_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("requirement_requests.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[QueryStatus] = mapped_column(SAEnum(QueryStatus, name="query_status"), default=QueryStatus.open, nullable=False)
 
     messages = relationship("QueryMessage", back_populates="query", cascade="all, delete-orphan", order_by="QueryMessage.created_at")
