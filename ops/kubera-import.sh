@@ -168,6 +168,9 @@ else
   echo "DRYRUN: cp env -> $DEST/.env (DOMAIN=${NEW_DOMAIN:-<bundled>})"
 fi
 
+# Stop any older or conflicting containers holding ports
+dr_run bash -c "docker stop \$(docker ps -q) 2>/dev/null || true"
+
 restore_vault
 restore_db
 start_stack
