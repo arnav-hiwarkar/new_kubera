@@ -7,3 +7,11 @@ export function useUsers() {
     queryFn: () => usersApi.list(),
   })
 }
+
+export function useMe() {
+  return useQuery({
+    queryKey: ['users', 'me'],
+    queryFn: () => usersApi.me(),
+  })
+}
+
