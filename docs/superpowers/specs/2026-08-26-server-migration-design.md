@@ -79,12 +79,19 @@ tenant data). Default location: `~/kubera-migration-<ts>/`.
    `--no-maintenance`.
 2. Stop `api`, `worker`, `beat` containers (Postgres stays up for the dump; stopping app
    services freezes writes so DB and vault are mutually consistent).
-3. Dump Postgres with `pg_dump -Fc`; tar the vault volume into `vault.tar.gz`; copy `.env`.
-4. Write `manifest.json`: source commit SHA, row counts of key tables, vault file/dir count,
-   SHA256 fingerprint of `ROOT_MASTER_KEK`, timestamps.
+3. Resilient Volume & Database Capture:
+   - Dump Postgres with `pg_dump -Fc` directly from the `postgres` container.
+   - Archive the encrypted `/data/vault` volume using an ephemeral Docker Compose runner (`docker compose run --rm --no-deps -T --entrypoint sh api ...`) so it does not depend on a pre-existing running container ID.
+   - Copy `.env` to the bundle with `600` permissions.
+4. Write `manifest.json`: source commit SHA, row counts of key tables (`companies`, `documents`,
+   `document_versions`, `audit_engagements`), vault file/dir count, SHA256 fingerprint of `ROOT_MASTER_KEK`, timestamps.
 5. Write `sha256sums.txt` over all artifacts.
-6. Unless `--keep-live`: leave old stack stopped (cutover imminent). With `--keep-live`,
-   restart app containers and toggle maintenance OFF after export completes.
+6. Source Safety & Immutability:
+   - Source server data is strictly read-only and never deleted or modified.
+   - On error, an exit trap outputs instructions to unfreeze the old server:
+     `cd <repo> && docker compose up -d api worker beat && python3 maintenance.py off`.
+   - Unless `--keep-live`: leave old stack stopped (cutover imminent). With `--keep-live`,
+     restart app containers and toggle maintenance OFF after export completes.
 
 ### Transfer (`kubera-migrate.sh`, run on source)
 
