@@ -454,7 +454,6 @@ class RequirementRequestResponse(BaseModel):
     title: str
     description: str
     status: RequestStatus
-    fulfilled_document_id: Optional[uuid.UUID]
     seq_number: Optional[int] = None
     requirement_id_str: Optional[str] = None   # display id e.g. REQ-001; routers set this
     priority: int = 1
@@ -500,6 +499,7 @@ class QueryResponse(BaseModel):
     id: uuid.UUID
     engagement_id: uuid.UUID
     opened_by: uuid.UUID
+    requirement_id: Optional[uuid.UUID] = None
     status: QueryStatus
     created_at: datetime
     updated_at: datetime

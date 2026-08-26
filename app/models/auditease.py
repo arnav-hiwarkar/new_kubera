@@ -54,8 +54,10 @@ class TBSignConvention(str, enum.Enum):
     derived = "derived"
 
 class RequestStatus(str, enum.Enum):
-    open = "open"
-    fulfilled = "fulfilled"
+    pending = "pending"
+    submitted = "submitted"
+    clarification_needed = "clarification_needed"
+    accepted = "accepted"
 
 class ExpectedFormat(str, enum.Enum):
     """Hint for how the company should answer. Never enforced."""
@@ -257,8 +259,7 @@ class RequirementRequest(Base, TimestampMixin):
     raised_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auditors.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False, server_default="Requirement")
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[RequestStatus] = mapped_column(SAEnum(RequestStatus, name="request_status"), default=RequestStatus.open, nullable=False)
-    fulfilled_document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[RequestStatus] = mapped_column(SAEnum(RequestStatus, name="request_status"), default=RequestStatus.pending, nullable=False)
 
     # --- lifecycle metadata (Task 3 swaps the enum + drops fulfilled_document_id) ---
     seq_number: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -1,4 +1,5 @@
 import json
+import uuid
 
 import pytest
 from httpx import AsyncClient
@@ -810,22 +811,131 @@ async def test_requirements_and_queries(client: AsyncClient):
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud3@a.com"}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
 
-    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", json={"title": "Bank Statements", "description": "Provide bank statements"}, headers=aud_headers)
-    assert resp.status_code == 200
-    req_id = resp.json()["id"]
+    # create with defaults -> REQ-001 pending P1
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+                             json={"description": "Provide bank statements"}, headers=aud_headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "pending"
+    assert body["requirement_id_str"] == "REQ-001"
+    assert body["priority"] == 1
+    req_id = body["id"]
 
-    files = {'file': ('test.txt', b'bank statements here', 'text/plain')}
-    resp = await client.post("/api/v1/docvault/documents", data={'title': 'Bank Statements'}, files=files, headers=co_headers)
+    # second requirement gets REQ-002; priority honored
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+                             json={"description": "Ledger dump", "priority": 3}, headers=aud_headers)
+    assert resp.json()["requirement_id_str"] == "REQ-002"
+    child_id = resp.json()["id"]
+
+    # invalid transition: accept before anything submitted
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}/review",
+                             json={"action": "accept"}, headers=aud_headers)
+    assert resp.status_code == 400
+
+    # respond with text only
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/respond",
+                             json={"text_answer": "Will upload Monday"}, headers=co_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "submitted"
+
+    # clarify loop
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}/review",
+                             json={"action": "clarify", "note": "Statements missing for acct 3"}, headers=aud_headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "clarification_needed"
+    assert resp.json()["clarification_note"] == "Statements missing for acct 3"
+
+    # resubmit appends history, clears note
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/respond",
+                             json={"text_answer": "Here is acct 3"}, headers=co_headers)
+    assert resp.json()["status"] == "submitted"
+    assert resp.json()["clarification_note"] is None
+
+    resp = await client.get(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests", headers=co_headers)
+    reqs = {r["id"]: r for r in resp.json()}
+    assert len(reqs[req_id]["responses"]) == 2
+
+    # accept is terminal
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}/review",
+                             json={"action": "accept"}, headers=aud_headers)
+    assert resp.json()["status"] == "accepted"
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/respond",
+                             json={"text_answer": "late"}, headers=co_headers)
+    assert resp.status_code == 400
+    # accepted requirements cannot be edited or deleted
+    resp = await client.put(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}",
+                            json={"description": "edited"}, headers=aud_headers)
+    assert resp.status_code == 400
+    resp = await client.delete(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}", headers=aud_headers)
+    assert resp.status_code == 400
+
+    # respond with a DocVault document
+    files = {'file': ('ledgers.xlsx', b'data', 'application/octet-stream')}
+    resp = await client.post("/api/v1/docvault/documents", data={'title': 'Ledgers'}, files=files, headers=co_headers)
     doc_id = resp.json()["id"]
-
-    resp = await client.patch(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/fulfill", json={"document_id": doc_id}, headers=co_headers)
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{child_id}/respond",
+                             json={"document_id": doc_id}, headers=co_headers)
     assert resp.status_code == 200
+    assert resp.json()["latest_response"]["document_id"] == doc_id
 
-    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries", data={"initial_message": "What is this?"}, headers=aud_headers)
+    # company ETA
+    resp = await client.patch(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{child_id}/eta",
+                              json={"company_eta": "2026-09-30"}, headers=co_headers)
     assert resp.status_code == 200
-    query_id = resp.json()["id"]
+    assert resp.json()["company_eta"] == "2026-09-30"
 
-    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/queries/{query_id}/messages", data={"text": "Here is the doc", "attached_document_id": doc_id}, headers=co_headers)
+    # respond requires at least one field
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{child_id}/respond",
+                             json={}, headers=co_headers)
+    assert resp.status_code == 422
+
+    # queries link to requirements
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/queries",
+                             data={"initial_message": "What is this?", "requirement_id": child_id}, headers=aud_headers)
+    assert resp.status_code == 200
+    assert resp.json()["requirement_id"] == child_id
+
+
+@pytest.mark.asyncio
+async def test_requirement_parenting_guards(client: AsyncClient):
+    await create_test_company(client, email="cop@a.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='cop@a.com', password='pass1234')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "audp@a.com", "password": "pass1234", "name": "Aud"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "audp@a.com", "password": "pass1234"})
+    aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    eng_id = await make_engagement(client, co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "audp@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+
+    mk = lambda desc, **kw: client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+        json={"description": desc, **kw}, headers=aud_headers)
+
+    r_parent = (await mk("Parent")).json()
+    r_child = (await mk("Child", parent_requirement_id=r_parent["id"])).json()
+
+    # cross-engagement parent rejected
+    eng2 = await make_engagement(client, co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng2}/auditors/invite", json={"email": "audp@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng2}/accept", headers=aud_headers)
+    resp = await mk("Orphan", parent_requirement_id=r_parent["id"])
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng2}/requirement-requests",
+                             json={"description": "Orphan", "parent_requirement_id": r_parent["id"]}, headers=aud_headers)
+    assert resp.status_code == 400
+
+    # cycle rejected: making the parent a child of its own child
+    resp = await client.put(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{r_parent['id']}",
+        json={"description": "Parent", "parent_requirement_id": r_child["id"]}, headers=aud_headers)
+    assert resp.status_code == 400
+
+    # delete blocked while children exist
+    resp = await client.delete(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{r_parent['id']}", headers=aud_headers)
+    assert resp.status_code == 400
+    # child deletes fine
+    resp = await client.delete(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{r_child['id']}", headers=aud_headers)
     assert resp.status_code == 200
 
 
@@ -849,6 +959,10 @@ async def test_auditease_cross_tenant_leak(client: AsyncClient):
 
     # B cannot close A's engagement
     resp = await client.patch(f"/api/v1/auditease/engagements/{eng_id}/close", headers=headers_b)
+    assert resp.status_code == 404
+
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{uuid.uuid4()}/respond",
+                             json={"text_answer": "hi"}, headers=headers_b)
     assert resp.status_code == 404
 
 
@@ -1348,3 +1462,67 @@ def test_report_html_pl_reports_a_loss():
     # Net loss is difference (600.00), not sum (800.00)
     assert "600.00" in html
     assert "800.00" not in html
+
+
+@pytest.mark.asyncio
+async def test_requirement_bulk_import_roundtrip(client: AsyncClient):
+    import io
+    import openpyxl
+    from app.services.requirement_import import build_template_xlsx
+
+    await create_test_company(client, email="coi@a.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='coi@a.com', password='pass1234')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "audi@a.com", "password": "pass1234", "name": "Aud"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "audi@a.com", "password": "pass1234"})
+    aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    eng_id = await make_engagement(client, co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "audi@a.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+
+    # template downloads
+    resp = await client.get(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/import-template",
+                            headers=aud_headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    # build a filled sheet: two parents + one child referencing row order REQ-001
+    wb = openpyxl.load_workbook(io.BytesIO(build_template_xlsx()))
+    ws = wb["Requirements"]
+    ws.delete_rows(2)  # drop example row
+    ws.append(["Bulk req A"])
+    ws.append(["Bulk req B", None, None, None, None, 4])
+    ws.append(["Child of A", None, None, None, None, None, None, None, None, None, "REQ-001"])
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+
+    resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/import",
+        files={"file": ("reqs.xlsx", buf.getvalue(),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=aud_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["created_count"] == 3
+
+    resp = await client.get(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", headers=aud_headers)
+    by_desc = {r["description"]: r for r in resp.json()}
+    assert by_desc["Bulk req A"]["requirement_id_str"] == "REQ-001"
+    assert by_desc["Bulk req B"]["priority"] == 4
+    assert by_desc["Child of A"]["parent_requirement_id"] == by_desc["Bulk req A"]["id"]
+
+    # all-or-nothing: one bad row aborts everything (bad date + unresolvable parent ref)
+    wb2 = openpyxl.load_workbook(io.BytesIO(build_template_xlsx()))
+    ws2 = wb2["Requirements"]
+    ws2.delete_rows(2)
+    ws2.append(["Good row"])
+    ws2.append(["Bad row", None, "not-a-date"])
+    buf2 = io.BytesIO(); wb2.save(buf2); buf2.seek(0)
+    resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/import",
+        files={"file": ("bad.xlsx", buf2.getvalue(),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=aud_headers)
+    assert resp.status_code == 422
+    assert any(e["row"] == 3 for e in resp.json()["detail"])
+
+    resp = await client.get(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", headers=aud_headers)
+    assert len(resp.json()) == 3  # nothing extra persisted

@@ -1,9 +1,9 @@
 import json
 import uuid
 from typing import Annotated, List, Optional
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, model_validator
 from sqlalchemy import select, and_, or_, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,7 +15,8 @@ from app.models.auditor import Auditor
 from app.models.activity_log import ActorType, ActivityLog
 from app.models.auditease import (
     TrialBalanceAccount, LedgerGroup, AuditEngagement, AuditorEngagementGrant,
-    PendingAuditorInvite, AuditEntry, AuditEntryLine, RequirementRequest, Query, QueryMessage,
+    PendingAuditorInvite, AuditEntry, AuditEntryLine, RequirementRequest, RequirementResponse,
+    Query, QueryMessage,
     EngagementStatus, GrantStatus, AuditEntryStatus, EntryLineSide, RequestStatus, QueryStatus,
     SenderType, BalanceNature, TBSignConvention,
     FULL_AREA_PERMISSIONS, AREA_LABELS,
@@ -35,7 +36,8 @@ from app.schemas.auditease import (
     ReportEntriesBlock, ReportPreviewResponse,
 )
 from app.services.activity import log_activity
-from app.services.auditor_access import attach_actor_names, attach_sender_names, normalize_area_permissions
+from app.services.auditor_access import area_enabled, attach_actor_names, attach_sender_names, normalize_area_permissions
+from app.routers.auditor_engagements import enrich_requirements
 from app.config import get_settings
 from app.services import import_service
 from app.services import ledger_groups as lg
@@ -1278,55 +1280,133 @@ async def list_requirements(
     result = await db.execute(select(AuditEngagement).where(and_(AuditEngagement.id == engagement_id, AuditEngagement.company_id == current_user.company_id)))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Engagement not found")
-        
-    reqs = await db.execute(select(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id))
-    req_list = reqs.scalars().all()
+
+    req_list = (await db.execute(
+        select(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id)
+        .order_by(RequirementRequest.seq_number.nulls_first(), RequirementRequest.created_at)
+    )).scalars().all()
     await attach_actor_names(db, req_list, "raised_by", "raised_by_name")
-    return req_list
+    return await enrich_requirements(db, engagement_id, req_list)
 
 
-class RequirementFulfill(BaseModel):
-    document_id: uuid.UUID
+class RequirementRespond(BaseModel):
+    text_answer: Optional[str] = None
+    document_id: Optional[uuid.UUID] = None
+
+    @model_validator(mode="after")
+    def _needs_something(self):
+        if not self.text_answer and not self.document_id:
+            raise ValueError("Provide a text answer and/or a document")
+        return self
 
 
-@router.patch("/engagements/{engagement_id}/requirement-requests/{req_id}/fulfill", response_model=RequirementRequestResponse)
-async def fulfill_requirement(
+class CompanyEtaUpdate(BaseModel):
+    company_eta: Optional[date] = None
+
+
+async def grant_document_access_to_auditors(db, engagement_id, document_id) -> None:
+    """Give every accepted auditor with the requirements area read access to a
+    submitted document (shared-workspace rule)."""
+    from app.models.docvault import DocumentAccessOverride, PrincipalType
+    rows = (await db.execute(
+        select(AuditorEngagementGrant.auditor_id, AuditorEngagementGrant.area_permissions)
+        .where(and_(
+            AuditorEngagementGrant.engagement_id == engagement_id,
+            AuditorEngagementGrant.status == GrantStatus.accepted,
+        )))).all()
+    existing = set((await db.execute(
+        select(DocumentAccessOverride.principal_id).where(
+            DocumentAccessOverride.document_id == document_id,
+            DocumentAccessOverride.principal_type == PrincipalType.auditor,
+        ))).scalars().all())
+    for auditor_id, perms in rows:
+        if not area_enabled(perms, "requirements") or auditor_id in existing:
+            continue
+        db.add(DocumentAccessOverride(
+            document_id=document_id,
+            principal_type=PrincipalType.auditor,
+            principal_id=auditor_id,
+            permission_level="read",
+        ))
+
+
+async def _owned_requirement(db, current_user, engagement_id, req_id) -> RequirementRequest:
+    result = await db.execute(select(AuditEngagement).where(and_(
+        AuditEngagement.id == engagement_id,
+        AuditEngagement.company_id == current_user.company_id)))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    req = (await db.execute(select(RequirementRequest).where(and_(
+        RequirementRequest.id == req_id,
+        RequirementRequest.engagement_id == engagement_id)))).scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Requirement request not found")
+    return req
+
+
+@router.post("/engagements/{engagement_id}/requirement-requests/{req_id}/respond",
+             response_model=RequirementRequestResponse)
+async def respond_requirement(
     engagement_id: uuid.UUID,
     req_id: uuid.UUID,
-    payload: RequirementFulfill,
+    payload: RequirementRespond,
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    # check engagement ownership
-    result = await db.execute(select(AuditEngagement).where(and_(AuditEngagement.id == engagement_id, AuditEngagement.company_id == current_user.company_id)))
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Engagement not found")
-        
-    # check document ownership
-    from app.models.docvault import Document, DocumentAccessOverride, PrincipalType
-    doc_res = await db.execute(select(Document).where(and_(Document.id == payload.document_id, Document.company_id == current_user.company_id)))
-    if not doc_res.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Document not found")
-        
-    req_res = await db.execute(select(RequirementRequest).where(and_(RequirementRequest.id == req_id, RequirementRequest.engagement_id == engagement_id)))
-    req = req_res.scalar_one_or_none()
-    if not req:
-        raise HTTPException(status_code=404, detail="Requirement request not found")
-        
-    req.status = RequestStatus.fulfilled
-    req.fulfilled_document_id = payload.document_id
-    
-    # Grant access to auditor
-    grant = DocumentAccessOverride(
+    from app.models.docvault import Document
+    req = await _owned_requirement(db, current_user, engagement_id, req_id)
+    if req.status not in (RequestStatus.pending, RequestStatus.clarification_needed):
+        raise HTTPException(status_code=400, detail=f"Cannot respond to a {req.status.value} requirement")
+
+    if payload.document_id is not None:
+        doc_ok = (await db.execute(select(Document.id).where(and_(
+            Document.id == payload.document_id,
+            Document.company_id == current_user.company_id)))).scalar_one_or_none()
+        if not doc_ok:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+    db.add(RequirementResponse(
+        requirement_id=req.id,
+        responded_by=current_user.id,
+        text_answer=payload.text_answer,
         document_id=payload.document_id,
-        principal_type=PrincipalType.auditor,
-        principal_id=req.raised_by,
-        permission_level="read"
-    )
-    db.add(grant)
+    ))
+    req.status = RequestStatus.submitted
+    req.clarification_note = None
+    if payload.document_id is not None:
+        await grant_document_access_to_auditors(db, engagement_id, payload.document_id)
+
+    await log_activity(db, current_user.company_id, current_user.id,
+                 "requirement.submitted", "requirement_request", req.id,
+                 actor_type=ActorType.company_user, engagement_id=engagement_id)
     await db.commit()
     await db.refresh(req)
-    return req
+    await attach_actor_names(db, [req], "raised_by", "raised_by_name")
+    return (await enrich_requirements(db, engagement_id, [req]))[0]
+
+
+@router.patch("/engagements/{engagement_id}/requirement-requests/{req_id}/eta",
+              response_model=RequirementRequestResponse)
+async def set_requirement_eta(
+    engagement_id: uuid.UUID,
+    req_id: uuid.UUID,
+    payload: CompanyEtaUpdate,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    req = await _owned_requirement(db, current_user, engagement_id, req_id)
+    if req.status == RequestStatus.accepted:
+        raise HTTPException(status_code=400, detail="Cannot change ETA on an accepted requirement")
+
+    req.company_eta = payload.company_eta
+    await log_activity(db, current_user.company_id, current_user.id,
+                 "requirement.eta_set", "requirement_request", req.id,
+                 metadata_={"company_eta": str(payload.company_eta) if payload.company_eta else None},
+                 actor_type=ActorType.company_user, engagement_id=engagement_id)
+    await db.commit()
+    await db.refresh(req)
+    await attach_actor_names(db, [req], "raised_by", "raised_by_name")
+    return (await enrich_requirements(db, engagement_id, [req]))[0]
 
 
 # --- Queries ---

@@ -202,6 +202,35 @@ async def test_area_enforcement_blocks_disabled_areas(client: AsyncClient):
     resp = await client.get(f"/api/v1/auditor/engagements/{eng_id}/entries", headers=aud)
     assert resp.status_code == 200
 
+    # A fully-permitted colleague creates a requirement so the revoked auditor's
+    # access to the new lifecycle surfaces can be probed (requirements stay False).
+    full = await _register_login(client, "fullarea@a.com")
+    await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+        json={"email": "fullarea@a.com"},
+        headers=co,
+    )
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=full)
+    req_id = (await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+        json={"description": "need docs"}, headers=full,
+    )).json()["id"]
+
+    # all new lifecycle endpoints must honor the revoked requirements area
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}/review",
+                             json={"action": "clarify"}, headers=aud)
+    assert resp.status_code == 403
+    assert "removed by the company" in resp.json()["detail"]
+    resp = await client.get(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/import-template",
+        headers=aud)
+    assert resp.status_code == 403
+    resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/import",
+        files={"file": ("x.xlsx", b"x", "application/octet-stream")},
+        headers=aud)
+    assert resp.status_code == 403
+
 
 @pytest.mark.asyncio
 async def test_workspace_actions_are_logged(client: AsyncClient):

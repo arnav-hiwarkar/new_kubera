@@ -257,8 +257,8 @@ async def _build_tenant_data(client: AsyncClient, co_headers, aud_headers):
         headers=aud_headers,
     )
     assert req.status_code == 200, req.text
-    await client.patch(
-        f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req.json()['id']}/fulfill",
+    await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req.json()['id']}/respond",
         json={"document_id": doc_id}, headers=co_headers,
     )
 

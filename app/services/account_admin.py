@@ -14,6 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import hash_password
 from app.models.company import Company, CompanyUser
 from app.models.auditor import Auditor
+from app.models.auditease import (
+    AuditEngagement, Query, QueryMessage, RequirementRequest, RequirementResponse,
+)
 from app.models.docvault import Document, DocumentVersion, DocumentAccessOverride
 from app.models.notification import Notification, RecipientType
 
@@ -110,13 +113,20 @@ async def purge_company(db: AsyncSession, company: Company) -> list[str]:
 
     Deleting the `companies` row cascades to every tenant-owned table (migrations
     `a2b3c4d5e6f7` + `c8d9e0f1a2b3`), so nothing of the company survives — including
-    its users, so a fresh company can reuse the same name and admin email. Two
-    tables are unreachable by cascade and are swept explicitly first:
+    its users, so a fresh company can reuse the same name and admin email. Rows that
+    the cascade cannot reliably reach are swept explicitly first:
 
     - `notifications` has no `company_id` and no FKs at all (`recipient_id` is a
       bare UUID discriminated by `recipient_type`).
     - `document_access_overrides.principal_id` is likewise a bare UUID. Rows keyed
       by a purged document cascade away; this catches any keyed by a purged user.
+    - `requirement_responses`, `queries` and `query_messages` each sit under two
+      or three FK paths from `companies` (e.g. a response cascades via its
+      requirement but is SET-NULL'd via `documents`/`company_users`; a query
+      message cascades via its query but is SET-NULL'd via `documents`).
+      PostgreSQL may interleave those referential actions so a child row still
+      exists after its cascade-parent is gone, and the SET NULL update then
+      violates that parent FK. Delete them up front, children first.
 
     Global rows are deliberately left alone: `auditors` (an auditor may serve other
     companies), seeded `ledger_groups`/`document_types` (`company_id IS NULL`), and
@@ -158,6 +168,15 @@ async def purge_company(db: AsyncSession, company: Company) -> list[str]:
                 DocumentAccessOverride.principal_id.in_(user_ids)
             )
         )
+
+    await db.execute(delete(QueryMessage).where(QueryMessage.query_id.in_(
+        select(Query.id).where(Query.engagement_id.in_(
+            select(AuditEngagement.id).where(AuditEngagement.company_id == company.id))))))
+    await db.execute(delete(Query).where(Query.engagement_id.in_(
+        select(AuditEngagement.id).where(AuditEngagement.company_id == company.id))))
+    await db.execute(delete(RequirementResponse).where(RequirementResponse.requirement_id.in_(
+        select(RequirementRequest.id).where(RequirementRequest.engagement_id.in_(
+            select(AuditEngagement.id).where(AuditEngagement.company_id == company.id))))))
 
     # A Core DELETE, not `db.delete(company)`: the ORM relationships (`Company.users`,
     # `Company.keys`) have no delete cascade configured, so the unit of work would try
