@@ -50,6 +50,7 @@ creds.txt
 *.pem
 m.txt
 *.xlsx
+*.pdf
 
 # Migration bundles and dumps
 kubera-migration-*
