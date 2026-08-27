@@ -41,7 +41,7 @@
 
 ### Task 1: Database Model & Alembic Migration
 
-- [ ] **Step 1.1**: Open `app/models/company.py` and add the 4 columns to `CompanyUser`:
+- [x] **Step 1.1**: Open `app/models/company.py` and add the 4 columns to `CompanyUser`:
   ```python
   can_change_password: Mapped[bool] = mapped_column(
       Boolean, default=True, nullable=False, server_default="true"
@@ -54,29 +54,29 @@
       DateTime(timezone=True), nullable=True
   )
   ```
-- [ ] **Step 1.2**: Create a new Alembic migration in `alembic/versions/` adding these 4 columns to the `company_users` table with proper upgrade and downgrade functions.
-- [ ] **Step 1.3**: Run `uv run pytest tests/` to confirm model loading and schema initialization succeed.
+- [x] **Step 1.2**: Create a new Alembic migration in `alembic/versions/` adding these 4 columns to the `company_users` table with proper upgrade and downgrade functions.
+- [x] **Step 1.3**: Run `uv run pytest tests/` to confirm model loading and schema initialization succeed.
 
 ---
 
 ### Task 2: Backend Schemas & Security Validation Core
 
-- [ ] **Step 2.1**: Update `app/schemas/users.py`:
+- [x] **Step 2.1**: Update `app/schemas/users.py`:
   - Add `UserChangePasswordRequest` with `old_password`, `new_password`, `confirm_password`.
   - Add `can_change_password: bool = True` to `UserCreate`.
   - Add `can_change_password: bool | None = None` to `UserUpdate`.
   - Add `can_change_password: bool`, `has_avatar: bool = False`, `avatar_updated_at: datetime | None = None`, `password_changed_at: datetime | None = None` to `UserResponse`.
-- [ ] **Step 2.2**: Update `app/schemas/auth.py`:
+- [x] **Step 2.2**: Update `app/schemas/auth.py`:
   - Add `can_change_password: bool = True`, `has_avatar: bool = False`, `avatar_updated_at: datetime | None = None`, `password_changed_at: datetime | None = None` to `CompanyUserOut`.
-- [ ] **Step 2.3**: Create `app/services/user_security.py` with:
-  - `validate_password_complexity(password: str) -> None`: checks min length 8, `[A-Z]`, `[a-z]`, `[0-9]`, and `[!@#$%^&*(),.?":{}|<>\-_=+\\[\\]\\/`~]`. Raises `ValueError` with descriptive message if missing any rule.
+- [x] **Step 2.3**: Create `app/services/user_security.py` with:
+  - `validate_password_complexity(password: str) -> None`: checks min length 8, `[A-Z]`, `[a-z]`, `[0-9]`, and `[-!@#$%^&*(),.?":{}|<>_=+`~/\\\[\];]`. Raises `ValueError` with descriptive message if missing any rule.
   - `detect_image_format(data: bytes) -> str | None`: checks magic bytes for JPEG (`\xff\xd8\xff`), PNG (`\x89PNG\r\n\x1a\n`), WEBP (`RIFF....WEBP`). Returns `"jpg"`, `"png"`, `"webp"` or `None`.
 
 ---
 
 ### Task 3: Backend API Endpoints
 
-- [ ] **Step 3.1**: In `app/routers/users.py`, implement `POST /api/v1/users/me/change-password`:
+- [x] **Step 3.1**: In `app/routers/users.py`, implement `POST /api/v1/users/me/change-password`:
   - Authenticate with `get_current_company_user`.
   - Enforce `user.can_change_password is True` (raise 403 if False).
   - Enforce 30-day cooldown: check if `user.password_changed_at` is within 30 days of `now(timezone.utc)` (raise 429).
@@ -88,7 +88,7 @@
   - Update `user.hashed_password = new_hash` and `user.password_changed_at = datetime.now(timezone.utc)`.
   - Log `ActivityLog(action="user.password_changed")`.
   - Commit and return `{"success": True, "message": "Password changed successfully"}`.
-- [ ] **Step 3.2**: In `app/routers/users.py`, implement `POST /api/v1/users/me/avatar`:
+- [x] **Step 3.2**: In `app/routers/users.py`, implement `POST /api/v1/users/me/avatar`:
   - Authenticate with `get_current_company_user`.
   - Enforce 3-hour cooldown: check if `user.avatar_updated_at` is within 3 hours (raise 429).
   - Read uploaded file data, enforce size $\le 1\text{ MB}$ ($1,048,576$ bytes, raise 413).
@@ -99,49 +99,51 @@
   - Update `user.avatar_path = str(path)` and `user.avatar_updated_at = datetime.now(timezone.utc)`.
   - Log `ActivityLog(action="user.avatar_updated")`.
   - Commit and return updated user object.
-- [ ] **Step 3.3**: In `app/routers/users.py`, implement `GET /api/v1/users/{user_id}/avatar` & `GET /api/v1/users/me/avatar`:
+- [x] **Step 3.3**: In `app/routers/users.py`, implement `GET /api/v1/users/{user_id}/avatar` & `GET /api/v1/users/me/avatar`:
   - Authenticate with `get_current_company_user`, verify company tenant matching.
   - Read encrypted file, decrypt with company KEK.
   - Return binary `Response` with headers `Content-Type`, `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=3600`.
-- [ ] **Step 3.4**: Update `create_user` and `update_user` in `app/routers/users.py` to handle `can_change_password`.
+- [x] **Step 3.4**: Update `create_user` and `update_user` in `app/routers/users.py` to handle `can_change_password`.
 
 ---
 
 ### Task 4: Backend Automated Test Suite (`tests/test_user_settings.py`)
 
-- [ ] **Step 4.1**: Create `tests/test_user_settings.py` with test fixtures.
-- [ ] **Step 4.2**: Add test cases for password changing:
+- [x] **Step 4.1**: Create `tests/test_user_settings.py` with test fixtures.
+- [x] **Step 4.2**: Add test cases for password changing:
   - `test_password_change_success`: Verifies correct old password, updates hash, verifies login with new password, sets `password_changed_at`.
   - `test_password_change_wrong_old_password`: Returns 400 Bad Request.
   - `test_password_change_same_password`: Returns 400 Bad Request.
-  - `test_password_change_complexity_enforced`: Tests missing uppercase, lowercase, number, special char, length < 8 (returns 400).
+  - `test_password_change_complexity_enforced`: Tests missing uppercase, lowercase, number, special char, length < 8 (returns 400/422).
   - `test_password_change_permission_denied`: Admin sets `can_change_password=False`, user gets 403 Forbidden.
   - `test_password_change_cooldown_enforced`: After changing, immediate second attempt returns 429 Too Many Requests.
-- [ ] **Step 4.3**: Add test cases for avatar upload & streaming:
+- [x] **Step 4.3**: Add test cases for avatar upload & streaming:
   - `test_avatar_upload_success_and_stream`: Uploads valid PNG/JPEG/WEBP, verifies encrypted file on disk, streams back decrypted with headers.
   - `test_avatar_upload_size_limit`: Uploads > 1 MB file, returns 413.
   - `test_avatar_upload_invalid_magic_bytes`: Uploads text/html claiming to be image, returns 415.
   - `test_avatar_upload_cooldown_enforced`: Immediate second upload returns 429.
   - `test_avatar_cross_tenant_isolation`: User from Company B cannot access avatar of User from Company A.
-- [ ] **Step 4.4**: Run `uv run pytest tests/test_user_settings.py` and verify all tests pass.
+- [x] **Step 4.4**: Run `uv run pytest tests/test_user_settings.py` and verify all tests pass.
 
 ---
 
 ### Task 5: Frontend API Client & React Query Hooks
 
-- [ ] **Step 5.1**: Update `frontend/src/api/types.ts` with `UserChangePasswordRequest`, `can_change_password`, `has_avatar`, `avatar_updated_at`, and `password_changed_at`.
-- [ ] **Step 5.2**: Update `frontend/src/api/endpoints/users.ts`:
+- [x] **Step 5.1**: Update `frontend/src/api/types.ts` with `UserChangePasswordRequest`, `can_change_password`, `has_avatar`, `avatar_updated_at`, and `password_changed_at`.
+- [x] **Step 5.2**: Update `frontend/src/api/endpoints/users.ts`:
   - `changePassword: (body: UserChangePasswordRequest) => companyClient.post(...)`
-  - `uploadAvatar: (formData: FormData) => companyClient.post(...)`
-- [ ] **Step 5.3**: Update `frontend/src/api/hooks/users.ts`:
+  - `uploadAvatar: (file: File | Blob) => companyClient.post(...)`
+  - `getAvatarBlob: (userId?: string) => companyClient.get(...)`
+- [x] **Step 5.3**: Update `frontend/src/api/hooks/users.ts`:
   - `useChangePassword()`: Mutation hook that invalidates auth/profile queries and triggers notifications.
   - `useUploadAvatar()`: Mutation hook that invalidates auth/profile queries and refreshes TopBar.
+  - `useUserAvatar(userId?, hasAvatar?)`: Hook for authenticated blob fetching and object URL lifecycle management.
 
 ---
 
 ### Task 6: Interactive Circular Avatar Cropper (`AvatarCropperModal.tsx`)
 
-- [ ] **Step 6.1**: Create `frontend/src/components/users/AvatarCropperModal.tsx`:
+- [x] **Step 6.1**: Create `frontend/src/components/users/AvatarCropperModal.tsx`:
   - Accept `isOpen`, `imageSrc`, `onClose`, `onCropComplete(blob: Blob)`.
   - Viewport displaying the loaded image with circular mask cut-out overlay.
   - Drag-and-pan mouse & touch handlers to reposition the image freely.
@@ -154,7 +156,7 @@
 
 ### Task 7: User Settings Page & UI Integration
 
-- [ ] **Step 7.1**: Create `frontend/src/pages/company/settings/UserSettingsPage.tsx`:
+- [x] **Step 7.1**: Create `frontend/src/pages/company/settings/UserSettingsPage.tsx`:
   - Header with title and breadcrumbs.
   - **Account Info Card**: Displays full name, email, role, department, designation.
   - **Profile Picture Card**:
@@ -174,30 +176,30 @@
       * Different from old password
       * Passwords match
     - "Update Password" button calling `useChangePassword`.
-- [ ] **Step 7.2**: Register route `{ path: 'settings/user', element: <UserSettingsPage /> }` in `frontend/src/routes/company.routes.tsx`.
-- [ ] **Step 7.3**: Update `frontend/src/components/ui/TopBar.tsx`:
+- [x] **Step 7.2**: Register route `{ path: 'settings/user', element: <UserSettingsPage /> }` in `frontend/src/routes/company.routes.tsx`.
+- [x] **Step 7.3**: Update `frontend/src/components/ui/TopBar.tsx`:
   - Render user profile image from `/api/v1/users/me/avatar` if `profile.has_avatar` is true, with seamless error fallback to gradient initials.
   - Insert "User Settings" menu option with `Settings` icon above "Log out".
-- [ ] **Step 7.4**: Update `frontend/src/pages/company/users/UserModal.tsx`:
+- [x] **Step 7.4**: Update `frontend/src/pages/company/users/UserModal.tsx`:
   - Add Switch component for "Allow user to change password" (`can_change_password`), default `true`.
 
 ---
 
 ### Task 8: Frontend Unit & Component Tests
 
-- [ ] **Step 8.1**: Create `frontend/src/components/users/AvatarCropperModal.test.tsx`:
+- [x] **Step 8.1**: Create `frontend/src/components/users/AvatarCropperModal.test.tsx`:
   - Test modal render, image load, zoom slider change, and crop export trigger.
-- [ ] **Step 8.2**: Create `frontend/src/pages/company/settings/UserSettingsPage.test.tsx`:
+- [x] **Step 8.2**: Create `frontend/src/pages/company/settings/UserSettingsPage.test.tsx`:
   - Test hiding of password card when `can_change_password` is false.
   - Test real-time checklist validation turning green.
   - Test 30-day and 3-hour cooldown warning displays.
   - Test form submit handling.
-- [ ] **Step 8.3**: Update `frontend/src/components/ui/TopBar.test.tsx` and `frontend/src/pages/company/users/UserModal.test.tsx` to verify new settings link and admin switch.
+- [x] **Step 8.3**: Update `frontend/src/components/ui/TopBar.test.tsx` and `frontend/src/pages/company/users/UserModal.test.tsx` to verify new settings link and admin switch.
 
 ---
 
 ### Task 9: Full Verification
 
-- [ ] **Step 9.1**: Run backend pytest suite: `uv run pytest tests/test_user_settings.py`.
-- [ ] **Step 9.2**: Run frontend test suite: `npm test` in `frontend/`.
-- [ ] **Step 9.3**: Run TypeScript build check: `npx tsc --noEmit` in `frontend/`.
+- [x] **Step 9.1**: Run backend pytest suite: `uv run pytest tests/test_user_settings.py`. (All 12 tests passed).
+- [x] **Step 9.2**: Run frontend test suite: `npm test` in `frontend/`. (All 292 tests passed).
+- [x] **Step 9.3**: Run TypeScript build check: `npm run build` in `frontend/`. (Passed with 0 errors).
