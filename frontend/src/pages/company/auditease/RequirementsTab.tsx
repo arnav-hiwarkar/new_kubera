@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { EmptyState, Spinner, useToast } from '@/components/ui'
 import { useListRequirements } from '@/api/hooks/auditease'
-import { useDocuments, useDownloadDocument } from '@/api/hooks/docvault'
+import { useDownloadDocument } from '@/api/hooks/docvault'
 import {
   RequirementsOverview,
 } from '@/components/auditease/requirements/RequirementsOverview'
@@ -15,7 +15,6 @@ import { RequirementCard } from '@/components/auditease/requirements/Requirement
 export function RequirementsTab({ engagementId }: { engagementId: string }) {
   const toast = useToast()
   const { data: reqs = [], isLoading } = useListRequirements(engagementId)
-  const { data: docs = [] } = useDocuments()
   const downloadDoc = useDownloadDocument()
 
   const [filter, setFilter] = useState<RequirementStatusFilter>('all')
@@ -30,17 +29,10 @@ export function RequirementsTab({ engagementId }: { engagementId: string }) {
   }, [reqs, filter])
 
   const handleDownload = async (docId: string, filename: string) => {
-    const doc = docs.find((d) => d.id === docId)
-    const version = doc?.versions.find((v) => v.id === doc.current_version_id)
-    if (!doc || !version) {
-      toast.error('Document not found in vault')
-      return
-    }
     try {
       await downloadDoc.mutateAsync({
-        id: doc.id,
-        versionId: version.id,
-        filename: filename || version.original_filename,
+        id: docId,
+        filename: filename || 'document',
       })
     } catch {
       toast.error('Failed to download document')

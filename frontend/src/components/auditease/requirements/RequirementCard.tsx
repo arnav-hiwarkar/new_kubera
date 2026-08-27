@@ -6,6 +6,8 @@ import {
   Edit2,
   Lock,
   MessageSquare,
+  MessagesSquare,
+  MessageSquarePlus,
   RotateCcw,
   Trash2,
   User,
@@ -29,6 +31,8 @@ interface RequirementCardProps {
   onDelete?: (req: RequirementRequestResponse) => void
   onClose?: (reqId: string) => void
   onReopen?: (reqId: string) => void
+  onInitiateQuery?: (req: RequirementRequestResponse) => void
+  onViewQueries?: (req: RequirementRequestResponse) => void
   onDownloadDoc?: (docId: string, filename: string) => void
   className?: string
 }
@@ -43,6 +47,8 @@ export const RequirementCard: React.FC<RequirementCardProps> = ({
   onDelete,
   onClose,
   onReopen,
+  onInitiateQuery,
+  onViewQueries,
   onDownloadDoc,
   className,
 }) => {
@@ -90,6 +96,21 @@ export const RequirementCard: React.FC<RequirementCardProps> = ({
             <PriorityChip priority={req.priority ?? 1} />
             <StackedDocsBadge count={totalDocCount} />
 
+            {req.linked_query_count !== undefined && req.linked_query_count > 0 && (
+              <button
+                type="button"
+                onClick={() => onViewQueries?.(req)}
+                className={clsx(
+                  'inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800',
+                  onViewQueries ? 'cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/50' : 'cursor-default'
+                )}
+                title={`${req.linked_query_count} linked ${req.linked_query_count === 1 ? 'query' : 'queries'}`}
+              >
+                <MessagesSquare className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                <span>{req.linked_query_count} {req.linked_query_count === 1 ? 'query' : 'queries'}</span>
+              </button>
+            )}
+
             {req.due_date && (
               <span
                 className={clsx(
@@ -111,6 +132,19 @@ export const RequirementCard: React.FC<RequirementCardProps> = ({
           <div className="flex items-center gap-1.5 ml-auto">
             {variant === 'auditor' && (
               <>
+                {!isClosed && onInitiateQuery && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onInitiateQuery(req)}
+                    className="gap-1 text-xs h-7 px-2.5 text-zinc-700 hover:text-zinc-900 dark:text-zinc-300"
+                    title="Initiate query from this requirement"
+                  >
+                    <MessageSquarePlus className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                    <span>Initiate Query</span>
+                  </Button>
+                )}
+
                 {isClosed ? (
                   <Button
                     variant="secondary"

@@ -11,7 +11,7 @@ from fastapi import UploadFile
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.docvault import Bucket, Document, DocumentAccessOverride, PrincipalType
+from app.models.docvault import Bucket, BucketAccessGrant, BucketVisibility, Document, DocumentAccessOverride, PrincipalType
 from app.models.auditease import AuditEngagement, AuditorEngagementGrant, GrantStatus, EngagementStatus
 from app.services.auditor_access import area_enabled
 
@@ -24,8 +24,16 @@ async def ensure_audit_bucket(db: AsyncSession, company_id: uuid.UUID, created_b
     )
     bucket = res.scalar_one_or_none()
     if bucket:
+        if bucket.visibility != BucketVisibility.everyone:
+            bucket.visibility = BucketVisibility.everyone
+            await db.flush()
         return bucket
-    bucket = Bucket(company_id=company_id, name=AUDIT_BUCKET_NAME, created_by=created_by)
+    bucket = Bucket(
+        company_id=company_id,
+        name=AUDIT_BUCKET_NAME,
+        created_by=created_by,
+        visibility=BucketVisibility.everyone,
+    )
     db.add(bucket)
     await db.flush()
     return bucket

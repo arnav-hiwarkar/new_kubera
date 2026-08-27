@@ -849,7 +849,8 @@ async def test_requirements_and_queries(client: AsyncClient):
     assert resp.json()["status"] == "open"
     assert resp.json()["submission_count"] == 2
     assert len(resp.json()["submissions"]) == 2
-    assert resp.json()["submissions"][1]["round_number"] == 2
+    assert resp.json()["submissions"][0]["round_number"] == 2
+    assert resp.json()["submissions"][1]["round_number"] == 1
 
     # auditor closes requirement
     resp = await client.post(

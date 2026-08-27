@@ -124,4 +124,42 @@ describe('RequirementCard', () => {
     expect(screen.getByText('Uploaded first batch')).toBeInTheDocument()
     expect(screen.getByText('statements.pdf')).toBeInTheDocument()
   })
+
+  it('triggers onInitiateQuery when Initiate Query button is clicked', () => {
+    const onInitiate = vi.fn()
+    renderWithClient(
+      <RequirementCard
+        req={mockReq}
+        variant="auditor"
+        engagementId="eng-456"
+        onInitiateQuery={onInitiate}
+      />
+    )
+
+    const queryBtn = screen.getByRole('button', { name: /Initiate Query/i })
+    fireEvent.click(queryBtn)
+    expect(onInitiate).toHaveBeenCalledWith(mockReq)
+  })
+
+  it('renders linked query badge when linked_query_count > 0', () => {
+    const reqWithQueries: RequirementRequestResponse = {
+      ...mockReq,
+      linked_query_count: 2,
+    }
+    const onViewQueries = vi.fn()
+    renderWithClient(
+      <RequirementCard
+        req={reqWithQueries}
+        variant="auditor"
+        engagementId="eng-456"
+        onViewQueries={onViewQueries}
+      />
+    )
+
+    const queryBadge = screen.getByText('2 queries')
+    expect(queryBadge).toBeInTheDocument()
+    fireEvent.click(queryBadge)
+    expect(onViewQueries).toHaveBeenCalledWith(reqWithQueries)
+  })
 })
+

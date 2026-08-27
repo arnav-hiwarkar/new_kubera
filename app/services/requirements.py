@@ -174,7 +174,7 @@ async def enrich_requirements(
         select(RequirementResponse)
         .options(selectinload(RequirementResponse.documents))
         .where(RequirementResponse.requirement_id.in_(req_ids))
-        .order_by(RequirementResponse.round_number.asc(), RequirementResponse.created_at.asc())
+        .order_by(RequirementResponse.round_number.desc(), RequirementResponse.created_at.desc())
     )
     all_responses = res_resp.scalars().all()
 

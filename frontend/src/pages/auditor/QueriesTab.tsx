@@ -139,9 +139,14 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
                   </span>
                   <StatusBadge status={q.status} />
                 </div>
-                <span className="text-xs text-text-secondary">
-                  {new Date(q.created_at).toLocaleDateString()}
-                </span>
+                <div className="flex items-center gap-2 text-xs text-text-secondary">
+                  <span>{new Date(q.created_at).toLocaleDateString()}</span>
+                  {q.requirement_id && (
+                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 font-medium">
+                      Requirement Query
+                    </span>
+                  )}
+                </div>
               </button>
             )
           })}
@@ -153,7 +158,14 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
         {activeQuery ? (
           <>
             <div className="flex items-center justify-between border-b border-border p-4">
-              <h3 className="font-medium text-text-primary">Query Thread</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-medium text-text-primary">Query Thread</h3>
+                {activeQuery.requirement_id && (
+                  <span className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 font-medium">
+                    Linked to Requirement
+                  </span>
+                )}
+              </div>
               {activeQuery.status === 'open' && (
                 <Button variant="secondary" onClick={handleClose} disabled={closeQuery.isPending}>
                   Close Query

@@ -172,7 +172,7 @@ async def test_round_number_increment(client: AsyncClient):
 
     req_data = (await client.get(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests", headers=co_headers)).json()[0]
     rounds = [s["round_number"] for s in req_data["submissions"]]
-    assert rounds == [1, 2, 3]
+    assert rounds == [3, 2, 1]
 
 
 @pytest.mark.asyncio
@@ -402,3 +402,97 @@ async def test_cross_tenant_document_security_and_atomic_rollback(client: AsyncC
         headers=uninvited_headers,
     )
     assert unauth_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_company_member_role_file_upload_and_download(client: AsyncClient, db: AsyncSession):
+    """Ensure non-admin company users (role='employee') can upload files to requirements and download them."""
+    await create_test_company(client, email="admin_mem@co.com", password="pass1234")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='admin_mem@co.com', password='pass1234')}"}
+    
+    # Create employee user
+    u_resp = await client.post(
+        "/api/v1/users",
+        json={"email": "employee@co.com", "password": "emppass123", "full_name": "Team Employee", "role": "employee", "accessible_modules": ["auditease", "docvault"]},
+        headers=admin_headers,
+    )
+    assert u_resp.status_code == 201, u_resp.text
+    emp_headers = {"Authorization": f"Bearer {await get_company_token(client, email='employee@co.com', password='emppass123')}"}
+
+    await create_test_auditor(client, email="aud_mem@aud.com", password="pass1234")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_mem@aud.com', password='pass1234')}"}
+
+    eng_id = await _make_engagement(client, admin_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud_mem@aud.com"}, headers=admin_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+
+    # Auditor creates requirement
+    req_resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+        json={"description": "Employee upload test"},
+        headers=aud_headers,
+    )
+    req_id = req_resp.json()["id"]
+
+    # Employee responds with uploaded file
+    resp = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "Employee response"},
+        files=[("files", ("employee_statement.pdf", b"employee statement bytes", "application/pdf"))],
+        headers=emp_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["submission_count"] == 1
+    doc_id = data["submissions"][0]["documents"][0]["document_id"]
+    assert doc_id is not None
+
+    # Employee downloads document directly
+    dl_resp = await client.get(f"/api/v1/docvault/documents/{doc_id}/download", headers=emp_headers)
+    assert dl_resp.status_code == 200
+    assert dl_resp.content == b"employee statement bytes"
+
+
+@pytest.mark.asyncio
+async def test_auditor_initiate_query_linked_to_requirement(client: AsyncClient, db: AsyncSession):
+    """Ensure auditor can initiate a query linked to a specific requirement."""
+    await create_test_company(client, email="query_req@co.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='query_req@co.com', password='pass1234')}"}
+    await create_test_auditor(client, email="aud_query_req@aud.com", password="pass1234")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_query_req@aud.com', password='pass1234')}"}
+
+    eng_id = await _make_engagement(client, co_headers)
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud_query_req@aud.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+
+    # 1. Auditor creates requirement REQ-001
+    req_resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+        json={"description": "Please upload bank reconciliation"},
+        headers=aud_headers,
+    )
+    req_id = req_resp.json()["id"]
+
+    # 2. Auditor opens a query linked to this requirement
+    q_resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/queries",
+        data={"initial_message": "Clarification needed on bank statement date range", "requirement_id": req_id},
+        headers=aud_headers,
+    )
+    assert q_resp.status_code == 200, q_resp.text
+    query_data = q_resp.json()
+    assert query_data["requirement_id"] == req_id
+    assert query_data["status"] == "open"
+    assert len(query_data["messages"]) == 1
+    assert query_data["messages"][0]["text"] == "Clarification needed on bank statement date range"
+
+    # 3. Fetch requirement to verify linked_query_count is enriched as 1
+    req_list_resp = await client.get(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests", headers=aud_headers)
+    assert req_list_resp.status_code == 200
+    req_data = req_list_resp.json()[0]
+    assert req_data["linked_query_count"] == 1
+
+    # 4. Also visible on company side
+    co_req_list = await client.get(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests", headers=co_headers)
+    assert co_req_list.status_code == 200
+    assert co_req_list.json()[0]["linked_query_count"] == 1

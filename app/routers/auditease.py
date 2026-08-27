@@ -1288,18 +1288,19 @@ async def list_requirements(
     return await enrich_requirements(db, engagement_id, req_list)
 
 
-async def _owned_requirement(db, current_user, engagement_id, req_id) -> RequirementRequest:
+async def _owned_requirement(db, current_user, engagement_id, req_id) -> tuple[AuditEngagement, RequirementRequest]:
     result = await db.execute(select(AuditEngagement).where(and_(
         AuditEngagement.id == engagement_id,
         AuditEngagement.company_id == current_user.company_id)))
-    if not result.scalar_one_or_none():
+    eng = result.scalar_one_or_none()
+    if not eng:
         raise HTTPException(status_code=404, detail="Engagement not found")
     req = (await db.execute(select(RequirementRequest).where(and_(
         RequirementRequest.id == req_id,
         RequirementRequest.engagement_id == engagement_id)))).scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=404, detail="Requirement request not found")
-    return req
+    return eng, req
 
 
 @router.post("/engagements/{engagement_id}/requirement-requests/{req_id}/respond",
@@ -1313,7 +1314,9 @@ async def respond_requirement(
     document_ids: Annotated[Optional[List[uuid.UUID]], Form()] = None,
     files: Annotated[Optional[List[UploadFile]], File()] = None,
 ):
-    req = await _owned_requirement(db, current_user, engagement_id, req_id)
+    eng, req = await _owned_requirement(db, current_user, engagement_id, req_id)
+    if eng.status == EngagementStatus.closed:
+        raise HTTPException(status_code=400, detail="This engagement is closed.")
     if req.status == RequestStatus.closed:
         raise HTTPException(status_code=400, detail="This requirement is closed. Ask the auditor to reopen it.")
     text = (text_answer or "").strip() or None

@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
 import { clsx } from 'clsx'
-import { Lock, Send, Upload, X, FileText } from 'lucide-react'
+import { Lock, Send, Upload, X, FileText, FolderPlus } from 'lucide-react'
 import { Button, Textarea, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import { useRespondToRequirement } from '@/api/hooks/auditease'
+import { useDocuments } from '@/api/hooks/docvault'
 import type { RequirementRequestResponse } from '@/api/types'
 import { formatFileSize } from './progress'
 
@@ -22,9 +23,12 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
 }) => {
   const toast = useToast()
   const respondMutation = useRespondToRequirement()
+  const { data: vaultDocs = [] } = useDocuments()
 
   const [textAnswer, setTextAnswer] = useState('')
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
+  const [showVaultPicker, setShowVaultPicker] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isClosed = req.status === 'closed'
@@ -56,12 +60,22 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const toggleSelectDoc = (docId: string) => {
+    setSelectedDocIds((prev) =>
+      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]
+    )
+  }
+
+  const removeDoc = (docId: string) => {
+    setSelectedDocIds((prev) => prev.filter((id) => id !== docId))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
 
     const text = textAnswer.trim()
-    if (!text && selectedFiles.length === 0) {
+    if (!text && selectedFiles.length === 0 && selectedDocIds.length === 0) {
       setError('Please provide a written answer or attach at least one file.')
       return
     }
@@ -72,6 +86,9 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
     }
     for (const file of selectedFiles) {
       formData.append('files', file)
+    }
+    for (const docId of selectedDocIds) {
+      formData.append('document_ids', docId)
     }
 
     try {
@@ -85,6 +102,8 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
       )
       setTextAnswer('')
       setSelectedFiles([])
+      setSelectedDocIds([])
+      setShowVaultPicker(false)
       onSuccess?.()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to submit response')
@@ -121,9 +140,9 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
         className="w-full text-xs"
       />
 
-      {/* File attachments */}
+      {/* File & Vault attachments */}
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-300 bg-white text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 cursor-pointer transition-colors shadow-xs">
             <Upload className="w-3.5 h-3.5 text-zinc-500" />
             <span>Attach Files</span>
@@ -134,19 +153,66 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
               className="hidden"
             />
           </label>
+
+          {vaultDocs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowVaultPicker((prev) => !prev)}
+              className={clsx(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors shadow-xs',
+                showVaultPicker
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                  : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
+              )}
+            >
+              <FolderPlus className="w-3.5 h-3.5 text-zinc-500" />
+              <span>Attach from Vault</span>
+            </button>
+          )}
+
           <span className="text-[11px] text-zinc-400">
-            {selectedFiles.length > 0
-              ? `${selectedFiles.length} file(s) selected`
-              : 'PDF, Excel, Word, images, etc.'}
+            {selectedFiles.length + selectedDocIds.length > 0
+              ? `${selectedFiles.length + selectedDocIds.length} document(s) attached`
+              : 'Upload files or link existing vault documents'}
           </span>
         </div>
 
+        {/* Vault documents picker dropdown */}
+        {showVaultPicker && vaultDocs.length > 0 && (
+          <div className="rounded-lg border border-zinc-200 bg-white p-2.5 dark:border-zinc-700 dark:bg-zinc-800 space-y-1.5 max-h-40 overflow-y-auto">
+            <div className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-1">
+              Select documents from your Vault:
+            </div>
+            {vaultDocs.map((doc) => {
+              const isSelected = selectedDocIds.includes(doc.id)
+              return (
+                <button
+                  key={doc.id}
+                  type="button"
+                  onClick={() => toggleSelectDoc(doc.id)}
+                  className={clsx(
+                    'w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs text-left transition-colors',
+                    isSelected
+                      ? 'bg-blue-50 text-blue-700 font-medium dark:bg-blue-950/60 dark:text-blue-300'
+                      : 'hover:bg-zinc-100 text-zinc-700 dark:hover:bg-zinc-700 dark:text-zinc-200'
+                  )}
+                >
+                  <span className="truncate max-w-[280px]">{doc.title}</span>
+                  <span className="text-[10px] text-zinc-400">
+                    {isSelected ? 'Selected' : 'Click to select'}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* Selected files preview */}
-        {selectedFiles.length > 0 && (
+        {(selectedFiles.length > 0 || selectedDocIds.length > 0) && (
           <div className="flex flex-wrap gap-1.5 pt-1">
             {selectedFiles.map((file, idx) => (
               <span
-                key={idx}
+                key={`file-${idx}`}
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-white text-zinc-700 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700 shadow-xs"
               >
                 <FileText className="w-3 h-3 text-blue-500 shrink-0" />
@@ -166,6 +232,28 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
                 </button>
               </span>
             ))}
+            {selectedDocIds.map((docId) => {
+              const doc = vaultDocs.find((d) => d.id === docId)
+              return (
+                <span
+                  key={`vault-${docId}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800 shadow-xs"
+                >
+                  <FileText className="w-3 h-3 text-blue-600 shrink-0" />
+                  <span className="truncate max-w-[180px]" title={doc?.title || 'Vault doc'}>
+                    {doc?.title || 'Vault doc'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeDoc(docId)}
+                    className="p-0.5 text-blue-400 hover:text-blue-600 dark:hover:text-blue-200 rounded"
+                    title="Remove vault document"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )
+            })}
           </div>
         )}
       </div>
@@ -176,7 +264,7 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
         <Button
           type="submit"
           size="sm"
-          disabled={respondMutation.isPending || (!textAnswer.trim() && selectedFiles.length === 0)}
+          disabled={respondMutation.isPending || (!textAnswer.trim() && selectedFiles.length === 0 && selectedDocIds.length === 0)}
           className="gap-1.5 text-xs"
         >
           <Send className="w-3.5 h-3.5" />

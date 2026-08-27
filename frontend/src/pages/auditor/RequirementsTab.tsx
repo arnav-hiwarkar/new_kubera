@@ -22,6 +22,7 @@ import {
 import { RequirementCard } from '@/components/auditease/requirements/RequirementCard'
 import { NewRequirementModal } from '@/components/auditease/requirements/NewRequirementModal'
 import { BulkImportModal } from '@/components/auditease/requirements/BulkImportModal'
+import { InitiateQueryModal } from '@/components/auditease/requirements/InitiateQueryModal'
 
 export function RequirementsTab({
   engagementId,
@@ -40,6 +41,7 @@ export function RequirementsTab({
   const [showImport, setShowImport] = useState(false)
   const [editingReq, setEditingReq] = useState<RequirementRequestResponse | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<RequirementRequestResponse | null>(null)
+  const [queryModalReq, setQueryModalReq] = useState<RequirementRequestResponse | null>(null)
 
   const filteredReqs = useMemo(() => {
     if (filter === 'all') return reqs
@@ -135,6 +137,7 @@ export function RequirementsTab({
                   engagementId={engagementId}
                   onClose={handleClose}
                   onReopen={handleReopen}
+                  onInitiateQuery={(r) => setQueryModalReq(r)}
                   onEdit={(r) => setEditingReq(r)}
                   onDelete={(r) => setDeleteTarget(r)}
                   onDownloadDoc={handleDownload}
@@ -166,6 +169,15 @@ export function RequirementsTab({
         <BulkImportModal
           engagementId={engagementId}
           onClose={() => setShowImport(false)}
+        />
+      )}
+
+      {queryModalReq && (
+        <InitiateQueryModal
+          open
+          engagementId={engagementId}
+          req={queryModalReq}
+          onClose={() => setQueryModalReq(null)}
         />
       )}
 
