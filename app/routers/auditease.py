@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.auth import get_current_company_user, require_manager_or_admin
+from app.auth import get_current_company_user, require_admin, require_manager_or_admin
 from app.models.company import CompanyUser
 from app.models.auditor import Auditor
 from app.models.activity_log import ActorType, ActivityLog
@@ -909,7 +909,7 @@ async def import_mappings(
 
 @router.post("/engagements", response_model=AuditEngagementResponse, status_code=status.HTTP_201_CREATED)
 async def create_engagement(
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     engagement: AuditEngagementCreate
 ):
@@ -957,7 +957,7 @@ async def get_engagement(
 @router.patch("/engagements/{engagement_id}/close", response_model=AuditEngagementResponse)
 async def close_engagement(
     engagement_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
@@ -995,7 +995,7 @@ async def close_engagement(
 @router.delete("/engagements/{engagement_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_engagement(
     engagement_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Hard-delete an engagement and everything under it (cascade). Allowed only
@@ -1022,7 +1022,7 @@ async def delete_engagement(
 async def invite_auditor(
     engagement_id: uuid.UUID,
     invite: AuditorInviteCreate,
-    current_user: Annotated[CompanyUser, Depends(require_manager_or_admin)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Invite one auditor by email without disturbing other auditors. Registered
@@ -1107,7 +1107,7 @@ async def update_auditor_access(
     engagement_id: uuid.UUID,
     auditor_id: uuid.UUID,
     body: AuditorPermissionsUpdate,
-    current_user: Annotated[CompanyUser, Depends(require_manager_or_admin)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)
@@ -1151,7 +1151,7 @@ async def update_auditor_access(
 async def remove_engagement_auditor(
     engagement_id: uuid.UUID,
     auditor_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(require_manager_or_admin)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     eng = await _get_owned_engagement(db, current_user.company_id, engagement_id)

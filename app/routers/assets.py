@@ -742,9 +742,9 @@ async def approve_asset(
 ):
     """ready -> capitalized. Admin or manager, and never your own asset unless you
     are an admin — an unreviewed capitalized cost enters the depreciation base."""
-    if current_user.role not in (UserRole.admin, UserRole.manager):
+    if current_user.role != UserRole.admin:
         raise HTTPException(
-            status_code=403, detail="Only an admin or manager can approve an asset"
+            status_code=403, detail="Only an admin can approve an asset"
         )
     anchor = await _load_asset(asset_id, current_user.company_id, db)
     units = await _units_for_transition(anchor, body.apply_to_siblings, db)
@@ -816,9 +816,9 @@ async def reject_asset(
     db: Db,
 ):
     """ready -> draft, so the submitter can fix it."""
-    if current_user.role not in (UserRole.admin, UserRole.manager):
+    if current_user.role != UserRole.admin:
         raise HTTPException(
-            status_code=403, detail="Only an admin or manager can reject an asset"
+            status_code=403, detail="Only an admin can reject an asset"
         )
     anchor = await _load_asset(asset_id, current_user.company_id, db)
     units = await _units_for_transition(anchor, body.apply_to_siblings, db)

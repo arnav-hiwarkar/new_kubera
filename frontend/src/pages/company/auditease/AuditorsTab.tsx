@@ -118,7 +118,7 @@ export function AuditorsTab({ engagementId, canManage }: { engagementId: string;
           <h3 className="text-lg font-semibold text-text-primary">Auditors</h3>
           <p className="text-sm text-text-muted">
             Who has access to this engagement and what they can work in.
-            {!canManage && ' Only managers and admins can change access.'}
+            {!canManage && ' Only admins can change access.'}
           </p>
         </div>
       </div>

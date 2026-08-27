@@ -22,7 +22,7 @@ export const companyNav: NavSection[] = [
   {
     items: [
       { label: 'Dashboard', to: '/app', icon: LayoutDashboard, moduleId: 'dashboard' },
-      { label: 'Directory', to: '/app/users', icon: Users }, // Users directory is not a module
+      { label: 'Directory', to: '/app/users', icon: Users, adminOnly: true }, // Users directory is admin only
     ],
   },
   {

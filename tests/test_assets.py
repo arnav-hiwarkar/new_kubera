@@ -411,16 +411,16 @@ async def test_a_completed_draft_submits_and_capitalizes(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_a_manager_cannot_approve_their_own_asset(client: AsyncClient):
+async def test_employees_cannot_approve_asset(client: AsyncClient):
     AH = await admin_headers(client, "as_sod@a.com")
-    await make_user(client, AH, "as_mgr@a.com", role="manager")
-    MH = await user_headers(client, "as_mgr@a.com")
+    await make_user(client, AH, "as_emp@a.com", role="employee")
+    EH = await user_headers(client, "as_emp@a.com")
     masters = await _masters(client, AH)
     cat = await _leaf_category(client, AH)
 
-    # The manager creates it themselves.
-    created = await _quick_add(client, MH, cat["id"], unit_basic_price=60000)
-    asset_id, _ = await _make_ready(client, MH, created, masters)
+    # The employee creates it themselves.
+    created = await _quick_add(client, EH, cat["id"], unit_basic_price=60000)
+    asset_id, _ = await _make_ready(client, EH, created, masters)
     await client.patch(
         f"{ASSETS}/{asset_id}",
         json={
@@ -428,13 +428,12 @@ async def test_a_manager_cannot_approve_their_own_asset(client: AsyncClient):
             "capitalization_date": "2026-04-10",
             "it_put_to_use_date": "2026-04-10",
         },
-        headers=MH,
+        headers=EH,
     )
-    await client.post(f"{ASSETS}/{asset_id}/submit", json={}, headers=MH)
+    await client.post(f"{ASSETS}/{asset_id}/submit", json={}, headers=EH)
 
-    denied = await client.post(f"{ASSETS}/{asset_id}/approve", json={}, headers=MH)
+    denied = await client.post(f"{ASSETS}/{asset_id}/approve", json={}, headers=EH)
     assert denied.status_code == 403
-    assert "cannot approve an asset you created" in denied.json()["detail"]
 
     # An admin can.
     assert (await client.post(f"{ASSETS}/{asset_id}/approve", json={}, headers=AH)).status_code == 200

@@ -2,6 +2,7 @@ import type { RouteObject } from 'react-router-dom'
 import { Navigate, Outlet } from 'react-router-dom'
 import { CompanyAuthProvider, CompanyGuard } from '@/auth/company'
 import { ModuleGuard } from '@/auth/company/ModuleGuard'
+import { AdminGuard } from '@/auth/company/AdminGuard'
 import { ProfileGate } from '@/auth/company/ProfileGate'
 import { CompanyShell } from '@/layouts/CompanyShell'
 import { CompanyLogin } from '@/pages/company/CompanyLogin'
@@ -64,7 +65,7 @@ export const companyRoutes: RouteObject = {
               element: <ProfileGate />,
               children: [
                 { index: true, element: <ModuleGuard moduleId="dashboard"><Dashboard /></ModuleGuard> },
-                { path: 'users', element: <UsersDirectory /> },
+                { path: 'users', element: <AdminGuard><UsersDirectory /></AdminGuard> },
                 { path: 'kra', element: <ModuleGuard moduleId="kra"><KraPage /></ModuleGuard> },
                 {
                   path: 'assets',

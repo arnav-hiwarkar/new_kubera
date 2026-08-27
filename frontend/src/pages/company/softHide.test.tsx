@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderApp } from '@/test/renderApp'
 import { companyTokenStorage } from '@/auth/tokenStorage'
@@ -74,13 +74,12 @@ describe('Sales and KRA soft hide', () => {
     expect(screen.queryByRole('button', { name: /KRA & Appraisals/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /SecretarialEase.*Registers & meetings/ })).toBeInTheDocument()
 
-    expect(screen.getByText('Team members')).toBeInTheDocument()
+    expect(screen.queryByText('Team members')).not.toBeInTheDocument()
     expect(screen.queryByText('Sales pipeline')).not.toBeInTheDocument()
     expect(screen.queryByText('Pipeline value')).not.toBeInTheDocument()
     expect(screen.queryByText('Total deals')).not.toBeInTheDocument()
     expect(screen.queryByText('Won value')).not.toBeInTheDocument()
 
-    await waitFor(() => expect(requestedUrls.some((url) => url.endsWith('/api/v1/users'))).toBe(true))
     expect(requestedUrls.some((url) => url.includes('/api/v1/sales/aggregate'))).toBe(false)
   })
 

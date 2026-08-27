@@ -11,6 +11,7 @@ export interface NavItem {
   /** Lucide icon component for the item. */
   icon?: ComponentType<{ className?: string }>
   moduleId?: ModuleId
+  adminOnly?: boolean
 }
 
 export interface NavSection {

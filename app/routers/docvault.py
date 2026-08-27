@@ -125,7 +125,7 @@ async def can_access_bucket(db: AsyncSession, user: CompanyUser, bucket_id: Opti
 @router.post("/buckets", response_model=BucketResponse, status_code=status.HTTP_201_CREATED)
 async def create_bucket(
     bucket: BucketCreate,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     new_bucket = Bucket(
@@ -231,7 +231,7 @@ async def update_bucket_access(
 @router.delete("/buckets/{bucket_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_bucket(
     bucket_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     result = await db.execute(select(Bucket).where(and_(Bucket.id == bucket_id, Bucket.company_id == current_user.company_id)))

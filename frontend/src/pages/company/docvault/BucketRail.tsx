@@ -198,30 +198,26 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
             {count}
           </span>
         </button>
-        {deletable && (
+        {isAdmin && deletable && (
           // Actions drop into their own row on hover/focus; the grid-rows trick
           // animates the height so the list below slides down smoothly.
           <div className="grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-nav group-hover:grid-rows-[1fr] group-focus-within:grid-rows-[1fr]">
             <div className="overflow-hidden">
               <div className="flex items-center justify-end gap-2 px-2 pb-1.5">
-                {isAdmin && (
-                  <button
-                    onClick={() => startRename(deletable)}
-                    aria-label={`Rename bucket ${deletable.name}`}
-                    className="text-text-muted hover:text-accent"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                )}
-                {isAdmin && (
-                  <button
-                    onClick={() => setToManage(deletable)}
-                    aria-label={`Manage access for bucket ${deletable.name}`}
-                    className="text-text-muted hover:text-accent"
-                  >
-                    <Users className="h-4 w-4" />
-                  </button>
-                )}
+                <button
+                  onClick={() => startRename(deletable)}
+                  aria-label={`Rename bucket ${deletable.name}`}
+                  className="text-text-muted hover:text-accent"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setToManage(deletable)}
+                  aria-label={`Manage access for bucket ${deletable.name}`}
+                  className="text-text-muted hover:text-accent"
+                >
+                  <Users className="h-4 w-4" />
+                </button>
                 <button
                   onClick={() => setToDelete(deletable)}
                   aria-label={`Delete bucket ${deletable.name}`}
@@ -243,13 +239,15 @@ export function BucketRail({ buckets, documents, selected, onSelect }: BucketRai
         <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">
           Buckets
         </span>
-        <button
-          onClick={() => setCreating((c) => !c)}
-          className="flex items-center gap-1 text-sm text-accent hover:underline"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setCreating((c) => !c)}
+            className="flex items-center gap-1 text-sm text-accent hover:underline"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New
+          </button>
+        )}
       </div>
 
       {creating && (

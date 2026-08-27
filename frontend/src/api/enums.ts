@@ -60,7 +60,7 @@ export const QUERY_STATUS = ['open', 'closed'] as const
 export const REQUEST_STATUS = ['open', 'closed'] as const
 export const SALES_STATUS = ['lead', 'negotiation', 'won', 'lost'] as const
 export const SENDER_TYPE = ['company_user', 'auditor'] as const
-export const USER_ROLE = ['admin', 'manager', 'employee'] as const
+export const USER_ROLE = ['admin', 'employee'] as const
 
 // Compile-time guard: these arrays must stay assignable to the generated enum types.
 const _guards = {
@@ -142,7 +142,6 @@ export const STATUS_TONE: Record<string, BadgeTone> = {
   maintenance: 'warning',
   // UserRole (rendered as role chips)
   admin: 'info',
-  manager: 'special',
   employee: 'neutral',
 }
 

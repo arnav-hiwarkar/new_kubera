@@ -126,7 +126,7 @@ async def test_sales_import_inspect_and_import(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_sales_scoping_and_attribution(client: AsyncClient):
     AH = await _admin(client, email="ssc@a.com")
-    mgr = await _make_user(client, AH, "smgr@a.com", role="manager")
+    mgr = await _make_user(client, AH, "smgr@a.com", role="admin")
     emp = await _make_user(client, AH, "semp@a.com", manager_id=mgr["id"])
     other = await _make_user(client, AH, "soth@a.com")
     MH = await _headers(client, "smgr@a.com")

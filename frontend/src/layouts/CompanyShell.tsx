@@ -23,7 +23,8 @@ export function CompanyShell() {
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
-        if (!item.moduleId) return true // public item like directory or custom-fields
+        if (item.adminOnly && profile?.role !== 'admin') return false
+        if (!item.moduleId) return true // public item like custom-fields
         return hasModuleAccess(profile, item.moduleId)
       }),
     }))

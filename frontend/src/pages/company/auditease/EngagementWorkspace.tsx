@@ -46,7 +46,7 @@ export function EngagementWorkspace() {
   const navigate = useNavigate()
   const toast = useToast()
   const { profile } = useCompanyAuth()
-  const canManageAuditors = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = profile?.role === 'admin'
 
   const { data: eng, isLoading } = useEngagement(engagementId)
   const {
@@ -129,12 +129,12 @@ export function EngagementWorkspace() {
           </div>
           {!closed && (
             <div className="flex shrink-0 gap-2">
-              {canManageAuditors && (
+              {isAdmin && (
                 <Button variant="secondary" onClick={() => setInviteOpen(true)}>
                   Invite auditor
                 </Button>
               )}
-              {(eng.status === 'invited' || eng.status === 'active') && (
+              {isAdmin && (eng.status === 'invited' || eng.status === 'active') && (
                 <Button variant="secondary" onClick={() => setCloseOpen(true)}>
                   Close
                 </Button>
@@ -245,7 +245,7 @@ export function EngagementWorkspace() {
       {tab === 'requirements' && <RequirementsTab engagementId={eng.id} />}
       {tab === 'queries' && <QueriesTab engagementId={eng.id} />}
       {tab === 'entries' && <AuditEntriesTab engagementId={eng.id} />}
-      {tab === 'auditors' && <AuditorsTab engagementId={eng.id} canManage={canManageAuditors} />}
+      {tab === 'auditors' && <AuditorsTab engagementId={eng.id} canManage={isAdmin} />}
       {tab === 'reports' && <ReportsTab engagementId={eng.id} />}
 
       {importOpen && (
