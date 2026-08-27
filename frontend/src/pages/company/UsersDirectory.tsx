@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Users, ShieldCheck, UserCog, User } from 'lucide-react'
+import { Users, ShieldCheck, User } from 'lucide-react'
 import { usersApi } from '@/api/endpoints/users'
 import { ApiError } from '@/api/http'
 import { useCompanyAuth } from '@/auth/company'
@@ -141,10 +141,9 @@ export function UsersDirectory() {
   // Headline counts reflect live (non-deleted) accounts.
   const liveUsers = useMemo(() => users.filter((u) => !u.deleted_at), [users])
   const roleCounts = useMemo(() => {
-    const c = { admin: 0, manager: 0, employee: 0 }
+    const c = { admin: 0, employee: 0 }
     for (const u of liveUsers) {
       if (u.role === 'admin') c.admin++
-      else if (u.role === 'manager') c.manager++
       else c.employee++
     }
     return c
@@ -167,10 +166,9 @@ export function UsersDirectory() {
         }
       />
       {!isForbidden && !loadFailed && (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <StatCard label="Total people" value={liveUsers.length} icon={<Users />} tone="accent" loading={isLoading} />
           <StatCard label="Admins" value={roleCounts.admin} icon={<ShieldCheck />} tone="gold" loading={isLoading} />
-          <StatCard label="Managers" value={roleCounts.manager} icon={<UserCog />} tone="info" loading={isLoading} />
           <StatCard label="Employees" value={roleCounts.employee} icon={<User />} tone="neutral" loading={isLoading} />
         </div>
       )}

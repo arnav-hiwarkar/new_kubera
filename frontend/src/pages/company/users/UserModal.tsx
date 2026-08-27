@@ -19,7 +19,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
-  const [role, setRole] = useState<'admin' | 'manager' | 'employee'>('employee')
+  const [role, setRole] = useState<'admin' | 'employee'>('employee')
   const [department, setDepartment] = useState('')
   const [designation, setDesignation] = useState('')
   const [accessibleModules, setAccessibleModules] = useState<ModuleId[]>([])
@@ -180,7 +180,6 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
               onChange={(e) => setRole(e.target.value as typeof role)}
             >
               <option value="admin">Admin</option>
-              <option value="manager">Manager</option>
               <option value="employee">Employee</option>
             </Select>
           </Field>

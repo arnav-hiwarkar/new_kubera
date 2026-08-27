@@ -1,15 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import {
-  Users,
   Archive,
   ShieldCheck,
   Laptop,
   ClipboardCheck,
   ScrollText,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
-import { usersApi } from '@/api/endpoints/users'
-import { Card, StatCard } from '@/components/ui'
+import { Card } from '@/components/ui'
 import { useCompanyAuth } from '@/auth/company'
 import { hasModuleAccess, type ModuleId } from '@/auth/company/modules'
 import { cn } from '@/lib/cn'
@@ -44,7 +41,6 @@ const quickLinks: Array<{
 export function Dashboard() {
   const navigate = useNavigate()
   const { profile } = useCompanyAuth()
-  const users = useQuery({ queryKey: ['users'], queryFn: () => usersApi.list() })
 
   const firstName = (profile?.full_name ?? profile?.email ?? 'there').split(' ')[0].split('@')[0]
   const today = new Date().toLocaleDateString(undefined, {
@@ -64,18 +60,6 @@ export function Dashboard() {
         <p className="mt-1.5 text-base text-text-secondary">
           Here’s what’s happening across your workspace today.
         </p>
-      </div>
-
-      {/* Workspace summary */}
-      <div className="max-w-sm">
-        <StatCard
-          label="Team members"
-          value={users.data?.length ?? 0}
-          icon={<Users />}
-          tone="accent"
-          loading={users.isLoading}
-          sub="Active directory"
-        />
       </div>
 
       {/* Quick launch */}
