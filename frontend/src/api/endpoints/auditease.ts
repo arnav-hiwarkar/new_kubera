@@ -136,16 +136,11 @@ export const auditeaseCompanyApi = {
   respondRequirement: (
     engagementId: string,
     reqId: string,
-    body: { text_answer?: string; document_id?: string },
+    formData: FormData,
   ) =>
     companyClient.post<RequirementRequestResponse>(
       `/api/v1/auditease/engagements/${engagementId}/requirement-requests/${reqId}/respond`,
-      { body },
-    ),
-  setRequirementEta: (engagementId: string, reqId: string, body: { company_eta: string | null }) =>
-    companyClient.patch<RequirementRequestResponse>(
-      `/api/v1/auditease/engagements/${engagementId}/requirement-requests/${reqId}/eta`,
-      { body },
+      { formData },
     ),
   listQueries: (engagementId: string) =>
     companyClient.get<QueryResponse[]>(`/api/v1/auditease/engagements/${engagementId}/queries`),

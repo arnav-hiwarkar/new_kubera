@@ -44,8 +44,8 @@ export function LeadModal({ open, onClose, initialEmail = '' }: LeadModalProps) 
       }
 
       setSubmitted(true)
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
       setLoading(false)
     }

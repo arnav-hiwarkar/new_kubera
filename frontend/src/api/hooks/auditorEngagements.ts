@@ -106,11 +106,23 @@ export function useAuditorDeleteRequirement() {
   })
 }
 
-export function useAuditorReviewRequirement() {
+export function useAuditorCloseRequirement() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ engagementId, reqId, body }: { engagementId: string; reqId: string; body: { action: 'accept' | 'clarify'; note?: string } }) =>
-      auditorEngagementsApi.reviewRequirement(engagementId, reqId, body),
+    mutationFn: ({ engagementId, reqId }: { engagementId: string; reqId: string }) =>
+      auditorEngagementsApi.closeRequirement(engagementId, reqId),
+    onSuccess: (_r, { engagementId }) => {
+      qc.invalidateQueries({ queryKey: ['auditor', 'requirements', engagementId] })
+      qc.invalidateQueries({ queryKey: ['company', 'activity'] })
+    },
+  })
+}
+
+export function useAuditorReopenRequirement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ engagementId, reqId }: { engagementId: string; reqId: string }) =>
+      auditorEngagementsApi.reopenRequirement(engagementId, reqId),
     onSuccess: (_r, { engagementId }) => {
       qc.invalidateQueries({ queryKey: ['auditor', 'requirements', engagementId] })
       qc.invalidateQueries({ queryKey: ['company', 'activity'] })

@@ -56,8 +56,8 @@ export function OwnerLeadsPage() {
       setLeads(data)
       setAuthenticated(true)
       sessionStorage.setItem('kubera_owner_key', key)
-    } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed')
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Authentication failed')
       setAuthenticated(false)
       sessionStorage.removeItem('kubera_owner_key')
     } finally {
@@ -96,7 +96,7 @@ export function OwnerLeadsPage() {
       })
       if (res.ok) {
         setLeads((prev) =>
-          prev.map((l) => (l.id === leadId ? { ...l, status: newStatus as any } : l))
+          prev.map((l) => (l.id === leadId ? { ...l, status: newStatus as (typeof l)['status'] } : l))
         )
       }
     } catch (err) {
@@ -125,8 +125,8 @@ export function OwnerLeadsPage() {
       setLeads((prev) =>
         prev.map((l) => (l.id === provisioningLead.id ? { ...l, status: 'converted' } : l))
       )
-    } catch (err: any) {
-      setProvisionError(err.message || 'Error creating company')
+    } catch (err) {
+      setProvisionError(err instanceof Error ? err.message : 'Error creating company')
     } finally {
       setProvisionLoading(false)
     }

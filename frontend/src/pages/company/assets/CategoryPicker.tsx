@@ -34,6 +34,7 @@ export function CategoryPicker({ value, onChange, error, required, disabled }: C
   // (form reset, prefill); ignore same-group changes to avoid loops.
   useEffect(() => {
     setParentId(groupOfValue ? groupOfValue.parent.id : '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupOfValue?.parent.id])
 
   const group = tree.find((g) => g.parent.id === parentId)
