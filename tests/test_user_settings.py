@@ -350,3 +350,92 @@ async def test_avatar_cross_tenant_isolation(client: AsyncClient):
     # User B tries to access User A's avatar -> 404 Not Found (tenant scoped)
     res = await client.get(f"/api/v1/users/{user_a_id}/avatar", headers=headers_b)
     assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_no_idor_or_cross_user_tampering(client: AsyncClient):
+    """Verify that no user can modify another user's password or avatar via any endpoint."""
+    await create_test_company(client, email="admin-sec@test.com", password="Password123!")
+    admin_token = await get_company_token(client, email="admin-sec@test.com", password="Password123!")
+    admin_headers = _headers(admin_token)
+
+    # Create Employee 1 (Alice)
+    alice_res = await client.post(
+        "/api/v1/users",
+        json={"email": "alice@test.com", "password": "AlicePassword123!", "full_name": "Alice", "role": "employee"},
+        headers=admin_headers,
+    )
+    assert alice_res.status_code == 201
+    alice_id = alice_res.json()["id"]
+
+    # Create Employee 2 (Bob)
+    bob_res = await client.post(
+        "/api/v1/users",
+        json={"email": "bob@test.com", "password": "BobPassword123!", "full_name": "Bob", "role": "employee"},
+        headers=admin_headers,
+    )
+    assert bob_res.status_code == 201
+    bob_id = bob_res.json()["id"]
+
+    alice_token = await get_company_token(client, email="alice@test.com", password="AlicePassword123!")
+    alice_headers = _headers(alice_token)
+    bob_token = await get_company_token(client, email="bob@test.com", password="BobPassword123!")
+    bob_headers = _headers(bob_token)
+
+    # 1. Alice sets her avatar
+    files_alice = {"file": ("alice.png", io.BytesIO(TINY_PNG), "image/png")}
+    r_avatar_alice = await client.post("/api/v1/users/me/avatar", files=files_alice, headers=alice_headers)
+    assert r_avatar_alice.status_code == 200
+
+    # 2. Bob tries to change Alice's password via /me/change-password with injected user_id
+    r_idor_pwd = await client.post(
+        "/api/v1/users/me/change-password",
+        json={
+            "user_id": alice_id,
+            "old_password": "BobPassword123!",
+            "new_password": "HackedSecret@2026",
+            "confirm_password": "HackedSecret@2026",
+        },
+        headers=bob_headers,
+    )
+    assert r_idor_pwd.status_code == 200
+    # Verify that BOB'S password changed, but ALICE'S password was untouched!
+    login_alice_orig = await client.post(
+        "/api/v1/auth/company/login",
+        json={"email": "alice@test.com", "password": "AlicePassword123!"},
+    )
+    assert login_alice_orig.status_code == 200, "Alice password must remain intact!"
+
+    login_alice_hacked = await client.post(
+        "/api/v1/auth/company/login",
+        json={"email": "alice@test.com", "password": "HackedSecret@2026"},
+    )
+    assert login_alice_hacked.status_code == 401, "Alice must not be accessible via hacked password!"
+
+    # 3. Bob (employee) tries to hit PATCH /users/{alice_id} -> 403 Forbidden
+    r_patch_emp = await client.patch(
+        f"/api/v1/users/{alice_id}",
+        json={"password": "HackedSecret@2026", "full_name": "Hacked Name"},
+        headers=bob_headers,
+    )
+    assert r_patch_emp.status_code == 403, "Non-admin cannot patch another user!"
+
+    # 4. Even Admin attempting to inject "password" or "avatar_path" in PATCH /users/{alice_id} is ignored by schema
+    r_patch_admin = await client.patch(
+        f"/api/v1/users/{alice_id}",
+        json={"password": "InjectedPassword@2026", "avatar_path": "/fake/path.png"},
+        headers=admin_headers,
+    )
+    assert r_patch_admin.status_code == 200
+    # Alice's original password still works
+    login_alice_still_works = await client.post(
+        "/api/v1/auth/company/login",
+        json={"email": "alice@test.com", "password": "AlicePassword123!"},
+    )
+    assert login_alice_still_works.status_code == 200
+
+    # Alice's avatar is still her original uploaded avatar
+    r_stream_alice = await client.get(f"/api/v1/users/{alice_id}/avatar", headers=alice_headers)
+    assert r_stream_alice.status_code == 200
+    assert r_stream_alice.content == TINY_PNG
+
