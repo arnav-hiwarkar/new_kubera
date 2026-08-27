@@ -5,11 +5,13 @@ import { PageTransition } from '@/layouts/PageTransition'
 import { companyNav } from '@/config/navigation'
 import { useCompanyAuth } from '@/auth/company'
 import { useCompanyBranding } from '@/api/hooks/companyProfile'
+import { useUserAvatar } from '@/api/hooks/users'
 import { hasModuleAccess } from '@/auth/company/modules'
 
 export function CompanyShell() {
   const { profile, signOut } = useCompanyAuth()
   const { name: orgName, logoUrl: orgLogoUrl } = useCompanyBranding()
+  const { avatarUrl } = useUserAvatar(profile?.id, profile?.has_avatar)
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -41,7 +43,9 @@ export function CompanyShell() {
         <TopBar
           name={profile?.full_name ?? profile?.email ?? 'User'}
           subtitle={profile?.role}
+          avatarUrl={avatarUrl}
           onLogout={handleLogout}
+          onOpenSettings={() => navigate('/app/settings/user')}
           accent="company"
           sections={accessibleNav}
         />

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Search, Moon, Sun, LogOut, ChevronDown } from 'lucide-react'
+import { Search, Moon, Sun, LogOut, ChevronDown, Settings } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useTheme } from '@/lib/useTheme'
 import { CommandPalette } from './CommandPalette'
@@ -11,17 +11,34 @@ export interface TopBarProps {
   name: string
   /** Secondary line — role for company users, "Auditor" for auditors. */
   subtitle?: string
+  /** Authenticated image URL for user profile picture. */
+  avatarUrl?: string | null
   onLogout: () => void
+  /** Handler to open user settings page. */
+  onOpenSettings?: () => void
   accent?: 'company' | 'auditor'
   /** Nav sections powering the ⌘K command palette. */
   sections?: NavSection[]
 }
 
-export function TopBar({ name, subtitle, onLogout, accent = 'company', sections = [] }: TopBarProps) {
+export function TopBar({
+  name,
+  subtitle,
+  avatarUrl,
+  onLogout,
+  onOpenSettings,
+  accent = 'company',
+  sections = [],
+}: TopBarProps) {
   const { theme, toggle } = useTheme()
   const [open, setOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [imgError, setImgError] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setImgError(false)
+  }, [avatarUrl])
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -49,7 +66,10 @@ export function TopBar({ name, subtitle, onLogout, accent = 'company', sections 
     .join('')
     .toUpperCase()
 
-  const avatarGrad = accent === 'auditor' ? 'from-auditor to-auditor-hover' : 'from-accent to-accent-active'
+  const avatarGrad =
+    accent === 'auditor'
+      ? 'from-auditor to-auditor-hover'
+      : 'from-accent to-accent-active'
 
   return (
     <header className="glass sticky top-0 z-30 flex h-topbar shrink-0 items-center justify-between gap-2 border-b px-4">
@@ -91,11 +111,20 @@ export function TopBar({ name, subtitle, onLogout, accent = 'company', sections 
           >
             <span
               className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br text-xs font-semibold text-white shadow-sm',
+                'flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br text-xs font-semibold text-white shadow-sm overflow-hidden',
                 avatarGrad,
               )}
             >
-              {initials || '?'}
+              {avatarUrl && !imgError ? (
+                <img
+                  src={avatarUrl}
+                  alt={name}
+                  onError={() => setImgError(true)}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                initials || '?'
+              )}
             </span>
             <span className="hidden text-left sm:block">
               <span className="block text-sm font-semibold leading-tight text-text-primary">{name}</span>
@@ -118,6 +147,23 @@ export function TopBar({ name, subtitle, onLogout, accent = 'company', sections 
                   <p className="text-sm font-semibold text-text-primary">{name}</p>
                   {subtitle && <p className="text-xs capitalize text-text-muted">{subtitle}</p>}
                 </div>
+
+                {onOpenSettings && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setOpen(false)
+                        onOpenSettings()
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-primary transition-colors hover:bg-bg-raised"
+                    >
+                      <Settings className="h-4 w-4 text-text-muted" />
+                      User Settings
+                    </button>
+                    <div className="my-1 border-t border-border" />
+                  </>
+                )}
+
                 <button
                   onClick={onLogout}
                   className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-primary transition-colors hover:bg-bg-raised"

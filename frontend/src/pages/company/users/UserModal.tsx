@@ -23,6 +23,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
   const [department, setDepartment] = useState('')
   const [designation, setDesignation] = useState('')
   const [accessibleModules, setAccessibleModules] = useState<ModuleId[]>([])
+  const [canChangePassword, setCanChangePassword] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -43,6 +44,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
       setDepartment(initialData.department || '')
       setDesignation(initialData.designation || '')
       setAccessibleModules(initialData.accessible_modules as ModuleId[] || [])
+      setCanChangePassword(initialData.can_change_password !== false)
     } else {
       setEmail('')
       setPassword('')
@@ -51,6 +53,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
       setDepartment('')
       setDesignation('')
       setAccessibleModules([])
+      setCanChangePassword(true)
     }
   }, [initialData, isOpen])
 
@@ -72,6 +75,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
           department,
           designation,
           accessible_modules: accessibleModules,
+          can_change_password: canChangePassword,
         }
         await onSave(update)
       } else {
@@ -83,6 +87,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
           department,
           designation,
           accessible_modules: accessibleModules,
+          can_change_password: canChangePassword,
         }
         await onSave(create)
       }
@@ -213,6 +218,17 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
               ))}
             </div>
           )}
+        </div>
+
+        <div>
+          <h4 className="text-sm font-medium text-text-primary mb-3 border-b border-border pb-2">
+            Security & Credentials
+          </h4>
+          <Switch
+            checked={canChangePassword}
+            onChange={setCanChangePassword}
+            label="Allow user to change their password"
+          />
         </div>
 
         <div className="flex items-center justify-between gap-3 pt-4 border-t border-border">

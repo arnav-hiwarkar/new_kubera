@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, computed_field
 
 
 # === Company ===
@@ -29,6 +29,15 @@ class CompanyUserOut(BaseModel):
     department: str | None = None
     is_active: bool = True
     accessible_modules: list[str] = []
+    can_change_password: bool = True
+    avatar_updated_at: datetime | None = None
+    password_changed_at: datetime | None = None
+    avatar_path: str | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def has_avatar(self) -> bool:
+        return bool(self.avatar_path)
 
     model_config = {"from_attributes": True}
 

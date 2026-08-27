@@ -116,6 +116,16 @@ class CompanyUser(Base, TimestampMixin):
     # user, which keeps its email.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     accessible_modules: Mapped[list[str]] = mapped_column(JSONB, server_default='[]', nullable=False)
+    can_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, server_default="true"
+    )
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    avatar_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    avatar_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     company = relationship("Company", back_populates="users")
 

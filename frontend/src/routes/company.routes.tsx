@@ -8,6 +8,7 @@ import { CompanyLogin } from '@/pages/company/CompanyLogin'
 import { CompanyActivate } from '@/pages/company/CompanyActivate'
 import { CompanyOnboarding } from '@/pages/company/CompanyOnboarding'
 import { CompanyProfilePage } from '@/pages/company/settings/CompanyProfilePage'
+import { UserSettingsPage } from '@/pages/company/settings/UserSettingsPage'
 import { Dashboard } from '@/pages/company/Dashboard'
 import { UsersDirectory } from '@/pages/company/UsersDirectory'
 import { DocVaultPage } from '@/pages/company/docvault/DocVaultPage'
@@ -100,6 +101,7 @@ export const companyRoutes: RouteObject = {
                   element: <ModuleGuard moduleId="activity"><ActivityLogPage /></ModuleGuard>,
                 },
                 { path: 'settings/profile', element: <CompanyProfilePage /> },
+                { path: 'settings/user', element: <UserSettingsPage /> },
                 { path: '*', element: <Navigate to="/app" replace /> },
               ],
             },

@@ -96,4 +96,37 @@ describe('UserModal module access', () => {
     expect(screen.queryByRole('checkbox', { name: 'ROC Compliance' })).not.toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'SecretarialEase' })).not.toBeInTheDocument()
   })
+
+  it('allows toggling can_change_password for users', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <UserModal
+        isOpen
+        onClose={vi.fn()}
+        onSave={onSave}
+        initialData={null}
+      />,
+    )
+
+    const pwdSwitch = screen.getByRole('checkbox', { name: 'Allow user to change their password' })
+    expect(pwdSwitch).toBeChecked()
+
+    // Toggle off
+    await user.click(pwdSwitch)
+    expect(pwdSwitch).not.toBeChecked()
+
+    const dialog = screen.getByRole('dialog', { name: 'New User' })
+    const inputs = within(dialog).getAllByRole('textbox')
+    await user.type(inputs[0], 'No Pwd User')
+    await user.type(inputs[1], 'nopwd@example.com')
+    const password = dialog.querySelector<HTMLInputElement>('input[type="password"]')
+    await user.type(password!, 'Pass1234!')
+    await user.click(screen.getByRole('button', { name: 'Create User' }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    const payload = onSave.mock.calls[0][0]
+    expect(payload.can_change_password).toBe(false)
+  })
 })
+

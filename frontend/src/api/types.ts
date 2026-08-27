@@ -13,12 +13,33 @@ export type TokenResponse = S['TokenResponse']
 export type RefreshRequest = S['RefreshRequest']
 export type AuditorRegister = S['AuditorRegister']
 export type AuditorOut = S['AuditorOut']
-export type CompanyUserOut = S['CompanyUserOut']
+export type CompanyUserOut = S['CompanyUserOut'] & {
+  can_change_password?: boolean
+  has_avatar?: boolean
+  avatar_updated_at?: string | null
+  password_changed_at?: string | null
+}
 
 // Users
-export type UserResponse = S['UserResponse']
-export type UserCreate = S['UserCreate']
-export type UserUpdate = S['UserUpdate']
+export type UserResponse = S['UserResponse'] & {
+  can_change_password?: boolean
+  has_avatar?: boolean
+  avatar_updated_at?: string | null
+  password_changed_at?: string | null
+}
+export type UserCreate = S['UserCreate'] & {
+  can_change_password?: boolean
+}
+export type UserUpdate = S['UserUpdate'] & {
+  can_change_password?: boolean | null
+}
+
+export interface UserChangePasswordRequest {
+  old_password: string
+  new_password: string
+  confirm_password: string
+}
+
 
 // Custom fields
 export type CustomFieldResponse = S['CustomFieldResponse']
