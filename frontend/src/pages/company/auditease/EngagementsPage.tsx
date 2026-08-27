@@ -16,7 +16,7 @@ import {
 } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import { formatDate } from '@/lib/format'
-import type { AuditEngagementResponse } from '@/api/types'
+import { useCompanyAuth } from '@/auth/company'
 import {
   useEngagements,
   useCreateEngagement,
@@ -28,6 +28,8 @@ import { InviteAuditorModal } from './InviteAuditorModal'
 export function EngagementsPage() {
   const toast = useToast()
   const navigate = useNavigate()
+  const { profile } = useCompanyAuth()
+  const isAdmin = profile?.role === 'admin'
   const { data: engagements = [], isLoading } = useEngagements()
   const createEng = useCreateEngagement()
   const closeEng = useCloseEngagement()
@@ -130,33 +132,36 @@ export function EngagementsPage() {
       key: 'actions',
       header: '',
       align: 'right',
-      cell: (e) => (
-        <div className="flex justify-end gap-1" onClick={stop}>
-          {e.status !== 'closed' && (
-            <Button size="sm" variant="ghost" onClick={() => setInviteFor(e)}>
-              Invite
-            </Button>
-          )}
-          {(e.status === 'invited' || e.status === 'active') && (
-            <Button size="sm" variant="ghost" onClick={() => setCloseFor(e)}>
-              Close
-            </Button>
-          )}
-          {e.status !== 'active' && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-status-action"
-              onClick={() => {
-                setDeleteFor(e)
-                setConfirmText('')
-              }}
-            >
-              Delete
-            </Button>
-          )}
-        </div>
-      ),
+      cell: (e) => {
+        if (!isAdmin) return null
+        return (
+          <div className="flex justify-end gap-1" onClick={stop}>
+            {e.status !== 'closed' && (
+              <Button size="sm" variant="ghost" onClick={() => setInviteFor(e)}>
+                Invite
+              </Button>
+            )}
+            {(e.status === 'invited' || e.status === 'active') && (
+              <Button size="sm" variant="ghost" onClick={() => setCloseFor(e)}>
+                Close
+              </Button>
+            )}
+            {e.status !== 'active' && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-status-action"
+                onClick={() => {
+                  setDeleteFor(e)
+                  setConfirmText('')
+                }}
+              >
+                Delete
+              </Button>
+            )}
+          </div>
+        )
+      },
     },
   ]
 
@@ -173,7 +178,7 @@ export function EngagementsPage() {
         icon={<ShieldCheck />}
         title="AuditEase"
         description="Create audit engagements, import trial balances, and collaborate with auditors."
-        actions={<Button onClick={() => setCreateOpen(true)}>New engagement</Button>}
+        actions={isAdmin ? <Button onClick={() => setCreateOpen(true)}>New engagement</Button> : undefined}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

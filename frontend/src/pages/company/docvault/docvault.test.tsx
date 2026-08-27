@@ -7,6 +7,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { UploadDocumentModal } from './UploadDocumentModal'
 import { DocumentDrawer } from './DocumentDrawer'
 import { DocVaultPage } from './DocVaultPage'
+import { BucketRail } from './BucketRail'
 import type { DocumentResponse } from '@/api/types'
 import { docvaultApi } from '@/api/endpoints/docvault'
 
@@ -125,4 +126,12 @@ describe('DocVaultPage', () => {
     expect(screen.getByRole('button', { name: /Upload/i })).toBeInTheDocument()
   })
 })
+
+describe('BucketRail RBAC', () => {
+  it('renders New button for admin', () => {
+    wrap(<BucketRail buckets={[]} documents={[]} selected="all" onSelect={() => {}} />)
+    expect(screen.getByRole('button', { name: /New/i })).toBeInTheDocument()
+  })
+})
+
 
