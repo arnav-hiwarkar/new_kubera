@@ -10,7 +10,7 @@
 ## 1. Executive Summary
 
 This feature introduces a self-service **User Settings** interface for Company Users in Kubera, allowing users to:
-1. **Change their password securely** with strict complexity rules, bcrypt hash verification, and a backend-enforced 30-day cooldown period.
+1. **Change their password securely** with strict complexity rules (minimum 8 characters, at least 1 uppercase letter, at least 1 lowercase letter, at least 1 number, at least 1 special character, and strictly distinct from the old password), validated on both frontend (Zod & live checklist) and backend (Pydantic & regex verification), with bcrypt hash verification and a backend-enforced 30-day cooldown period.
 2. **Upload and customize their profile picture** via an interactive circular cropping/zooming tool (supporting JPG, JPEG, PNG, WEBP <= 1 MB), with a backend-enforced 3-hour cooldown period, encrypted storage at rest in the tenant vault, and real-time display in the top navigation bar.
 3. **Allow Tenant Admins to control password change privileges** per user via a `can_change_password` toggle (defaulting to `true`), hiding the password management UI and blocking API access if permission is revoked.
 
@@ -128,15 +128,16 @@ class CompanyUserOut(BaseModel):
      - Calculate remaining days/hours.
      - Raise `429 Too Many Requests` (`"Password can only be changed once every 30 days. Next change available on {next_allowed_date}"`).
   3. **Old Password Match**: Verify `verify_password(body.old_password, current_user.hashed_password)`. If false, raise `400 Bad Request` (`"Current password is incorrect"`).
-  4. **Password Equality & Difference**:
+  4. **Password Equality & Difference Check**:
      - Check `body.new_password == body.confirm_password`. If not, raise `400 Bad Request` (`"New passwords do not match"`).
-     - Check `body.old_password != body.new_password`. If same, raise `400 Bad Request` (`"New password cannot be the same as the current password"`).
-  5. **Password Complexity Validation**:
-     - At least 8 characters
-     - At least 1 uppercase letter: `re.search(r'[A-Z]', password)`
-     - At least 1 lowercase letter: `re.search(r'[a-z]', password)`
-     - At least 1 digit: `re.search(r'[0-9]', password)`
-     - At least 1 special character: `re.search(r'[!@#$%^&*(),.?":{}|<>\-_=+\\[\\]\\/`~]', password)`
+     - Check `body.old_password != body.new_password` (and verify new plaintext does not match existing hash). If same, raise `400 Bad Request` (`"New password must be different from your current password"`).
+  5. **Rigorous Password Complexity Validation (Backend Verification)**:
+     - Minimum length: $\ge 8$ characters
+     - Uppercase letter: `re.search(r'[A-Z]', new_password)`
+     - Lowercase letter: `re.search(r'[a-z]', new_password)`
+     - Number: `re.search(r'[0-9]', new_password)`
+     - Special character: `re.search(r'[!@#$%^&*(),.?":{}|<>\-_=+\\[\\]\\/`~]', new_password)`
+     - If any condition fails, raise `400 Bad Request` with descriptive error details.
   6. **Hash & Persist**:
      - Hash with `hash_password(body.new_password)` (bcrypt).
      - Set `current_user.hashed_password = new_hash`.
@@ -207,14 +208,15 @@ A responsive settings screen inside `CompanyShell`:
      - Old Password
      - New Password
      - Confirm New Password
-   - **Real-Time Password Complexity Checklist**:
+   - **Real-Time Frontend Password Complexity Checklist**:
      - [ ] Minimum 8 characters
      - [ ] At least 1 uppercase letter (`A-Z`)
      - [ ] At least 1 lowercase letter (`a-z`)
      - [ ] At least 1 digit (`0-9`)
      - [ ] At least 1 special character (`!@#$%^&*...`)
+     - [ ] New password differs from current password
      - [ ] New passwords match
-   - "Update Password" button with asynchronous loading state and toast feedback.
+   - "Update Password" button is disabled until all frontend validation criteria are satisfied, and backend independently enforces the exact same rules upon submission.
 
 ### 4.3 Interactive Circular Avatar Cropper Modal (`AvatarCropperModal.tsx`)
 - **Interactive Viewport**:
@@ -240,7 +242,7 @@ A responsive settings screen inside `CompanyShell`:
 |---|---|
 | **IDOR / Privilege Escalation** | Endpoints use `get_current_company_user` from the validated JWT token; zero caller-controlled user IDs in password mutation endpoints. |
 | **Brute Force / Password Guessing** | Old password checked via bcrypt with constant-time verification; rate-limited endpoints; audit logging on failed attempts. |
-| **Bypass of Password Policy** | Identical regex constraints validated both on client-side (Zod) and backend (Pydantic & Python regex). |
+| **Bypass of Password Policy** | Identical regex constraints validated both on client-side (Zod) and backend (Pydantic & Python regex). Ensures 1 upper, 1 lower, 1 number, 1 special char, $\ge 8$ chars, and different from old password. |
 | **Malicious File Upload (XSS / RCE / Polyglots)** | File size capped at 1 MB; binary magic byte inspection (rejects SVG/HTML/executables); stored encrypted under generated UUID names; served with `Content-Security-Policy: sandbox` and `X-Content-Type-Options: nosniff`. |
 | **Path Traversal Attacks** | Storage paths constructed safely using server-generated UUIDs and validated system directories; no user-supplied file names on disk. |
 | **SQL Injection** | Exclusively parameterized queries executed via async SQLAlchemy ORM. |
@@ -253,6 +255,7 @@ A responsive settings screen inside `CompanyShell`:
 ### 6.1 Backend Automated Tests (`tests/test_user_settings.py`)
 1. **Password Validation Tests**:
    - Reject passwords shorter than 8 characters, missing uppercase, missing lowercase, missing numbers, or missing special characters.
+   - Reject password when new password is identical to old password.
    - Reject password change when `old_password` does not match.
    - Reject password change when `can_change_password` is `False` (403 Forbidden).
    - Enforce 30-day cooldown (429 Too Many Requests).
@@ -266,6 +269,6 @@ A responsive settings screen inside `CompanyShell`:
 
 ### 6.2 Frontend Automated & Component Tests
 1. **TopBar Tests**: Verify User Settings menu item presence and avatar image/initials fallback.
-2. **UserSettingsPage Tests**: Verify hiding of Change Password card when `can_change_password` is false; verify real-time complexity check list; verify cooldown banners.
+2. **UserSettingsPage Tests**: Verify hiding of Change Password card when `can_change_password` is false; verify real-time complexity check list; verify difference check; verify cooldown banners.
 3. **AvatarCropperModal Tests**: Verify zoom, pan, and canvas blob export behavior.
 4. **UserModal Tests**: Verify `can_change_password` toggle for tenant admins during user creation and update.
