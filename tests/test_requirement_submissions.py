@@ -717,3 +717,132 @@ async def test_multiple_submissions_and_query_file_uploads_stored_in_engagement_
     assert dl_q.status_code == 200
     assert dl_q.content == b"INVOICE_102_CONTENT_BYTES"
 
+
+@pytest.mark.asyncio
+async def test_auditor_cannot_access_unsubmitted_company_documents(client: AsyncClient, db: AsyncSession):
+    """Verify that an auditor cannot download or read metadata for company documents that were not submitted in any requirement or query."""
+    await create_test_company(client, email="unsub_co@co.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='unsub_co@co.com', password='pass1234')}"}
+    await create_test_auditor(client, email="unsub_aud@aud.com", password="pass1234")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='unsub_aud@aud.com', password='pass1234')}"}
+
+    eng_id = await _make_engagement(client, co_headers, label="FY2025")
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "unsub_aud@aud.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+
+    # 1. Company uploads a private document in DocVault (e.g. board minutes, trade secrets)
+    dv_resp = await client.post(
+        "/api/v1/docvault/documents",
+        data={"title": "Private Board Minutes 2025"},
+        files={"file": ("board_minutes.pdf", b"TOP_SECRET_BOARD_MINUTES_BYTES", "application/pdf")},
+        headers=co_headers,
+    )
+    assert dv_resp.status_code == 201
+    private_doc_id = dv_resp.json()["id"]
+
+    # 2. Company also uploads a document that WILL be submitted
+    sub_resp = await client.post(
+        "/api/v1/docvault/documents",
+        data={"title": "Submitted Tax Return"},
+        files={"file": ("tax_return.pdf", b"PUBLIC_TAX_RETURN_BYTES", "application/pdf")},
+        headers=co_headers,
+    )
+    assert sub_resp.status_code == 201
+    submitted_doc_id = sub_resp.json()["id"]
+
+    # 3. Auditor creates a requirement
+    req_resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+        json={"description": "Please upload tax return"},
+        headers=aud_headers,
+    )
+    req_id = req_resp.json()["id"]
+
+    # 4. Company submits ONLY the tax return document
+    resp = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "Tax return attached", "document_ids": [submitted_doc_id]},
+        headers=co_headers,
+    )
+    assert resp.status_code == 200
+
+    # 5. Auditor can download the submitted tax return
+    tax_dl = await client.get(f"/api/v1/auditor/documents/{submitted_doc_id}/download", headers=aud_headers)
+    assert tax_dl.status_code == 200
+    assert tax_dl.content == b"PUBLIC_TAX_RETURN_BYTES"
+
+    # 6. Auditor CANNOT download the unsubmitted board minutes (assert 404)
+    bad_dl = await client.get(f"/api/v1/auditor/documents/{private_doc_id}/download", headers=aud_headers)
+    assert bad_dl.status_code == 404
+
+    # 7. Auditor CANNOT fetch metadata for the unsubmitted board minutes (assert 404)
+    bad_meta = await client.get(f"/api/v1/auditor/documents/{private_doc_id}", headers=aud_headers)
+    assert bad_meta.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_employee_user_picker_bucket_scoping(client: AsyncClient, db: AsyncSession):
+    """Verify that non-admin company users (e.g. employee role) only see buckets and documents they have access to in DocVault."""
+    await create_test_company(client, email="scope_admin@co.com", password="pass1234")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='scope_admin@co.com', password='pass1234')}"}
+
+    # Create employee user
+    u_resp = await client.post(
+        "/api/v1/users",
+        json={
+            "email": "scope_emp@co.com",
+            "password": "pass1234password",
+            "full_name": "Scope Employee",
+            "role": "employee",
+            "accessible_modules": ["auditease", "docvault"],
+        },
+        headers=admin_headers,
+    )
+    assert u_resp.status_code == 201, u_resp.text
+    emp_headers = {"Authorization": f"Bearer {await get_company_token(client, email='scope_emp@co.com', password='pass1234password')}"}
+
+    # Admin creates a public bucket (visibility=everyone)
+    b_pub_resp = await client.post("/api/v1/docvault/buckets", json={"name": "Public General Bucket"}, headers=admin_headers)
+    assert b_pub_resp.status_code == 201
+    pub_bucket_id = b_pub_resp.json()["id"]
+
+    # Admin creates a restricted bucket (visibility=restricted, not granted to employee)
+    b_rest_resp = await client.post("/api/v1/docvault/buckets", json={"name": "Executive Restricted Bucket"}, headers=admin_headers)
+    assert b_rest_resp.status_code == 201
+    rest_bucket_id = b_rest_resp.json()["id"]
+    patch_access = await client.patch(
+        f"/api/v1/docvault/buckets/{rest_bucket_id}/access",
+        json={"visibility": "restricted", "user_ids": []},
+        headers=admin_headers,
+    )
+    assert patch_access.status_code == 200
+
+    # Admin uploads doc to public bucket and doc to restricted bucket
+    await client.post(
+        "/api/v1/docvault/documents",
+        data={"title": "Public SOP Document", "bucket_id": pub_bucket_id},
+        files={"file": ("sop.pdf", b"SOP_BYTES", "application/pdf")},
+        headers=admin_headers,
+    )
+    await client.post(
+        "/api/v1/docvault/documents",
+        data={"title": "Executive Payroll Summary", "bucket_id": rest_bucket_id},
+        files={"file": ("payroll.pdf", b"PAYROLL_SECRET_BYTES", "application/pdf")},
+        headers=admin_headers,
+    )
+
+    # Employee lists buckets: should only see the public bucket
+    emp_buckets_resp = await client.get("/api/v1/docvault/buckets", headers=emp_headers)
+    assert emp_buckets_resp.status_code == 200
+    emp_bucket_ids = [b["id"] for b in emp_buckets_resp.json()]
+    assert pub_bucket_id in emp_bucket_ids
+    assert rest_bucket_id not in emp_bucket_ids
+
+    # Employee lists documents: should only see documents from accessible buckets
+    emp_docs_resp = await client.get("/api/v1/docvault/documents", headers=emp_headers)
+    assert emp_docs_resp.status_code == 200
+    emp_doc_titles = [d["title"] for d in emp_docs_resp.json()]
+    assert "Public SOP Document" in emp_doc_titles
+    assert "Executive Payroll Summary" not in emp_doc_titles
+
+

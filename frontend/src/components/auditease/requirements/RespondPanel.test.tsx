@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RespondPanel } from './RespondPanel'
+import { auditeaseCompanyApi } from '@/api/endpoints/auditease'
 import type { RequirementRequestResponse } from '@/api/types'
-
 import { ToastProvider } from '@/components/ui'
 
 function renderWithClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={queryClient}>
@@ -40,10 +40,12 @@ describe('RespondPanel', () => {
     status: 'closed',
   }
 
-  it('renders form when requirement is open', () => {
+  it('renders form and dropzone when requirement is open', () => {
     renderWithClient(<RespondPanel engagementId="eng-1" req={openReq} />)
     expect(screen.getByPlaceholderText(/type your explanation/i)).toBeInTheDocument()
-    expect(screen.getByText('Attach Files')).toBeInTheDocument()
+    expect(screen.getByText('Browse device')).toBeInTheDocument()
+    expect(screen.getByText('Select from DocVault')).toBeInTheDocument()
+    expect(screen.getByText(/upload documents from your machine/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /submit response/i })).toBeInTheDocument()
   })
 
@@ -58,7 +60,52 @@ describe('RespondPanel', () => {
     const form = screen.getByRole('button', { name: /submit response/i }).closest('form')!
     fireEvent.submit(form)
     expect(
-      screen.getByText(/please provide a written answer or attach at least one file/i)
+      screen.getByText(/please provide a written answer or attach at least one document/i)
     ).toBeInTheDocument()
+  })
+
+  it('stages local files from input and allows removing them', () => {
+    const { container } = renderWithClient(<RespondPanel engagementId="eng-1" req={openReq} />)
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    expect(fileInput).toBeInTheDocument()
+
+    const mockFile = new File(['test content'], 'bank_statement.pdf', { type: 'application/pdf' })
+    fireEvent.change(fileInput, { target: { files: [mockFile] } })
+
+    expect(screen.getByText('bank_statement.pdf')).toBeInTheDocument()
+    expect(screen.getByText(/1 document staged for submission/i)).toBeInTheDocument()
+
+    // Remove file
+    const removeBtn = screen.getByTitle('Remove file')
+    fireEvent.click(removeBtn)
+
+    expect(screen.queryByText('bank_statement.pdf')).not.toBeInTheDocument()
+  })
+
+  it('submits response with written answer and files', async () => {
+    const respondSpy = vi.spyOn(auditeaseCompanyApi, 'respondRequirement').mockResolvedValue({
+      ...openReq,
+      submission_count: 1,
+    })
+    const onSuccess = vi.fn()
+
+    const { container } = renderWithClient(
+      <RespondPanel engagementId="eng-1" req={openReq} onSuccess={onSuccess} />
+    )
+
+    const textarea = screen.getByPlaceholderText(/type your explanation/i)
+    fireEvent.change(textarea, { target: { value: 'Here are the requested statements' } })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const mockFile = new File(['file data'], 'march_pnl.pdf', { type: 'application/pdf' })
+    fireEvent.change(fileInput, { target: { files: [mockFile] } })
+
+    const submitBtn = screen.getByRole('button', { name: /submit response/i })
+    fireEvent.click(submitBtn)
+
+    await waitFor(() => {
+      expect(respondSpy).toHaveBeenCalledWith('eng-1', 'req-1', expect.any(FormData))
+      expect(onSuccess).toHaveBeenCalled()
+    })
   })
 })

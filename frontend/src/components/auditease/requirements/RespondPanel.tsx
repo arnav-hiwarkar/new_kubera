@@ -1,14 +1,24 @@
-import React, { useState } from 'react'
-import { clsx } from 'clsx'
-import { Lock, Send, Upload, X, FileText, FolderPlus } from 'lucide-react'
+import React, { useState, useRef } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import {
+  Lock,
+  Send,
+  Upload,
+  X,
+  FolderPlus,
+  HardDrive,
+  AlertCircle,
+  FileUp,
+} from 'lucide-react'
 import { Button, Textarea, useToast } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import { useRespondToRequirement } from '@/api/hooks/auditease'
 import { useDocuments } from '@/api/hooks/docvault'
+import { useQueryClient } from '@tanstack/react-query'
 import type { RequirementRequestResponse } from '@/api/types'
 import { formatFileSize } from './progress'
-
 import { DocVaultPickerModal } from './DocVaultPickerModal'
+import { cn } from '@/lib/cn'
 
 interface RespondPanelProps {
   engagementId: string
@@ -24,6 +34,7 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
   className,
 }) => {
   const toast = useToast()
+  const queryClient = useQueryClient()
   const respondMutation = useRespondToRequirement()
   const { data: vaultDocs = [] } = useDocuments()
 
@@ -31,30 +42,63 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
   const [showVaultPickerModal, setShowVaultPickerModal] = useState(false)
+  const [isDragActive, setIsDragActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const isClosed = req.status === 'closed'
 
   if (isClosed) {
     return (
       <div
-        className={clsx(
-          'flex items-center gap-2.5 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-400',
+        className={cn(
+          'flex items-center gap-2.5 rounded-lg border border-border bg-bg-raised/40 p-3 text-xs text-text-muted',
           className
         )}
       >
-        <Lock className="w-4 h-4 text-zinc-400 shrink-0" />
+        <Lock className="w-4 h-4 text-text-muted shrink-0" />
         <span>
-          This requirement is <strong>closed</strong>. If you need to submit additional information, ask your auditor to reopen it.
+          This requirement is <strong className="text-text-primary">closed</strong>. If you need to submit additional documents or answers, ask your auditor to reopen it.
         </span>
       </div>
     )
   }
 
+  const handleFilesAdded = (files: FileList | File[]) => {
+    const fileArray = Array.from(files)
+    if (fileArray.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...fileArray])
+    }
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const newFiles = Array.from(e.target.files)
-      setSelectedFiles((prev) => [...prev, ...newFiles])
+      handleFilesAdded(e.target.files)
+      // reset input value so re-selecting same file triggers change
+      e.target.value = ''
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!isDragActive) setIsDragActive(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // only deactivate if leaving the container
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setIsDragActive(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragActive(false)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesAdded(e.dataTransfer.files)
     }
   }
 
@@ -72,7 +116,7 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
 
     const text = textAnswer.trim()
     if (!text && selectedFiles.length === 0 && selectedDocIds.length === 0) {
-      setError('Please provide a written answer or attach at least one file.')
+      setError('Please provide a written answer or attach at least one document.')
       return
     }
 
@@ -93,6 +137,11 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
         reqId: req.id,
         formData,
       })
+      // Invalidate requirements, docvault library and activity
+      queryClient.invalidateQueries({ queryKey: ['auditease', 'requirements', engagementId] })
+      queryClient.invalidateQueries({ queryKey: ['docvault', 'documents'] })
+      queryClient.invalidateQueries({ queryKey: ['company', 'activity'] })
+
       toast.success(
         `Response submitted for ${req.requirement_id_str || 'requirement'}`
       )
@@ -107,130 +156,218 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
   }
 
   const nextRound = (req.submission_count ?? 0) + 1
+  const totalStagedCount = selectedFiles.length + selectedDocIds.length
 
   return (
     <form
       onSubmit={handleSubmit}
-      className={clsx(
-        'rounded-lg border border-blue-200/80 bg-blue-50/30 p-3.5 dark:border-blue-900/50 dark:bg-blue-950/20 space-y-3',
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={cn(
+        'relative rounded-xl border transition-all duration-200 p-4 space-y-3.5',
+        isDragActive
+          ? 'border-accent bg-accent/5 ring-2 ring-accent/30 shadow-md'
+          : 'border-border bg-bg-raised/20 dark:bg-bg-raised/10 shadow-xs hover:border-border-strong',
         className
       )}
     >
+      {/* Header */}
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+        <h4 className="text-xs font-semibold text-text-primary flex items-center gap-2">
           <span>Submit Response</span>
-          <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-accent/10 text-accent">
             Round {nextRound}
           </span>
         </h4>
-        <span className="text-[11px] text-zinc-400">
-          Provide explanation, documents, or both
+        <span className="text-[11px] text-text-muted">
+          Provide explanation, documents from your machine, or select from DocVault
         </span>
       </div>
 
+      {/* Written answer */}
       <Textarea
         value={textAnswer}
         onChange={(e) => setTextAnswer(e.target.value)}
-        placeholder="Type your explanation or response details here…"
+        placeholder="Type your explanation, summary, or response notes here…"
         rows={3}
-        className="w-full text-xs"
+        className="w-full text-xs bg-bg-surface focus:bg-bg-surface"
       />
 
-      {/* File & Vault attachments */}
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-300 bg-white text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 cursor-pointer transition-colors shadow-xs">
-            <Upload className="w-3.5 h-3.5 text-zinc-500" />
-            <span>Attach Files</span>
-            <input
-              type="file"
-              multiple
-              onChange={handleFileChange}
-              className="hidden"
-            />
-          </label>
+      {/* Interactive Dropzone & Attachments Bar */}
+      <div className="space-y-2.5">
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          className={cn(
+            'group relative flex flex-col sm:flex-row items-center justify-between p-3.5 rounded-lg border border-dashed transition-all cursor-pointer select-none',
+            isDragActive
+              ? 'border-accent bg-accent/10 text-accent scale-[1.01]'
+              : 'border-border hover:border-accent/60 bg-bg-surface/80 hover:bg-bg-surface'
+          )}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={handleFileChange}
+            className="hidden"
+          />
 
-          <button
-            type="button"
-            onClick={() => setShowVaultPickerModal(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-300 bg-white text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 cursor-pointer transition-colors shadow-xs"
-          >
-            <FolderPlus className="w-3.5 h-3.5 text-zinc-500" />
-            <span>Select from DocVault</span>
-          </button>
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className={cn(
+                'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors',
+                isDragActive
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-raised text-text-muted group-hover:text-accent group-hover:bg-accent/10'
+              )}
+            >
+              <FileUp className="w-4 h-4" />
+            </div>
 
-          <span className="text-[11px] text-zinc-400">
-            {selectedFiles.length + selectedDocIds.length > 0
-              ? `${selectedFiles.length + selectedDocIds.length} document(s) attached`
-              : 'Upload files or select existing vault documents'}
-          </span>
+            <div className="min-w-0 text-left">
+              <div className="text-xs font-semibold text-text-primary group-hover:text-accent transition-colors">
+                {isDragActive ? 'Drop files here to attach' : 'Upload documents from your machine'}
+              </div>
+              <div className="text-[11px] text-text-muted">
+                Drag & drop files directly here, or click to browse
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-2 sm:mt-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              className="gap-1.5 text-xs h-8 shadow-xs"
+            >
+              <Upload className="w-3.5 h-3.5 text-text-muted" />
+              <span>Browse device</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowVaultPickerModal(true)}
+              className="gap-1.5 text-xs h-8 shadow-xs"
+            >
+              <FolderPlus className="w-3.5 h-3.5 text-accent" />
+              <span>Select from DocVault</span>
+            </Button>
+          </div>
         </div>
 
-        {/* Selected files & vault documents preview */}
-        {(selectedFiles.length > 0 || selectedDocIds.length > 0) && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {selectedFiles.map((file, idx) => (
-              <span
-                key={`file-${idx}`}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-white text-zinc-700 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700 shadow-xs"
-              >
-                <FileText className="w-3 h-3 text-blue-500 shrink-0" />
-                <span className="truncate max-w-[180px]" title={file.name}>
-                  {file.name}
-                </span>
-                <span className="text-[10px] text-zinc-400">
-                  ({formatFileSize(file.size)})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeFile(idx)}
-                  className="p-0.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded"
-                  title="Remove file"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+        {/* Staged Attachments Preview List */}
+        {totalStagedCount > 0 && (
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between text-[11px] text-text-muted">
+              <span>
+                {totalStagedCount} document{totalStagedCount === 1 ? '' : 's'} staged for submission:
               </span>
-            ))}
-            {selectedDocIds.map((docId) => {
-              const doc = vaultDocs.find((d) => d.id === docId)
-              return (
-                <span
-                  key={`vault-${docId}`}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800 shadow-xs"
-                >
-                  <FileText className="w-3 h-3 text-blue-600 shrink-0" />
-                  <span className="truncate max-w-[180px]" title={doc?.title || 'Vault doc'}>
-                    {doc?.title || 'Vault doc'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeDoc(docId)}
-                    className="p-0.5 text-blue-400 hover:text-blue-600 dark:hover:text-blue-200 rounded"
-                    title="Remove vault document"
+              <span className="text-[10px] text-text-muted">
+                Uploaded files will be saved in engagement DocVault bucket
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              <AnimatePresence initial={false}>
+                {/* Local Machine Uploads */}
+                {selectedFiles.map((file, idx) => (
+                  <motion.span
+                    key={`file-${idx}-${file.name}`}
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.12 }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-bg-surface text-text-primary border border-border shadow-xs group"
                   >
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              )
-            })}
+                    <Upload className="w-3 h-3 text-emerald-500 shrink-0" />
+                    <span className="truncate max-w-[200px] font-medium" title={file.name}>
+                      {file.name}
+                    </span>
+                    <span className="text-[10px] text-text-muted">
+                      ({formatFileSize(file.size)})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(idx)}
+                      className="p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
+                      title="Remove file"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </motion.span>
+                ))}
+
+                {/* Picked DocVault Documents */}
+                {selectedDocIds.map((docId) => {
+                  const doc = vaultDocs.find((d) => d.id === docId)
+                  return (
+                    <motion.span
+                      key={`vault-${docId}`}
+                      layout
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ duration: 0.12 }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-accent/10 text-accent border border-accent/30 shadow-xs group"
+                    >
+                      <HardDrive className="w-3 h-3 text-accent shrink-0" />
+                      <span className="truncate max-w-[200px] font-medium" title={doc?.title || 'Vault doc'}>
+                        {doc?.title || 'Vault doc'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeDoc(docId)}
+                        className="p-0.5 text-accent/70 hover:text-red-500 rounded transition-colors"
+                        title="Remove vault document"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </motion.span>
+                  )
+                })}
+              </AnimatePresence>
+            </div>
           </div>
         )}
       </div>
 
-      {error && <p className="text-xs font-medium text-red-600 dark:text-red-400">{error}</p>}
+      {/* Error alert */}
+      {error && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 border border-red-200 dark:border-red-800 text-xs">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
-      <div className="flex items-center justify-end pt-1">
+      {/* Footer Submit */}
+      <div className="flex items-center justify-between pt-1 border-t border-border/40">
+        <div className="text-[11px] text-text-muted">
+          {totalStagedCount > 0
+            ? `${totalStagedCount} file${totalStagedCount === 1 ? '' : 's'} ready to send`
+            : 'At least one file or written answer is required'}
+        </div>
+
         <Button
           type="submit"
           size="sm"
-          disabled={respondMutation.isPending || (!textAnswer.trim() && selectedFiles.length === 0 && selectedDocIds.length === 0)}
-          className="gap-1.5 text-xs"
+          disabled={
+            respondMutation.isPending ||
+            (!textAnswer.trim() && selectedFiles.length === 0 && selectedDocIds.length === 0)
+          }
+          className="gap-1.5 text-xs font-semibold"
         >
           <Send className="w-3.5 h-3.5" />
           <span>{respondMutation.isPending ? 'Submitting…' : 'Submit response'}</span>
         </Button>
       </div>
 
+      {/* DocVault Picker Modal */}
       {showVaultPickerModal && (
         <DocVaultPickerModal
           open={showVaultPickerModal}

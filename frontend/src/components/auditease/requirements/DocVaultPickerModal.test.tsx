@@ -92,7 +92,7 @@ describe('DocVaultPickerModal', () => {
     },
   ]
 
-  it('renders modal with documents and buckets', async () => {
+  it('renders modal with documents and buckets in rail', async () => {
     vi.spyOn(docvaultApi, 'listBuckets').mockResolvedValue(mockBuckets)
     vi.spyOn(docvaultApi, 'listDocuments').mockResolvedValue(mockDocs)
 
@@ -109,9 +109,10 @@ describe('DocVaultPickerModal', () => {
     expect(await screen.findByText('P&L FY24 Statement')).toBeInTheDocument()
     expect(screen.getByText('Form 16 Tax Return')).toBeInTheDocument()
     expect(screen.getAllByText('Financial Statements').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('All Documents')).toBeInTheDocument()
   })
 
-  it('filters documents when searching', async () => {
+  it('filters documents when searching across title, tag, or filename', async () => {
     vi.spyOn(docvaultApi, 'listBuckets').mockResolvedValue(mockBuckets)
     vi.spyOn(docvaultApi, 'listDocuments').mockResolvedValue(mockDocs)
 
@@ -125,8 +126,50 @@ describe('DocVaultPickerModal', () => {
     )
 
     expect(await screen.findByText('P&L FY24 Statement')).toBeInTheDocument()
-    const searchInput = screen.getByPlaceholderText(/search by title/i)
-    fireEvent.change(searchInput, { target: { value: 'Form 16' } })
+    const searchInput = screen.getByPlaceholderText(/search across title/i)
+    fireEvent.change(searchInput, { target: { value: 'form16.pdf' } })
+
+    expect(screen.queryByText('P&L FY24 Statement')).not.toBeInTheDocument()
+    expect(screen.getByText('Form 16 Tax Return')).toBeInTheDocument()
+  })
+
+  it('filters documents when clicking a bucket in the rail', async () => {
+    vi.spyOn(docvaultApi, 'listBuckets').mockResolvedValue(mockBuckets)
+    vi.spyOn(docvaultApi, 'listDocuments').mockResolvedValue(mockDocs)
+
+    renderWithClient(
+      <DocVaultPickerModal
+        open
+        onClose={vi.fn()}
+        selectedDocIds={[]}
+        onConfirm={vi.fn()}
+      />
+    )
+
+    expect(await screen.findByText('P&L FY24 Statement')).toBeInTheDocument()
+    const bucketBtn = screen.getByRole('button', { name: /Tax Documents/i })
+    fireEvent.click(bucketBtn)
+
+    expect(screen.queryByText('P&L FY24 Statement')).not.toBeInTheDocument()
+    expect(screen.getByText('Form 16 Tax Return')).toBeInTheDocument()
+  })
+
+  it('filters documents by clicking tag pills', async () => {
+    vi.spyOn(docvaultApi, 'listBuckets').mockResolvedValue(mockBuckets)
+    vi.spyOn(docvaultApi, 'listDocuments').mockResolvedValue(mockDocs)
+
+    renderWithClient(
+      <DocVaultPickerModal
+        open
+        onClose={vi.fn()}
+        selectedDocIds={[]}
+        onConfirm={vi.fn()}
+      />
+    )
+
+    expect(await screen.findByText('P&L FY24 Statement')).toBeInTheDocument()
+    const tagBtn = screen.getByRole('button', { name: '#tax' })
+    fireEvent.click(tagBtn)
 
     expect(screen.queryByText('P&L FY24 Statement')).not.toBeInTheDocument()
     expect(screen.getByText('Form 16 Tax Return')).toBeInTheDocument()
@@ -156,5 +199,31 @@ describe('DocVaultPickerModal', () => {
 
     expect(onConfirm).toHaveBeenCalledWith(['doc-1'])
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('supports selecting all visible documents and clearing selection', async () => {
+    vi.spyOn(docvaultApi, 'listBuckets').mockResolvedValue(mockBuckets)
+    vi.spyOn(docvaultApi, 'listDocuments').mockResolvedValue(mockDocs)
+
+    renderWithClient(
+      <DocVaultPickerModal
+        open
+        onClose={vi.fn()}
+        selectedDocIds={[]}
+        onConfirm={vi.fn()}
+      />
+    )
+
+    expect(await screen.findByText('P&L FY24 Statement')).toBeInTheDocument()
+    const selectAllBtn = screen.getByRole('button', { name: /Select all \(2\)/i })
+    fireEvent.click(selectAllBtn)
+
+    expect(screen.getByRole('button', { name: /Attach Selected \(2\)/i })).toBeInTheDocument()
+    expect(screen.getByText('2 documents staged')).toBeInTheDocument()
+
+    const clearAllBtn = screen.getByText('Clear all')
+    fireEvent.click(clearAllBtn)
+
+    expect(screen.queryByText('2 documents staged')).not.toBeInTheDocument()
   })
 })
