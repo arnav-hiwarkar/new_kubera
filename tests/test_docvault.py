@@ -234,8 +234,8 @@ async def test_uncategorized_docs_visible_to_all(client: AsyncClient):
 async def test_creator_loses_access_when_restricted_away(client: AsyncClient):
     admin_headers, a_headers, b_headers, a_id, b_id = await _setup_company_with_members(client)
 
-    # User A creates a bucket (default `everyone`) and puts a doc in it.
-    resp = await client.post("/api/v1/docvault/buckets", json={"name": "A-owned"}, headers=a_headers)
+    # Admin creates a bucket (default `everyone`) and user A puts a doc in it.
+    resp = await client.post("/api/v1/docvault/buckets", json={"name": "A-owned"}, headers=admin_headers)
     bucket_id = resp.json()["id"]
     files = {"file": ("c.txt", b"creator doc", "text/plain")}
     await client.post(
