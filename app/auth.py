@@ -171,13 +171,10 @@ async def get_visible_user_ids(user, db: AsyncSession) -> list[uuid.UUID] | None
     from app.models.company import UserRole
     if user.role == UserRole.admin:
         return None
-    ids = [user.id]
-    if user.role == UserRole.manager:
-        ids.extend(await get_direct_report_ids(user.id, db))
-    return ids
+    return [user.id]
 
 from app.models.company import UserRole
 require_admin = require_role(UserRole.admin)
-require_manager_or_admin = require_role(UserRole.admin, UserRole.manager)
+require_manager_or_admin = require_role(UserRole.admin)
 # Read access to the fixed-asset register and its master data.
 require_assets_module = require_module("assets")

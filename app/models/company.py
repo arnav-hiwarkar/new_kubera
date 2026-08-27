@@ -78,7 +78,6 @@ class CompanyKey(Base, TimestampMixin):
 
 class UserRole(str, enum.Enum):
     admin = "admin"
-    manager = "manager"
     employee = "employee"
 
 

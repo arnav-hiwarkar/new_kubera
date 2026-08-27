@@ -98,7 +98,7 @@ async def create_user(
             select(CompanyUser).where(
                 CompanyUser.id == body.manager_id,
                 CompanyUser.company_id == current_user.company_id,
-                CompanyUser.role.in_([UserRole.manager, UserRole.admin])
+                CompanyUser.role == UserRole.admin
             )
         )
         if not m_res.scalar_one_or_none():
@@ -366,7 +366,7 @@ async def update_user(
             select(CompanyUser).where(
                 CompanyUser.id == body.manager_id,
                 CompanyUser.company_id == current_user.company_id,
-                CompanyUser.role.in_([UserRole.manager, UserRole.admin])
+                CompanyUser.role == UserRole.admin
             )
         )
         if not m_res.scalar_one_or_none():
