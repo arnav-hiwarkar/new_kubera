@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createBrowserRouter, Navigate, Outlet, type RouteObject } from 'react-router-dom'
 import { companyRoutes } from './company.routes'
 import { auditorRoutes } from './auditor.routes'

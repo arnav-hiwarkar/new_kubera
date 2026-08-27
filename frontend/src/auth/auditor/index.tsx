@@ -17,5 +17,6 @@ const auditor = createIdentityAuth<AuditorOut>({
 })
 
 export const AuditorAuthProvider = auditor.Provider
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuditorAuth = auditor.useAuth
 export const AuditorGuard = auditor.Guard

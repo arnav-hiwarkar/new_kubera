@@ -4,6 +4,86 @@
  */
 
 export interface paths {
+    "/api/v1/leads/interest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Lead Interest
+         * @description Public lead capture endpoint with rate limiting, honeypot trap, and anti-enumeration.
+         */
+        post: operations["submit_lead_interest_api_v1_leads_interest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/owner/leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Owner Leads
+         * @description List all incoming leads for the owner.
+         */
+        get: operations["list_owner_leads_api_v1_owner_leads_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/owner/leads/{lead_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Lead Status
+         * @description Update lead status (contacted, converted, archived).
+         */
+        patch: operations["update_lead_status_api_v1_owner_leads__lead_id__status_patch"];
+        trace?: never;
+    };
+    "/api/v1/owner/leads/{lead_id}/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Provision Company From Lead
+         * @description Owner provisions a new company and admin login from a lead.
+         */
+        post: operations["provision_company_from_lead_api_v1_owner_leads__lead_id__provision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/companies": {
         parameters: {
             query?: never;
@@ -2177,23 +2257,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auditease/engagements/{engagement_id}/requirement-requests/{req_id}/eta": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Set Requirement Eta */
-        patch: operations["set_requirement_eta_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__eta_patch"];
-        trace?: never;
-    };
     "/api/v1/auditease/engagements/{engagement_id}/queries": {
         parameters: {
             query?: never;
@@ -2474,7 +2537,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auditor/engagements/{engagement_id}/requirement-requests/{req_id}/review": {
+    "/api/v1/auditor/engagements/{engagement_id}/requirement-requests/{req_id}/close": {
         parameters: {
             query?: never;
             header?: never;
@@ -2483,8 +2546,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Review Requirement */
-        post: operations["review_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__review_post"];
+        /** Close Requirement */
+        post: operations["close_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auditor/engagements/{engagement_id}/requirement-requests/{req_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen Requirement */
+        post: operations["reopen_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__reopen_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4256,6 +4336,15 @@ export interface components {
             /** Sign Convention */
             sign_convention?: string | null;
         };
+        /** Body_respond_requirement_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__respond_post */
+        Body_respond_requirement_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__respond_post: {
+            /** Text Answer */
+            text_answer?: string | null;
+            /** Document Ids */
+            document_ids?: string[] | null;
+            /** Files */
+            files?: string[] | null;
+        };
         /** Body_upload_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_upload_post */
         Body_upload_acquisition_document_api_v1_asset_acquisitions__acq_id__documents_upload_post: {
             doc_role: components["schemas"]["AssetDocRole"];
@@ -4463,11 +4552,6 @@ export interface components {
         CompanyDeleteRequest: {
             /** Confirm Name */
             confirm_name: string;
-        };
-        /** CompanyEtaUpdate */
-        CompanyEtaUpdate: {
-            /** Company Eta */
-            company_eta?: string | null;
         };
         /**
          * CompanyInitRequest
@@ -5138,12 +5222,6 @@ export interface components {
          * @enum {string}
          */
         EntryLineSide: "debit" | "credit";
-        /**
-         * ExpectedFormat
-         * @description Hint for how the company should answer. Never enforced.
-         * @enum {string}
-         */
-        ExpectedFormat: "text" | "file" | "any";
         /** FinancialYearCreate */
         FinancialYearCreate: {
             /**
@@ -5445,6 +5523,96 @@ export interface components {
             manager_comment?: string | null;
             /** Rejection Reason */
             rejection_reason?: string | null;
+        };
+        /** LeadInterestRequest */
+        LeadInterestRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Company Name */
+            company_name?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Entities Count */
+            entities_count?: number | null;
+            /** Notes */
+            notes?: string | null;
+            /** Website Url Hp */
+            website_url_hp?: string | null;
+        };
+        /** LeadInterestResponse */
+        LeadInterestResponse: {
+            /**
+             * Status
+             * @default received
+             */
+            status: string;
+            /**
+             * Message
+             * @default Thank you for your interest in Kubera. Our team will contact you shortly.
+             */
+            message: string;
+        };
+        /** LeadOut */
+        LeadOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Company Name */
+            company_name: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Entities Count */
+            entities_count: number | null;
+            /** Notes */
+            notes: string | null;
+            status: components["schemas"]["LeadStatus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** LeadProvisionResponse */
+        LeadProvisionResponse: {
+            /**
+             * Lead Id
+             * Format: uuid
+             */
+            lead_id: string;
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Company Name */
+            company_name: string;
+            /** Admin Email */
+            admin_email: string;
+            /** Activation Key */
+            activation_key: string;
+            /** Activation Expires At */
+            activation_expires_at?: string | null;
+        };
+        /**
+         * LeadStatus
+         * @enum {string}
+         */
+        LeadStatus: "new" | "contacted" | "converted" | "archived";
+        /** LeadStatusUpdate */
+        LeadStatusUpdate: {
+            status: components["schemas"]["LeadStatus"];
         };
         /** LedgerGroupCreate */
         LedgerGroupCreate: {
@@ -5894,13 +6062,11 @@ export interface components {
          * RequestStatus
          * @enum {string}
          */
-        RequestStatus: "pending" | "submitted" | "clarification_needed" | "accepted";
+        RequestStatus: "open" | "closed";
         /** RequirementRequestCreate */
         RequirementRequestCreate: {
             /** Description */
             description: string;
-            /** Title */
-            title?: string | null;
             /**
              * Priority
              * @default 1
@@ -5908,22 +6074,6 @@ export interface components {
             priority: number;
             /** Due Date */
             due_date?: string | null;
-            /** Additional Details */
-            additional_details?: string | null;
-            /** Period From */
-            period_from?: string | null;
-            /** Period To */
-            period_to?: string | null;
-            /** Entity */
-            entity?: string | null;
-            /** Responsible Person Id */
-            responsible_person_id?: string | null;
-            /** @default any */
-            expected_format: components["schemas"]["ExpectedFormat"];
-            /** Auditor Notes */
-            auditor_notes?: string | null;
-            /** Parent Requirement Id */
-            parent_requirement_id?: string | null;
         };
         /** RequirementRequestResponse */
         RequirementRequestResponse: {
@@ -5944,15 +6094,13 @@ export interface components {
             raised_by: string;
             /** Raised By Name */
             raised_by_name?: string | null;
-            /** Title */
-            title: string;
+            /** Seq Number */
+            seq_number: number;
+            /** Requirement Id Str */
+            requirement_id_str?: string | null;
             /** Description */
             description: string;
             status: components["schemas"]["RequestStatus"];
-            /** Seq Number */
-            seq_number?: number | null;
-            /** Requirement Id Str */
-            requirement_id_str?: string | null;
             /**
              * Priority
              * @default 1
@@ -5960,34 +6108,27 @@ export interface components {
             priority: number;
             /** Due Date */
             due_date?: string | null;
-            /** Company Eta */
-            company_eta?: string | null;
-            /** Additional Details */
-            additional_details?: string | null;
-            /** Period From */
-            period_from?: string | null;
-            /** Period To */
-            period_to?: string | null;
-            /** Entity */
-            entity?: string | null;
-            /** Responsible Person Id */
-            responsible_person_id?: string | null;
-            /** Responsible Person Name */
-            responsible_person_name?: string | null;
-            /** @default any */
-            expected_format: components["schemas"]["ExpectedFormat"];
-            /** Auditor Notes */
-            auditor_notes?: string | null;
-            /** Parent Requirement Id */
-            parent_requirement_id?: string | null;
-            /** Clarification Note */
-            clarification_note?: string | null;
-            latest_response?: components["schemas"]["RequirementResponseOut"] | null;
+            /** Closed By */
+            closed_by?: string | null;
+            /** Closed By Name */
+            closed_by_name?: string | null;
+            /** Closed At */
+            closed_at?: string | null;
             /**
-             * Responses
+             * Submissions
              * @default []
              */
-            responses: components["schemas"]["RequirementResponseOut"][];
+            submissions: components["schemas"]["RequirementSubmissionOut"][];
+            /**
+             * Submission Count
+             * @default 0
+             */
+            submission_count: number;
+            /**
+             * Document Count
+             * @default 0
+             */
+            document_count: number;
             /**
              * Linked Query Count
              * @default 0
@@ -6004,15 +6145,19 @@ export interface components {
              */
             updated_at: string;
         };
-        /** RequirementRespond */
-        RequirementRespond: {
-            /** Text Answer */
-            text_answer?: string | null;
+        /** RequirementResponseDocumentOut */
+        RequirementResponseDocumentOut: {
             /** Document Id */
             document_id?: string | null;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes?: number | null;
+            /** Mime Type */
+            mime_type?: string | null;
         };
-        /** RequirementResponseOut */
-        RequirementResponseOut: {
+        /** RequirementSubmissionOut */
+        RequirementSubmissionOut: {
             /**
              * Id
              * Format: uuid
@@ -6023,29 +6168,24 @@ export interface components {
              * Format: uuid
              */
             requirement_id: string;
+            /** Round Number */
+            round_number: number;
             /** Responded By */
             responded_by?: string | null;
             /** Responded By Name */
             responded_by_name?: string | null;
             /** Text Answer */
             text_answer?: string | null;
-            /** Document Id */
-            document_id?: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
-        };
-        /** RequirementReviewCreate */
-        RequirementReviewCreate: {
             /**
-             * Action
-             * @enum {string}
+             * Documents
+             * @default []
              */
-            action: "accept" | "clarify";
-            /** Note */
-            note?: string | null;
+            documents: components["schemas"]["RequirementResponseDocumentOut"][];
         };
         /** SalesImportInspectResponse */
         SalesImportInspectResponse: {
@@ -6977,6 +7117,142 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    submit_lead_interest_api_v1_leads_interest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadInterestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadInterestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_owner_leads_api_v1_owner_leads_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["LeadStatus"] | null;
+            };
+            header: {
+                "x-internal-api-key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_lead_status_api_v1_owner_leads__lead_id__status_patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-internal-api-key": string;
+            };
+            path: {
+                lead_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadStatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provision_company_from_lead_api_v1_owner_leads__lead_id__provision_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-internal-api-key": string;
+            };
+            path: {
+                lead_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadProvisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_companies_api_v1_auth_companies_get: {
         parameters: {
             query?: never;
@@ -11480,45 +11756,9 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": components["schemas"]["RequirementRespond"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RequirementRequestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_requirement_eta_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__eta_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                engagement_id: string;
-                req_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CompanyEtaUpdate"];
+                "multipart/form-data": components["schemas"]["Body_respond_requirement_api_v1_auditease_engagements__engagement_id__requirement_requests__req_id__respond_post"];
             };
         };
         responses: {
@@ -12154,7 +12394,7 @@ export interface operations {
             };
         };
     };
-    review_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__review_post: {
+    close_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__close_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -12164,11 +12404,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RequirementReviewCreate"];
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequirementRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
+    };
+    reopen_requirement_api_v1_auditor_engagements__engagement_id__requirement_requests__req_id__reopen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                req_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

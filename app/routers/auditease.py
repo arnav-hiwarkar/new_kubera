@@ -37,7 +37,7 @@ from app.schemas.auditease import (
 )
 from app.services.activity import log_activity
 from app.services.auditor_access import area_enabled, attach_actor_names, attach_sender_names, normalize_area_permissions
-from app.routers.auditor_engagements import enrich_requirements
+from app.services.requirements import enrich_requirements, create_submission
 from app.config import get_settings
 from app.services import import_service
 from app.services import ledger_groups as lg
@@ -1285,49 +1285,7 @@ async def list_requirements(
         select(RequirementRequest).where(RequirementRequest.engagement_id == engagement_id)
         .order_by(RequirementRequest.seq_number.nulls_first(), RequirementRequest.created_at)
     )).scalars().all()
-    await attach_actor_names(db, req_list, "raised_by", "raised_by_name")
     return await enrich_requirements(db, engagement_id, req_list)
-
-
-class RequirementRespond(BaseModel):
-    text_answer: Optional[str] = None
-    document_id: Optional[uuid.UUID] = None
-
-    @model_validator(mode="after")
-    def _needs_something(self):
-        if not self.text_answer and not self.document_id:
-            raise ValueError("Provide a text answer and/or a document")
-        return self
-
-
-class CompanyEtaUpdate(BaseModel):
-    company_eta: Optional[date] = None
-
-
-async def grant_document_access_to_auditors(db, engagement_id, document_id) -> None:
-    """Give every accepted auditor with the requirements area read access to a
-    submitted document (shared-workspace rule)."""
-    from app.models.docvault import DocumentAccessOverride, PrincipalType
-    rows = (await db.execute(
-        select(AuditorEngagementGrant.auditor_id, AuditorEngagementGrant.area_permissions)
-        .where(and_(
-            AuditorEngagementGrant.engagement_id == engagement_id,
-            AuditorEngagementGrant.status == GrantStatus.accepted,
-        )))).all()
-    existing = set((await db.execute(
-        select(DocumentAccessOverride.principal_id).where(
-            DocumentAccessOverride.document_id == document_id,
-            DocumentAccessOverride.principal_type == PrincipalType.auditor,
-        ))).scalars().all())
-    for auditor_id, perms in rows:
-        if not area_enabled(perms, "requirements") or auditor_id in existing:
-            continue
-        db.add(DocumentAccessOverride(
-            document_id=document_id,
-            principal_type=PrincipalType.auditor,
-            principal_id=auditor_id,
-            permission_level="read",
-        ))
 
 
 async def _owned_requirement(db, current_user, engagement_id, req_id) -> RequirementRequest:
@@ -1349,63 +1307,31 @@ async def _owned_requirement(db, current_user, engagement_id, req_id) -> Require
 async def respond_requirement(
     engagement_id: uuid.UUID,
     req_id: uuid.UUID,
-    payload: RequirementRespond,
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
-):
-    from app.models.docvault import Document
-    req = await _owned_requirement(db, current_user, engagement_id, req_id)
-    if req.status not in (RequestStatus.pending, RequestStatus.clarification_needed):
-        raise HTTPException(status_code=400, detail=f"Cannot respond to a {req.status.value} requirement")
-
-    if payload.document_id is not None:
-        doc_ok = (await db.execute(select(Document.id).where(and_(
-            Document.id == payload.document_id,
-            Document.company_id == current_user.company_id)))).scalar_one_or_none()
-        if not doc_ok:
-            raise HTTPException(status_code=404, detail="Document not found")
-
-    db.add(RequirementResponse(
-        requirement_id=req.id,
-        responded_by=current_user.id,
-        text_answer=payload.text_answer,
-        document_id=payload.document_id,
-    ))
-    req.status = RequestStatus.submitted
-    req.clarification_note = None
-    if payload.document_id is not None:
-        await grant_document_access_to_auditors(db, engagement_id, payload.document_id)
-
-    await log_activity(db, current_user.company_id, current_user.id,
-                 "requirement.submitted", "requirement_request", req.id,
-                 actor_type=ActorType.company_user, engagement_id=engagement_id)
-    await db.commit()
-    await db.refresh(req)
-    await attach_actor_names(db, [req], "raised_by", "raised_by_name")
-    return (await enrich_requirements(db, engagement_id, [req]))[0]
-
-
-@router.patch("/engagements/{engagement_id}/requirement-requests/{req_id}/eta",
-              response_model=RequirementRequestResponse)
-async def set_requirement_eta(
-    engagement_id: uuid.UUID,
-    req_id: uuid.UUID,
-    payload: CompanyEtaUpdate,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    db: Annotated[AsyncSession, Depends(get_db)],
+    text_answer: Annotated[Optional[str], Form()] = None,
+    document_ids: Annotated[Optional[List[uuid.UUID]], Form()] = None,
+    files: Annotated[Optional[List[UploadFile]], File()] = None,
 ):
     req = await _owned_requirement(db, current_user, engagement_id, req_id)
-    if req.status == RequestStatus.accepted:
-        raise HTTPException(status_code=400, detail="Cannot change ETA on an accepted requirement")
+    if req.status == RequestStatus.closed:
+        raise HTTPException(status_code=400, detail="This requirement is closed. Ask the auditor to reopen it.")
+    text = (text_answer or "").strip() or None
+    docs, ups = document_ids or [], files or []
+    if not text and not docs and not ups:
+        raise HTTPException(status_code=422, detail="Provide an answer, attach a document, or upload a file")
 
-    req.company_eta = payload.company_eta
+    submission = await create_submission(
+        db, req=req, engagement_id=engagement_id, company_id=current_user.company_id,
+        user_id=current_user.id, text_answer=text, files=ups, document_ids=docs)
+
     await log_activity(db, current_user.company_id, current_user.id,
-                 "requirement.eta_set", "requirement_request", req.id,
-                 metadata_={"company_eta": str(payload.company_eta) if payload.company_eta else None},
-                 actor_type=ActorType.company_user, engagement_id=engagement_id)
+        "requirement.submitted", "requirement_request", req.id,
+        metadata_={"round_number": submission.round_number,
+                   "file_count": len(ups) + len(docs)},
+        actor_type=ActorType.company_user, engagement_id=engagement_id)
     await db.commit()
     await db.refresh(req)
-    await attach_actor_names(db, [req], "raised_by", "raised_by_name")
     return (await enrich_requirements(db, engagement_id, [req]))[0]
 
 

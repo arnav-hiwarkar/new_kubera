@@ -33,7 +33,7 @@ describe('OwnerLeadsPage', () => {
       ok: true,
       status: 200,
       json: async () => mockLeads,
-    } as any)
+    } as unknown as Response)
 
     render(<OwnerLeadsPage />)
 

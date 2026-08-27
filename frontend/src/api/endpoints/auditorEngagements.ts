@@ -49,14 +49,13 @@ export const auditorEngagementsApi = {
     ),
   deleteRequirement: (id: string, reqId: string) =>
     auditorClient.delete<void>(`/api/v1/auditor/engagements/${id}/requirement-requests/${reqId}`),
-  reviewRequirement: (
-    id: string,
-    reqId: string,
-    body: { action: 'accept' | 'clarify'; note?: string },
-  ) =>
+  closeRequirement: (id: string, reqId: string) =>
     auditorClient.post<RequirementRequestResponse>(
-      `/api/v1/auditor/engagements/${id}/requirement-requests/${reqId}/review`,
-      { body },
+      `/api/v1/auditor/engagements/${id}/requirement-requests/${reqId}/close`,
+    ),
+  reopenRequirement: (id: string, reqId: string) =>
+    auditorClient.post<RequirementRequestResponse>(
+      `/api/v1/auditor/engagements/${id}/requirement-requests/${reqId}/reopen`,
     ),
   downloadImportTemplate: (id: string) =>
     auditorClient.get<Blob>(

@@ -1,4 +1,5 @@
 import io
+from datetime import date, datetime
 import openpyxl
 import pytest
 
@@ -8,73 +9,88 @@ from app.services.requirement_import import (
 )
 
 
-def _load(content: bytes) -> list[list]:
+def _load(content: bytes) -> tuple[list[str], list[list]]:
     wb = openpyxl.load_workbook(io.BytesIO(content))
+    instructions = [row[0] for row in wb["Instructions"].iter_rows(values_only=True) if row and row[0]]
     ws = wb["Requirements"]
-    return [[c for c in row] for row in ws.iter_rows(values_only=True)]
+    req_rows = [[c for c in row] for row in ws.iter_rows(values_only=True)]
+    return instructions, req_rows
 
 
 def test_template_has_headers_and_example():
-    rows = _load(build_template_xlsx())
-    assert list(rows[0])[:3] == ["Requirement", "Additional Details", "Period From"]
+    instructions, rows = _load(build_template_xlsx())
+    assert len(instructions) >= 7
+    assert list(rows[0]) == ["S. No.", "Requirement", "Due Date", "Priority"]
     assert len(rows[0]) == len(IMPORT_HEADERS)
     assert any(any(c for c in row) for row in rows[1:])  # example row present
 
 
 def test_parse_minimal_row_defaults():
-    p = parse_rows([["Bank statements FY24"]])[0]
+    # S. No. at index 0, Requirement at index 1
+    p = parse_rows([["1", "Bank statements FY24", None, None]])[0]
     assert p["description"] == "Bank statements FY24"
     assert p["priority"] == 1
-    assert p["expected_format"] == "any"
     assert p["due_date"] is None
-    assert p["parent_seq"] is None
 
 
 def test_parse_full_row():
-    p = parse_rows([[
-        "Ledger dump", "Include opening balances", "2025-04-01", "2026-03-31",
-        "ETHDC Main", 3, "2026-04-15", "finance@ethdc.com", "FILE",
-        "Chase weekly", "REQ-002",
-    ]])[0]
-    assert str(p["period_from"]) == "2025-04-01"
+    p = parse_rows([["10", "Ledger dump", "2026-04-15", 3]])[0]
+    assert p["description"] == "Ledger dump"
+    assert p["due_date"] == date(2026, 4, 15)
     assert p["priority"] == 3
-    assert p["expected_format"] == "file"
-    assert p["parent_seq"] == 2
+
+
+def test_parse_datetime_cell_accepted():
+    p = parse_rows([["1", "Ledger dump", datetime(2026, 4, 15, 10, 30), "2"]])[0]
+    assert p["due_date"] == date(2026, 4, 15)
+    assert p["priority"] == 2
 
 
 def test_missing_requirement_is_row_error():
     with pytest.raises(RowError) as e:
-        parse_rows([[None]])
+        parse_rows([["1", None, "2026-04-15", 1]])
+    assert e.value.row == 2
+    assert "Requirement is required" in e.value.message
+
+
+def test_non_numeric_priority_rejected():
+    with pytest.raises(RowError) as e:
+        parse_rows([["1", "Valid requirement", None, "high"]])
     assert e.value.row == 2
 
 
-def test_bad_priority_rejected():
+def test_priority_out_of_range_rejected():
     with pytest.raises(RowError):
-        parse_rows([["X", None, None, None, None, 9]])
-
-
-def test_bad_date_rejected():
+        parse_rows([["1", "Req", None, 0]])
     with pytest.raises(RowError):
-        parse_rows([["X", None, "31/04/2025"]])
+        parse_rows([["1", "Req", None, 6]])
 
 
-def test_bad_expected_format_rejected():
-    with pytest.raises(RowError):
-        parse_rows([["X", None, None, None, None, None, None, None, "smoke signal"]])
+def test_malformed_date_rejected():
+    with pytest.raises(RowError) as e:
+        parse_rows([["1", "Req", "31/04/2025", 1]])
+    assert e.value.row == 2
 
 
-def test_parent_ref_parsed_structurally_even_if_unknown():
-    """parse_rows validates FORMAT only. Whether REQ-999 exists or precedes the
-    row is referential knowledge enforced by import_requirements (earlier created
-    rows first, then the engagement's existing requirements)."""
+def test_blank_and_duplicate_s_no_ignored():
     payloads = parse_rows([
-        ["Child", None, None, None, None, None, None, None, None, None, "REQ-999"],
-        ["Parent"],
+        [None, "Req One", None, 1],
+        ["dup", "Req Two", None, 2],
+        ["dup", "Req Three", None, 3],
     ])
-    assert payloads[0]["parent_seq"] == 999
-    assert payloads[1]["parent_seq"] is None
+    assert len(payloads) == 3
+    assert payloads[0]["description"] == "Req One"
+    assert payloads[1]["description"] == "Req Two"
+    assert payloads[2]["description"] == "Req Three"
 
 
 def test_blank_spacer_rows_tolerated():
-    payloads = parse_rows([[None, None], ["Real"], [None]])
-    assert len(payloads) == 1 and payloads[0]["row"] == 3
+    payloads = parse_rows([
+        [None, None, None, None],
+        ["1", "Real requirement", None, 1],
+        [None, None, None, None],
+    ])
+    assert len(payloads) == 1
+    assert payloads[0]["row"] == 3
+    assert payloads[0]["description"] == "Real requirement"
+

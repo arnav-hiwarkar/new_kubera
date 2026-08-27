@@ -195,6 +195,8 @@ export interface TBColumnMap {
   credit_sign?: 'auto' | 'negative' | 'positive'
 }
 export type RequirementRequestCreate = S['RequirementRequestCreate']
+export type RequirementResponseDocumentOut = S['RequirementResponseDocumentOut']
+export type RequirementSubmissionOut = S['RequirementSubmissionOut']
 export type RequirementRequestResponse = S['RequirementRequestResponse']
 export type QueryResponse = S['QueryResponse']
 export type QueryMessageResponse = S['QueryMessageResponse']

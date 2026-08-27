@@ -57,7 +57,7 @@ export const KRA_STATUS = [
   'rejected',
 ] as const
 export const QUERY_STATUS = ['open', 'closed'] as const
-export const REQUEST_STATUS = ['pending', 'submitted', 'clarification_needed', 'accepted'] as const
+export const REQUEST_STATUS = ['open', 'closed'] as const
 export const SALES_STATUS = ['lead', 'negotiation', 'won', 'lost'] as const
 export const SENDER_TYPE = ['company_user', 'auditor'] as const
 export const USER_ROLE = ['admin', 'manager', 'employee'] as const
@@ -140,10 +140,6 @@ export const STATUS_TONE: Record<string, BadgeTone> = {
   poor: 'danger',
   unusable: 'danger',
   maintenance: 'warning',
-  // RequestStatus ('submitted' reuses the DocumentStatus tone above)
-  pending: 'neutral',
-  clarification_needed: 'warning',
-  accepted: 'success',
   // UserRole (rendered as role chips)
   admin: 'info',
   manager: 'special',

@@ -177,7 +177,7 @@ describe('GraphDocumentInspector', () => {
     // Metadata
     expect(within(inspector).getAllByText('Ada Lovelace').length).toBeGreaterThanOrEqual(1)
     expect(within(inspector).getByText('Charles Babbage')).toBeInTheDocument()
-    expect(within(inspector).getAllByText('2 Jun 2026').length).toBeGreaterThanOrEqual(1)
+    expect(within(inspector).getAllByText(/Jun 2, 2026|2 Jun 2026/).length).toBeGreaterThanOrEqual(1)
   })
 
   it('calls onClose when close button is clicked', async () => {

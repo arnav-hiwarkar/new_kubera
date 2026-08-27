@@ -119,3 +119,31 @@ async def auditor_can_access_document(
     if not any(area_enabled(p, "documents") for p in grant.scalars().all()):
         return None
     return doc
+
+
+async def grant_document_access_to_auditors(
+    db: AsyncSession, engagement_id: uuid.UUID, document_id: uuid.UUID
+) -> None:
+    """Give every accepted auditor with the requirements area read access to a
+    submitted document (shared-workspace rule)."""
+    rows = (await db.execute(
+        select(AuditorEngagementGrant.auditor_id, AuditorEngagementGrant.area_permissions)
+        .where(and_(
+            AuditorEngagementGrant.engagement_id == engagement_id,
+            AuditorEngagementGrant.status == GrantStatus.accepted,
+        )))).all()
+    existing = set((await db.execute(
+        select(DocumentAccessOverride.principal_id).where(
+            DocumentAccessOverride.document_id == document_id,
+            DocumentAccessOverride.principal_type == PrincipalType.auditor,
+        ))).scalars().all())
+    for auditor_id, perms in rows:
+        if not area_enabled(perms, "requirements") or auditor_id in existing:
+            continue
+        db.add(DocumentAccessOverride(
+            document_id=document_id,
+            principal_type=PrincipalType.auditor,
+            principal_id=auditor_id,
+            permission_level="read",
+        ))
+

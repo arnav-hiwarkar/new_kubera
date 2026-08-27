@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.models.auditease import (
     EngagementStatus, AuditEntryStatus, EntryLineSide, RequestStatus,
-    QueryStatus, SenderType, BalanceNature, TBSignConvention, ExpectedFormat,
+    QueryStatus, SenderType, BalanceNature, TBSignConvention,
 )
 
 
@@ -418,31 +418,30 @@ class AuditEntryResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# --- Requests & Queries ---
-
 class RequirementRequestCreate(BaseModel):
-    description: str
-    title: Optional[str] = None
+    description: str = Field(min_length=1)
     priority: int = Field(default=1, ge=1, le=5)
     due_date: Optional[date] = None
-    additional_details: Optional[str] = None
-    period_from: Optional[date] = None
-    period_to: Optional[date] = None
-    entity: Optional[str] = None
-    responsible_person_id: Optional[uuid.UUID] = None
-    expected_format: ExpectedFormat = ExpectedFormat.any
-    auditor_notes: Optional[str] = None
-    parent_requirement_id: Optional[uuid.UUID] = None
 
 
-class RequirementResponseOut(BaseModel):
+class RequirementResponseDocumentOut(BaseModel):
+    # None when the document was later deleted from docVault; `filename` survives.
+    document_id: Optional[uuid.UUID] = None
+    filename: str
+    size_bytes: Optional[int] = None
+    mime_type: Optional[str] = None
+    model_config = {"from_attributes": True}
+
+
+class RequirementSubmissionOut(BaseModel):
     id: uuid.UUID
     requirement_id: uuid.UUID
+    round_number: int
     responded_by: Optional[uuid.UUID] = None
     responded_by_name: Optional[str] = None
     text_answer: Optional[str] = None
-    document_id: Optional[uuid.UUID] = None
     created_at: datetime
+    documents: List[RequirementResponseDocumentOut] = []
     model_config = {"from_attributes": True}
 
 
@@ -451,26 +450,18 @@ class RequirementRequestResponse(BaseModel):
     engagement_id: uuid.UUID
     raised_by: uuid.UUID
     raised_by_name: Optional[str] = None
-    title: str
+    seq_number: int
+    requirement_id_str: Optional[str] = None   # display id, e.g. REQ-001
     description: str
     status: RequestStatus
-    seq_number: Optional[int] = None
-    requirement_id_str: Optional[str] = None   # display id e.g. REQ-001; routers set this
     priority: int = 1
     due_date: Optional[date] = None
-    company_eta: Optional[date] = None
-    additional_details: Optional[str] = None
-    period_from: Optional[date] = None
-    period_to: Optional[date] = None
-    entity: Optional[str] = None
-    responsible_person_id: Optional[uuid.UUID] = None
-    responsible_person_name: Optional[str] = None
-    expected_format: ExpectedFormat = ExpectedFormat.any
-    auditor_notes: Optional[str] = None
-    parent_requirement_id: Optional[uuid.UUID] = None
-    clarification_note: Optional[str] = None
-    latest_response: Optional[RequirementResponseOut] = None
-    responses: List[RequirementResponseOut] = []
+    closed_by: Optional[uuid.UUID] = None
+    closed_by_name: Optional[str] = None
+    closed_at: Optional[datetime] = None
+    submissions: List[RequirementSubmissionOut] = []
+    submission_count: int = 0
+    document_count: int = 0
     linked_query_count: int = 0
     created_at: datetime
     updated_at: datetime

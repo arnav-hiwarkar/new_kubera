@@ -54,16 +54,8 @@ class TBSignConvention(str, enum.Enum):
     derived = "derived"
 
 class RequestStatus(str, enum.Enum):
-    pending = "pending"
-    submitted = "submitted"
-    clarification_needed = "clarification_needed"
-    accepted = "accepted"
-
-class ExpectedFormat(str, enum.Enum):
-    """Hint for how the company should answer. Never enforced."""
-    text = "text"
-    file = "file"
-    any = "any"
+    open = "open"
+    closed = "closed"
 
 class QueryStatus(str, enum.Enum):
     open = "open"
@@ -252,39 +244,36 @@ class AuditEntryLine(Base):
 # --- Requests & Queries ---
 
 class RequirementRequest(Base, TimestampMixin):
+    """One information request against an engagement. Open from creation; only an
+    auditor closes it. The requirement text is a single free-form field — there is
+    deliberately no title, period, entity, or hierarchy."""
     __tablename__ = "requirement_requests"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    engagement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("audit_engagements.id", ondelete="CASCADE"), nullable=False, index=True)
-    raised_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auditors.id"), nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False, server_default="Requirement")
+    engagement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("audit_engagements.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    raised_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("auditors.id"), nullable=False)
+    seq_number: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[RequestStatus] = mapped_column(SAEnum(RequestStatus, name="request_status"), default=RequestStatus.pending, nullable=False)
-
-    # --- lifecycle metadata (Task 3 swaps the enum + drops fulfilled_document_id) ---
-    seq_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    priority: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
+    status: Mapped[RequestStatus] = mapped_column(
+        SAEnum(RequestStatus, name="request_status"),
+        default=RequestStatus.open, server_default="open", nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    company_eta: Mapped[date | None] = mapped_column(Date, nullable=True)
-    additional_details: Mapped[str | None] = mapped_column(Text, nullable=True)
-    period_from: Mapped[date | None] = mapped_column(Date, nullable=True)
-    period_to: Mapped[date | None] = mapped_column(Date, nullable=True)
-    entity: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    responsible_person_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
-    expected_format: Mapped[ExpectedFormat] = mapped_column(SAEnum(ExpectedFormat, name="expected_format"), default=ExpectedFormat.any, nullable=False, server_default="any")
-    auditor_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    parent_requirement_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("requirement_requests.id", ondelete="RESTRICT"), nullable=True)
-    clarification_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    closed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("auditors.id", ondelete="SET NULL"), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __init__(self, **kwargs):
-        # SQLAlchemy applies Python-side column defaults at flush, not at
-        # construction; seed the two lifecycle defaults eagerly so a freshly
-        # built (unflushed) instance already reads with them.
+        # SQLAlchemy applies Python-side column defaults at flush, not at construction;
+        # seed them eagerly so a freshly built (unflushed) instance reads correctly.
         super().__init__(**kwargs)
         if kwargs.get("priority") is None:
             self.priority = 1
-        if kwargs.get("expected_format") is None:
-            self.expected_format = ExpectedFormat.any
+        if kwargs.get("status") is None:
+            self.status = RequestStatus.open
 
     @property
     def requirement_id(self) -> str:
@@ -292,18 +281,50 @@ class RequirementRequest(Base, TimestampMixin):
 
 
 class RequirementResponse(Base):
-    """One company submission against a requirement. Append-only: a
-    clarification loop produces multiple rows, preserving the audit trail."""
+    """One submission round ("edition") against a requirement: optional text plus
+    any number of documents. Append-only — round 2 never overwrites round 1."""
     __tablename__ = "requirement_responses"
+    __table_args__ = (
+        UniqueConstraint("requirement_id", "round_number", name="uq_req_response_round"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    requirement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("requirement_requests.id", ondelete="CASCADE"), nullable=False, index=True)
-    # Nullable only for legacy rows backfilled from old `fulfilled` requirements,
-    # where the original respondent was never recorded.
-    responded_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
+    requirement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("requirement_requests.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Nullable only for legacy rows whose respondent was never recorded.
+    responded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
     text_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
-    document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    # lazy="raise": every read path must selectinload() this explicitly.
+    documents = relationship(
+        "RequirementResponseDocument", cascade="all, delete-orphan", lazy="raise")
+
+
+class RequirementResponseDocument(Base):
+    """A document attached to one submission round.
+
+    `document_id` is SET NULL rather than CASCADE and is paired with a `filename`
+    snapshot: if the company later deletes the document from docVault, the audit
+    history must still truthfully show that six files were submitted, not four.
+    """
+    __tablename__ = "requirement_response_documents"
+    __table_args__ = (
+        UniqueConstraint("response_id", "document_id", name="uq_req_response_document"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    response_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("requirement_responses.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True, index=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
 class Query(Base, TimestampMixin):

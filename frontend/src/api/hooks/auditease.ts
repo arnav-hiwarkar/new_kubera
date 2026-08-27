@@ -297,22 +297,12 @@ export function useListRequirements(engagementId: string) {
 export function useRespondToRequirement() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ engagementId, reqId, body }: { engagementId: string; reqId: string; body: { text_answer?: string; document_id?: string } }) =>
-      auditeaseCompanyApi.respondRequirement(engagementId, reqId, body),
+    mutationFn: ({ engagementId, reqId, formData }: { engagementId: string; reqId: string; formData: FormData }) =>
+      auditeaseCompanyApi.respondRequirement(engagementId, reqId, formData),
     onSuccess: (_r, { engagementId }) => {
       qc.invalidateQueries({ queryKey: ['auditease', 'requirements', engagementId] })
       qc.invalidateQueries({ queryKey: ['company', 'activity'] })
     },
-  })
-}
-
-export function useSetRequirementEta() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ engagementId, reqId, body }: { engagementId: string; reqId: string; body: { company_eta: string | null } }) =>
-      auditeaseCompanyApi.setRequirementEta(engagementId, reqId, body),
-    onSuccess: (_r, { engagementId }) =>
-      qc.invalidateQueries({ queryKey: ['auditease', 'requirements', engagementId] }),
   })
 }
 

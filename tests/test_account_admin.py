@@ -16,7 +16,7 @@ from app.config import get_settings
 from app.models.activity_log import ActivityLog
 from app.models.auditease import (
     AuditEngagement, AuditEntry, AuditEntryLine, Query, QueryMessage,
-    RequirementRequest, TrialBalanceAccount,
+    RequirementRequest, RequirementResponse, RequirementResponseDocument, TrialBalanceAccount,
 )
 from app.models.company import Company, CompanyKey, CompanyUser
 from app.models.docvault import Bucket, Document, DocumentVersion
@@ -253,13 +253,13 @@ async def _build_tenant_data(client: AsyncClient, co_headers, aud_headers):
 
     req = await client.post(
         f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
-        json={"title": "Bank Statements", "description": "Provide them"},
+        json={"description": "Provide them"},
         headers=aud_headers,
     )
     assert req.status_code == 200, req.text
     await client.post(
         f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req.json()['id']}/respond",
-        json={"document_id": doc_id}, headers=co_headers,
+        data={"document_ids": [doc_id]}, headers=co_headers,
     )
 
     query = await client.post(
@@ -324,6 +324,8 @@ async def test_purge_company_deletes_everything_and_frees_name_and_email(
     for model, column in ((DocumentVersion, DocumentVersion.document_id),
                           (AuditEntry, AuditEntry.engagement_id),
                           (RequirementRequest, RequirementRequest.engagement_id),
+                          (RequirementResponse, RequirementResponse.requirement_id),
+                          (RequirementResponseDocument, RequirementResponseDocument.response_id),
                           (Query, Query.engagement_id)):
         assert (await db.execute(select(func.count()).select_from(model))).scalar_one() == 0, \
             f"{model.__tablename__} should be empty"

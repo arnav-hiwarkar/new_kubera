@@ -120,10 +120,12 @@ async def purge_company(db: AsyncSession, company: Company) -> list[str]:
       bare UUID discriminated by `recipient_type`).
     - `document_access_overrides.principal_id` is likewise a bare UUID. Rows keyed
       by a purged document cascade away; this catches any keyed by a purged user.
-    - `requirement_responses`, `queries` and `query_messages` each sit under two
-      or three FK paths from `companies` (e.g. a response cascades via its
-      requirement but is SET-NULL'd via `documents`/`company_users`; a query
-      message cascades via its query but is SET-NULL'd via `documents`).
+    - `requirement_responses`, `requirement_response_documents`, `queries` and
+      `query_messages` each sit under two or three FK paths from `companies` (e.g.
+      a response cascades via its requirement and cascades to its response
+      documents, which are SET-NULL'd via `documents`; a response is SET-NULL'd
+      via `company_users`; a query message cascades via its query but is SET-NULL'd
+      via `documents`).
       PostgreSQL may interleave those referential actions so a child row still
       exists after its cascade-parent is gone, and the SET NULL update then
       violates that parent FK. Delete them up front, children first.

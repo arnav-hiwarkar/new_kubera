@@ -217,8 +217,10 @@ async def test_area_enforcement_blocks_disabled_areas(client: AsyncClient):
     )).json()["id"]
 
     # all new lifecycle endpoints must honor the revoked requirements area
-    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}/review",
-                             json={"action": "clarify"}, headers=aud)
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}/close", headers=aud)
+    assert resp.status_code == 403
+    assert "removed by the company" in resp.json()["detail"]
+    resp = await client.post(f"/api/v1/auditor/engagements/{eng_id}/requirement-requests/{req_id}/reopen", headers=aud)
     assert resp.status_code == 403
     assert "removed by the company" in resp.json()["detail"]
     resp = await client.get(

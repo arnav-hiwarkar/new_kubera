@@ -409,8 +409,21 @@ async def test_logo_employee_forbidden(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_login_rate_limit_429(client: AsyncClient):
+async def test_login_rate_limit_429(client: AsyncClient, monkeypatch):
     await create_test_company(client)
+    
+    class FakeRedis:
+        def __init__(self):
+            self.store = {}
+        async def incr(self, key):
+            self.store[key] = self.store.get(key, 0) + 1
+            return self.store[key]
+        async def expire(self, key, seconds):
+            pass
+
+    fake = FakeRedis()
+    monkeypatch.setattr("app.rate_limit._redis", lambda: fake)
+
     # Default limit is 10 per window; the 11th attempt should be throttled.
     statuses = []
     for _ in range(12):
