@@ -920,6 +920,9 @@ async def create_engagement(
         created_by=current_user.id
     )
     db.add(eng)
+    await db.flush()
+    from app.services import document_access as doc_access
+    await doc_access.ensure_audit_bucket(db, current_user.company_id, current_user.id, engagement_id=eng.id)
     await db.commit()
     await db.refresh(eng)
     return await _hydrate_auditors(db, eng)
@@ -1394,7 +1397,7 @@ async def add_query_message(
     elif file:
         from app.services import document_access as doc_access
         doc = await doc_access.create_attachment_document(
-            db, company_id=current_user.company_id, file=file, created_by=current_user.id, grant_auditor_id=query.opened_by
+            db, company_id=current_user.company_id, file=file, created_by=current_user.id, grant_auditor_id=query.opened_by, engagement_id=engagement_id
         )
         final_attached_document_id = doc.id
         

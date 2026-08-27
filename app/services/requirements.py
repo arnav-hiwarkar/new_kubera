@@ -104,7 +104,7 @@ async def create_submission(
 
     # Upload files
     if files:
-        bucket = await ensure_audit_bucket(db, company_id, user_id)
+        bucket = await ensure_audit_bucket(db, company_id, user_id, engagement_id=engagement_id)
         for f in files:
             orig_filename = f.filename or "attachment"
             doc_title = submission_document_title(req.requirement_id, next_round, orig_filename)

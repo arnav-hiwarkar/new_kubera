@@ -547,7 +547,7 @@ async def create_query(
     attached_document_id = None
     if file:
         doc = await doc_access.create_attachment_document(
-            db, company_id=eng.company_id, file=file, created_by=None, grant_auditor_id=current_auditor.id
+            db, company_id=eng.company_id, file=file, created_by=None, grant_auditor_id=current_auditor.id, engagement_id=engagement_id
         )
         attached_document_id = doc.id
         
@@ -591,7 +591,7 @@ async def add_query_message(
     attached_document_id = None
     if file:
         doc = await doc_access.create_attachment_document(
-            db, company_id=eng.company_id, file=file, created_by=None, grant_auditor_id=current_auditor.id
+            db, company_id=eng.company_id, file=file, created_by=None, grant_auditor_id=current_auditor.id, engagement_id=engagement_id
         )
         attached_document_id = doc.id
         

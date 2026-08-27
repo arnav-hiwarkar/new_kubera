@@ -276,7 +276,7 @@ async def test_document_title_convention_and_tags(client: AsyncClient, db: Async
 
     bucket_res = await db.execute(select(Bucket).where(Bucket.id == doc.bucket_id))
     bucket = bucket_res.scalar_one()
-    assert bucket.name == "Audit Attachments"
+    assert bucket.name == "Audit - FY24"
 
 
 @pytest.mark.asyncio
@@ -496,3 +496,120 @@ async def test_auditor_initiate_query_linked_to_requirement(client: AsyncClient,
     co_req_list = await client.get(f"/api/v1/auditease/engagements/{eng_id}/requirement-requests", headers=co_headers)
     assert co_req_list.status_code == 200
     assert co_req_list.json()[0]["linked_query_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_per_engagement_dedicated_buckets(client: AsyncClient, db: AsyncSession):
+    """Verify every engagement gets its own dedicated DocVault bucket named 'Audit - <period_label>'."""
+    await create_test_company(client, email="multi_buckets@co.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='multi_buckets@co.com', password='pass1234')}"}
+    await create_test_auditor(client, email="aud_mb@aud.com", password="pass1234")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_mb@aud.com', password='pass1234')}"}
+
+    # Engagement 1: FY23-24
+    eng1_id = await _make_engagement(client, co_headers, label="FY23-24")
+    await client.post(f"/api/v1/auditease/engagements/{eng1_id}/auditors/invite", json={"email": "aud_mb@aud.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng1_id}/accept", headers=aud_headers)
+
+    # Engagement 2: FY24-25
+    eng2_id = await _make_engagement(client, co_headers, label="FY24-25")
+    await client.post(f"/api/v1/auditease/engagements/{eng2_id}/auditors/invite", json={"email": "aud_mb@aud.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng2_id}/accept", headers=aud_headers)
+
+    # Create requirement and upload file for Engagement 1
+    req1 = (await client.post(f"/api/v1/auditor/engagements/{eng1_id}/requirement-requests", json={"description": "Req 1"}, headers=aud_headers)).json()
+    resp1 = await client.post(
+        f"/api/v1/auditease/engagements/{eng1_id}/requirement-requests/{req1['id']}/respond",
+        files=[("files", ("eng1_doc.pdf", b"content1", "application/pdf"))],
+        headers=co_headers,
+    )
+    assert resp1.status_code == 200
+    doc1_id = uuid.UUID(resp1.json()["submissions"][0]["documents"][0]["document_id"])
+
+    # Create requirement and upload file for Engagement 2
+    req2 = (await client.post(f"/api/v1/auditor/engagements/{eng2_id}/requirement-requests", json={"description": "Req 2"}, headers=aud_headers)).json()
+    resp2 = await client.post(
+        f"/api/v1/auditease/engagements/{eng2_id}/requirement-requests/{req2['id']}/respond",
+        files=[("files", ("eng2_doc.pdf", b"content2", "application/pdf"))],
+        headers=co_headers,
+    )
+    assert resp2.status_code == 200
+    doc2_id = uuid.UUID(resp2.json()["submissions"][0]["documents"][0]["document_id"])
+
+    # Verify bucket 1 is "Audit - FY23-24"
+    doc1 = (await db.execute(select(Document).where(Document.id == doc1_id))).scalar_one()
+    bucket1 = (await db.execute(select(Bucket).where(Bucket.id == doc1.bucket_id))).scalar_one()
+    assert bucket1.name == "Audit - FY23-24"
+
+    # Verify bucket 2 is "Audit - FY24-25"
+    doc2 = (await db.execute(select(Document).where(Document.id == doc2_id))).scalar_one()
+    bucket2 = (await db.execute(select(Bucket).where(Bucket.id == doc2.bucket_id))).scalar_one()
+    assert bucket2.name == "Audit - FY24-25"
+
+    assert bucket1.id != bucket2.id
+
+
+@pytest.mark.asyncio
+async def test_external_docvault_document_attachment_and_auditor_download(client: AsyncClient, db: AsyncSession):
+    """Verify external DocVault documents attached by company can be downloaded by auditors holding requirements permission."""
+    await create_test_company(client, email="ext_doc@co.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='ext_doc@co.com', password='pass1234')}"}
+    
+    # Auditor with requirements: True, documents: False (testing that requirements permission alone grants access to attached external docs)
+    await create_test_auditor(client, email="aud_ext@aud.com", password="pass1234")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_ext@aud.com', password='pass1234')}"}
+
+    eng_id = await _make_engagement(client, co_headers)
+    inv = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud_ext@aud.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+    
+    aud_id = next(a["auditor_id"] for a in inv.json()["auditors"] if a["email"] == "aud_ext@aud.com")
+    await client.patch(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/{aud_id}",
+        json={"area_permissions": {"trial_balance": True, "entries": True, "requirements": True, "queries": True, "documents": False}},
+        headers=co_headers,
+    )
+
+    # 1. Company uploads external document in DocVault (outside audit bucket)
+    dv_resp = await client.post(
+        "/api/v1/docvault/documents",
+        data={"title": "External Balance Sheet 2024"},
+        files={"file": ("annual_balance_sheet.pdf", b"EXTERNAL_SECRET_BALANCE_SHEET_BYTES", "application/pdf")},
+        headers=co_headers,
+    )
+    assert dv_resp.status_code == 201
+    ext_doc_id = dv_resp.json()["id"]
+
+    # 2. Auditor creates requirement
+    req_resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+        json={"description": "Please provide annual balance sheet"},
+        headers=aud_headers,
+    )
+    req_id = req_resp.json()["id"]
+
+    # 3. Company attaches the external document to this requirement
+    resp = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "Attached the annual balance sheet from DocVault", "document_ids": [ext_doc_id]},
+        headers=co_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["submission_count"] == 1
+    assert resp.json()["document_count"] == 1
+
+    # 4. Auditor downloads the external document via auditor document download endpoint
+    dl_resp = await client.get(f"/api/v1/auditor/documents/{ext_doc_id}/download", headers=aud_headers)
+    assert dl_resp.status_code == 200, dl_resp.text
+    assert dl_resp.content == b"EXTERNAL_SECRET_BALANCE_SHEET_BYTES"
+
+    # 5. Auditor metadata endpoint also succeeds
+    meta_resp = await client.get(f"/api/v1/auditor/documents/{ext_doc_id}", headers=aud_headers)
+    assert meta_resp.status_code == 200
+    assert meta_resp.json()["title"] == "External Balance Sheet 2024"
+
+    # 6. Unassigned auditor cannot download
+    await create_test_auditor(client, email="unassigned_aud@aud.com", password="pass1234")
+    unassigned_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='unassigned_aud@aud.com', password='pass1234')}"}
+    bad_dl = await client.get(f"/api/v1/auditor/documents/{ext_doc_id}/download", headers=unassigned_headers)
+    assert bad_dl.status_code == 404
