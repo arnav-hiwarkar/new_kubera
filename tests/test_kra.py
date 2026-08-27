@@ -26,7 +26,7 @@ async def _headers(client, email):
 @pytest.mark.asyncio
 async def test_kra_full_lifecycle(client: AsyncClient):
     AH = await _admin(client)
-    mgr = await _make_user(client, AH, "m1@a.com", "manager")
+    mgr = await _make_user(client, AH, "m1@a.com", "admin")
     await _make_user(client, AH, "e1@a.com", "employee", manager_id=mgr["id"])
     MH = await _headers(client, "m1@a.com")
     EH = await _headers(client, "e1@a.com")
@@ -72,7 +72,7 @@ async def test_kra_full_lifecycle(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_kra_visibility_scope(client: AsyncClient):
     AH = await _admin(client, email="kadmin2@a.com")
-    mgr = await _make_user(client, AH, "m2@a.com", "manager")
+    mgr = await _make_user(client, AH, "m2@a.com", "admin")
     await _make_user(client, AH, "e2a@a.com", "employee", manager_id=mgr["id"])
     await _make_user(client, AH, "e2b@a.com", "employee")  # reports to no one
     EH_a = await _headers(client, "e2a@a.com")
@@ -86,9 +86,9 @@ async def test_kra_visibility_scope(client: AsyncClient):
     ids_a = {k["id"] for k in (await client.get("/api/v1/kra", headers=EH_a)).json()}
     assert ka["id"] in ids_a and kb["id"] not in ids_a
 
-    # Manager sees their report's KRA but not the unrelated employee's
-    ids_m = {k["id"] for k in (await client.get("/api/v1/kra", headers=MH)).json()}
-    assert ka["id"] in ids_m and kb["id"] not in ids_m
+    # Employee B sees only their own
+    ids_b = {k["id"] for k in (await client.get("/api/v1/kra", headers=EH_b)).json()}
+    assert kb["id"] in ids_b and ka["id"] not in ids_b
 
     # Admin sees everything
     ids_admin = {k["id"] for k in (await client.get("/api/v1/kra", headers=AH)).json()}
@@ -98,7 +98,7 @@ async def test_kra_visibility_scope(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_kra_permissions_and_rejection(client: AsyncClient):
     AH = await _admin(client, email="kadmin3@a.com")
-    mgr = await _make_user(client, AH, "m3@a.com", "manager")
+    mgr = await _make_user(client, AH, "m3@a.com", "admin")
     await _make_user(client, AH, "e3@a.com", "employee", manager_id=mgr["id"])
     MH = await _headers(client, "m3@a.com")
     EH = await _headers(client, "e3@a.com")

@@ -40,7 +40,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
     if (initialData) {
       setEmail(initialData.email)
       setFullName(initialData.full_name)
-      setRole(initialData.role)
+      setRole(initialData.role === 'admin' ? 'admin' : 'employee')
       setDepartment(initialData.department || '')
       setDesignation(initialData.designation || '')
       setAccessibleModules(initialData.accessible_modules as ModuleId[] || [])

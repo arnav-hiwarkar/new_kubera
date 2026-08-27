@@ -16,6 +16,7 @@ import {
 } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import { formatDate } from '@/lib/format'
+import type { AuditEngagementResponse } from '@/api/types'
 import { useCompanyAuth } from '@/auth/company'
 import {
   useEngagements,

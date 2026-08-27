@@ -59,3 +59,6 @@ kubera-migration-*
 
 # Superpowers agent workspace
 .superpowers/
+
+# Agent skills
+.agents/

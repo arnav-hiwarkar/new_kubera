@@ -21,16 +21,21 @@ export type CompanyUserOut = S['CompanyUserOut'] & {
 }
 
 // Users
-export type UserResponse = S['UserResponse'] & {
+export type UserRoleType = 'admin' | 'employee'
+
+export type UserResponse = Omit<S['UserResponse'], 'role'> & {
+  role: UserRoleType
   can_change_password?: boolean
   has_avatar?: boolean
   avatar_updated_at?: string | null
   password_changed_at?: string | null
 }
-export type UserCreate = S['UserCreate'] & {
+export type UserCreate = Omit<S['UserCreate'], 'role'> & {
+  role?: UserRoleType
   can_change_password?: boolean
 }
-export type UserUpdate = S['UserUpdate'] & {
+export type UserUpdate = Omit<S['UserUpdate'], 'role'> & {
+  role?: UserRoleType | null
   can_change_password?: boolean | null
 }
 
