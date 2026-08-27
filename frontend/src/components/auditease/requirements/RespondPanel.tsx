@@ -8,6 +8,8 @@ import { useDocuments } from '@/api/hooks/docvault'
 import type { RequirementRequestResponse } from '@/api/types'
 import { formatFileSize } from './progress'
 
+import { DocVaultPickerModal } from './DocVaultPickerModal'
+
 interface RespondPanelProps {
   engagementId: string
   req: RequirementRequestResponse
@@ -28,7 +30,7 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
   const [textAnswer, setTextAnswer] = useState('')
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
-  const [showVaultPicker, setShowVaultPicker] = useState(false)
+  const [showVaultPickerModal, setShowVaultPickerModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isClosed = req.status === 'closed'
@@ -58,12 +60,6 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
 
   const removeFile = (index: number) => {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  const toggleSelectDoc = (docId: string) => {
-    setSelectedDocIds((prev) =>
-      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]
-    )
   }
 
   const removeDoc = (docId: string) => {
@@ -103,7 +99,7 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
       setTextAnswer('')
       setSelectedFiles([])
       setSelectedDocIds([])
-      setShowVaultPicker(false)
+      setShowVaultPickerModal(false)
       onSuccess?.()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to submit response')
@@ -154,60 +150,23 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
             />
           </label>
 
-          {vaultDocs.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowVaultPicker((prev) => !prev)}
-              className={clsx(
-                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors shadow-xs',
-                showVaultPicker
-                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-                  : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
-              )}
-            >
-              <FolderPlus className="w-3.5 h-3.5 text-zinc-500" />
-              <span>Attach from Vault</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowVaultPickerModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-300 bg-white text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 cursor-pointer transition-colors shadow-xs"
+          >
+            <FolderPlus className="w-3.5 h-3.5 text-zinc-500" />
+            <span>Select from DocVault</span>
+          </button>
 
           <span className="text-[11px] text-zinc-400">
             {selectedFiles.length + selectedDocIds.length > 0
               ? `${selectedFiles.length + selectedDocIds.length} document(s) attached`
-              : 'Upload files or link existing vault documents'}
+              : 'Upload files or select existing vault documents'}
           </span>
         </div>
 
-        {/* Vault documents picker dropdown */}
-        {showVaultPicker && vaultDocs.length > 0 && (
-          <div className="rounded-lg border border-zinc-200 bg-white p-2.5 dark:border-zinc-700 dark:bg-zinc-800 space-y-1.5 max-h-40 overflow-y-auto">
-            <div className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-1">
-              Select documents from your Vault:
-            </div>
-            {vaultDocs.map((doc) => {
-              const isSelected = selectedDocIds.includes(doc.id)
-              return (
-                <button
-                  key={doc.id}
-                  type="button"
-                  onClick={() => toggleSelectDoc(doc.id)}
-                  className={clsx(
-                    'w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs text-left transition-colors',
-                    isSelected
-                      ? 'bg-blue-50 text-blue-700 font-medium dark:bg-blue-950/60 dark:text-blue-300'
-                      : 'hover:bg-zinc-100 text-zinc-700 dark:hover:bg-zinc-700 dark:text-zinc-200'
-                  )}
-                >
-                  <span className="truncate max-w-[280px]">{doc.title}</span>
-                  <span className="text-[10px] text-zinc-400">
-                    {isSelected ? 'Selected' : 'Click to select'}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Selected files preview */}
+        {/* Selected files & vault documents preview */}
         {(selectedFiles.length > 0 || selectedDocIds.length > 0) && (
           <div className="flex flex-wrap gap-1.5 pt-1">
             {selectedFiles.map((file, idx) => (
@@ -271,6 +230,15 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
           <span>{respondMutation.isPending ? 'Submitting…' : 'Submit response'}</span>
         </Button>
       </div>
+
+      {showVaultPickerModal && (
+        <DocVaultPickerModal
+          open={showVaultPickerModal}
+          onClose={() => setShowVaultPickerModal(false)}
+          selectedDocIds={selectedDocIds}
+          onConfirm={(ids) => setSelectedDocIds(ids)}
+        />
+      )}
     </form>
   )
 }

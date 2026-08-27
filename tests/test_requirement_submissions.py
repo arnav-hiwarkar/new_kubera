@@ -5,7 +5,7 @@ from sqlalchemy import select, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.auditease import RequirementResponse, RequirementResponseDocument
-from app.models.docvault import Document, DocumentAccessOverride, Bucket
+from app.models.docvault import Document, DocumentAccessOverride, Bucket, BucketVisibility
 from tests.conftest import (
     create_test_company,
     get_company_token,
@@ -613,3 +613,107 @@ async def test_external_docvault_document_attachment_and_auditor_download(client
     unassigned_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='unassigned_aud@aud.com', password='pass1234')}"}
     bad_dl = await client.get(f"/api/v1/auditor/documents/{ext_doc_id}/download", headers=unassigned_headers)
     assert bad_dl.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_multiple_submissions_and_query_file_uploads_stored_in_engagement_bucket(
+    client: AsyncClient, db: AsyncSession
+):
+    """Verify company can upload multiple direct files across multiple rounds and queries,
+    and all attachments are stored in the dedicated engagement DocVault bucket and downloadable by the auditor."""
+    await create_test_company(client, email="multi_subs@co.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='multi_subs@co.com', password='pass1234')}"}
+    await create_test_auditor(client, email="aud_ms@aud.com", password="pass1234")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_ms@aud.com', password='pass1234')}"}
+
+    eng_id = await _make_engagement(client, co_headers, label="FY2024")
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud_ms@aud.com"}, headers=co_headers)
+    await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
+
+    # 1. Auditor opens a requirement
+    req_resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/requirement-requests",
+        json={"description": "Please provide bank statements and payroll records"},
+        headers=aud_headers,
+    )
+    req_id = req_resp.json()["id"]
+
+    # 2. Company Round 1: Uploads 2 direct files
+    resp1 = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "Round 1 bank statements"},
+        files=[
+            ("files", ("bank_jan.pdf", b"BANK_JANUARY_DATA_BYTES", "application/pdf")),
+            ("files", ("bank_feb.pdf", b"BANK_FEBRUARY_DATA_BYTES", "application/pdf")),
+        ],
+        headers=co_headers,
+    )
+    assert resp1.status_code == 200
+    sub1_data = resp1.json()["submissions"][0]
+    assert len(sub1_data["documents"]) == 2
+    doc_jan_id = sub1_data["documents"][0]["document_id"]
+    doc_feb_id = sub1_data["documents"][1]["document_id"]
+
+    # 3. Company Round 2: Uploads another direct file
+    resp2 = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "Round 2 payroll summary"},
+        files=[("files", ("payroll.xlsx", b"PAYROLL_SPREADSHEET_BYTES", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))],
+        headers=co_headers,
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["submission_count"] == 2
+    # Submissions are reverse ordered: submissions[0] is Round 2, submissions[1] is Round 1
+    sub2_data = resp2.json()["submissions"][0]
+    assert sub2_data["round_number"] == 2
+    doc_payroll_id = sub2_data["documents"][0]["document_id"]
+
+    # 4. Verify all documents are stored under bucket "Audit - FY2024" in DocVault
+    for d_id in [doc_jan_id, doc_feb_id, doc_payroll_id]:
+        doc_obj = (await db.execute(select(Document).where(Document.id == uuid.UUID(d_id)))).scalar_one()
+        bucket_obj = (await db.execute(select(Bucket).where(Bucket.id == doc_obj.bucket_id))).scalar_one()
+        assert bucket_obj.name == "Audit - FY2024"
+        assert bucket_obj.visibility == BucketVisibility.everyone
+
+    # 5. Auditor downloads all 3 documents directly
+    dl_jan = await client.get(f"/api/v1/auditor/documents/{doc_jan_id}/download", headers=aud_headers)
+    assert dl_jan.status_code == 200
+    assert dl_jan.content == b"BANK_JANUARY_DATA_BYTES"
+
+    dl_feb = await client.get(f"/api/v1/auditor/documents/{doc_feb_id}/download", headers=aud_headers)
+    assert dl_feb.status_code == 200
+    assert dl_feb.content == b"BANK_FEBRUARY_DATA_BYTES"
+
+    dl_payroll = await client.get(f"/api/v1/auditor/documents/{doc_payroll_id}/download", headers=aud_headers)
+    assert dl_payroll.status_code == 200
+    assert dl_payroll.content == b"PAYROLL_SPREADSHEET_BYTES"
+
+    # 6. Auditor opens a query
+    q_resp = await client.post(
+        f"/api/v1/auditor/engagements/{eng_id}/queries",
+        data={"initial_message": "Need invoice sample #102"},
+        headers=aud_headers,
+    )
+    q_id = q_resp.json()["id"]
+
+    # 7. Company replies to query with direct file upload
+    reply_resp = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/queries/{q_id}/messages",
+        data={"text": "Here is invoice #102 attached"},
+        files={"file": ("invoice_102.pdf", b"INVOICE_102_CONTENT_BYTES", "application/pdf")},
+        headers=co_headers,
+    )
+    assert reply_resp.status_code == 200
+    query_doc_id = reply_resp.json()["attached_document_id"]
+    assert query_doc_id is not None
+
+    # Verify query attachment is stored in "Audit - FY2024" bucket
+    q_doc_obj = (await db.execute(select(Document).where(Document.id == uuid.UUID(query_doc_id)))).scalar_one()
+    q_bucket_obj = (await db.execute(select(Bucket).where(Bucket.id == q_doc_obj.bucket_id))).scalar_one()
+    assert q_bucket_obj.name == "Audit - FY2024"
+
+    # Auditor downloads the query attachment
+    dl_q = await client.get(f"/api/v1/auditor/documents/{query_doc_id}/download", headers=aud_headers)
+    assert dl_q.status_code == 200
+    assert dl_q.content == b"INVOICE_102_CONTENT_BYTES"
+

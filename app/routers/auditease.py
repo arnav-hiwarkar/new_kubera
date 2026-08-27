@@ -1380,25 +1380,20 @@ async def add_query_message(
         raise HTTPException(status_code=400, detail="Query not found or closed")
         
     final_attached_document_id = None
+    from app.services import document_access as doc_access
     if attached_document_id:
-        from app.models.docvault import Document, DocumentAccessOverride, PrincipalType
+        from app.models.docvault import Document
         doc_res = await db.execute(select(Document).where(and_(Document.id == attached_document_id, Document.company_id == current_user.company_id)))
         if not doc_res.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Document not found")
             
-        grant = DocumentAccessOverride(
-            document_id=attached_document_id,
-            principal_type=PrincipalType.auditor,
-            principal_id=query.opened_by,
-            permission_level="read"
-        )
-        db.add(grant)
+        await doc_access.grant_document_access_to_auditors(db, engagement_id, attached_document_id)
         final_attached_document_id = attached_document_id
     elif file:
-        from app.services import document_access as doc_access
         doc = await doc_access.create_attachment_document(
             db, company_id=current_user.company_id, file=file, created_by=current_user.id, grant_auditor_id=query.opened_by, engagement_id=engagement_id
         )
+        await doc_access.grant_document_access_to_auditors(db, engagement_id, doc.id)
         final_attached_document_id = doc.id
         
     message = QueryMessage(

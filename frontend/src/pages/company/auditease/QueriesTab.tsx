@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react'
-import { Download, MessagesSquare } from 'lucide-react'
-import { Button, Input, Select, StatusBadge, Spinner, useToast, EmptyState } from '@/components/ui'
+import { Download, MessagesSquare, FolderPlus, X, FileText } from 'lucide-react'
+import { Button, Input, StatusBadge, Spinner, useToast, EmptyState } from '@/components/ui'
 import { ApiError } from '@/api/http'
 import { cn } from '@/lib/cn'
 import { useListQueries, useAddQueryMessage } from '@/api/hooks/auditease'
 import { useDocuments, useDownloadDocument } from '@/api/hooks/docvault'
+import { DocVaultPickerModal } from '@/components/auditease/requirements/DocVaultPickerModal'
 
 export function QueriesTab({ engagementId }: { engagementId: string }) {
   const toast = useToast()
@@ -19,6 +20,7 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
   const [replyMsg, setReplyMsg] = useState('')
   const [replyFile, setReplyFile] = useState<File | null>(null)
   const [replyDocId, setReplyDocId] = useState('')
+  const [showPickerModal, setShowPickerModal] = useState(false)
   const replyFileInput = useRef<HTMLInputElement>(null)
 
   if (isLoading) return <Spinner className="mx-auto mt-8 h-6 w-6" />
@@ -167,29 +169,60 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
                     </Button>
                   </div>
                   
-                  <div className="flex items-center gap-4 text-sm">
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
                     <span className="text-text-secondary whitespace-nowrap">Attach:</span>
                     <input
                       type="file"
                       className="text-xs max-w-[200px]"
                       ref={replyFileInput}
-                      onChange={(e) => setReplyFile(e.target.files?.[0] || null)}
-                      disabled={addMsg.isPending || !!replyDocId}
+                      onChange={(e) => {
+                        setReplyFile(e.target.files?.[0] || null)
+                        if (e.target.files?.[0]) setReplyDocId('')
+                      }}
+                      disabled={addMsg.isPending}
                     />
                     <span className="text-text-muted text-xs">OR</span>
-                    <Select
-                      value={replyDocId}
-                      onChange={(e) => setReplyDocId(e.target.value)}
-                      disabled={addMsg.isPending || !!replyFile}
+                    <button
+                      type="button"
+                      onClick={() => setShowPickerModal(true)}
+                      disabled={addMsg.isPending}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-border bg-bg-surface hover:bg-bg-raised text-xs text-text-primary transition-colors"
                     >
-                      <option value="">Select docVault file...</option>
-                      {docs.map((d) => (
-                        <option key={d.id} value={d.id}>{d.title}</option>
-                      ))}
-                    </Select>
+                      <FolderPlus className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>{replyDocId ? 'Change DocVault Document' : 'Select from DocVault'}</span>
+                    </button>
+                    {replyDocId && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800">
+                        <FileText className="w-3 h-3 text-blue-500 shrink-0" />
+                        <span className="truncate max-w-[150px]">{docs.find((d) => d.id === replyDocId)?.title || 'Selected Doc'}</span>
+                        <button
+                          type="button"
+                          onClick={() => setReplyDocId('')}
+                          className="p-0.5 text-blue-400 hover:text-blue-600 rounded"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
                   </div>
                 </div>
               </form>
+            )}
+
+            {showPickerModal && (
+              <DocVaultPickerModal
+                open={showPickerModal}
+                multiple={false}
+                selectedDocIds={replyDocId ? [replyDocId] : []}
+                onClose={() => setShowPickerModal(false)}
+                onConfirm={(ids) => {
+                  setReplyDocId(ids[0] || '')
+                  if (ids.length > 0) {
+                    setReplyFile(null)
+                    if (replyFileInput.current) replyFileInput.current.value = ''
+                  }
+                }}
+              />
             )}
           </>
         ) : (

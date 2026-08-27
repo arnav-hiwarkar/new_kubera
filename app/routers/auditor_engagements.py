@@ -549,6 +549,7 @@ async def create_query(
         doc = await doc_access.create_attachment_document(
             db, company_id=eng.company_id, file=file, created_by=None, grant_auditor_id=current_auditor.id, engagement_id=engagement_id
         )
+        await doc_access.grant_document_access_to_auditors(db, engagement_id, doc.id)
         attached_document_id = doc.id
         
     msg = QueryMessage(
@@ -593,6 +594,7 @@ async def add_query_message(
         doc = await doc_access.create_attachment_document(
             db, company_id=eng.company_id, file=file, created_by=None, grant_auditor_id=current_auditor.id, engagement_id=engagement_id
         )
+        await doc_access.grant_document_access_to_auditors(db, engagement_id, doc.id)
         attached_document_id = doc.id
         
     db_msg = QueryMessage(
