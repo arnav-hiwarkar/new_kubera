@@ -490,8 +490,12 @@ async def upload_document_version(
         raise HTTPException(status_code=404, detail="Document not found")
     if not doc.is_editable:
         raise HTTPException(status_code=409, detail="Document is not editable")
-    if doc.status == DocumentStatus.pending_approval and current_user.id != doc.approver_id and current_user.role != UserRole.admin:
-        raise HTTPException(status_code=409, detail="Document is pending approval; new versions cannot be uploaded")
+    is_approver_or_admin = (current_user.id == doc.approver_id or is_company_admin(current_user))
+    if doc.status == DocumentStatus.pending_approval and not is_approver_or_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot upload new versions while document is pending approval",
+        )
         
     doc_id = doc.id
     next_version = max([v.version_number for v in doc.versions], default=0) + 1
@@ -663,20 +667,13 @@ async def update_document(
     if not update_data:
         return (await _attach_uploader_names(db, [doc]))[0]
 
-    # Approval permission guardrails
-    is_approver_or_admin = (current_user.id == doc.approver_id or current_user.role == UserRole.admin)
-    if doc.status == DocumentStatus.pending_approval:
-        if "status" in update_data or "approval_notes" in update_data:
-            if not is_approver_or_admin:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only the assigned approver or an admin can review or change status on this document",
-                )
-        if not is_approver_or_admin and ({"title", "tags", "bucket_id"} & update_data.keys()):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Document is pending approval and cannot be modified",
-            )
+    # Approval permission guardrails: If document is pending approval, ONLY approver or admin can modify ANY property or review
+    is_approver_or_admin = (current_user.id == doc.approver_id or is_company_admin(current_user))
+    if doc.status == DocumentStatus.pending_approval and not is_approver_or_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned approver or an admin can modify, edit, or review this document while approval is pending",
+        )
 
     # A locked (non-editable) document freezes its content/metadata — title, tags
     # and bucket. Status changes (incl. archive) and toggling is_editable back on
@@ -758,6 +755,13 @@ async def delete_document(
         raise HTTPException(status_code=404, detail="Document not found")
     if not await can_access_bucket(db, current_user, doc.bucket_id):
         raise HTTPException(status_code=404, detail="Document not found")
+
+    is_approver_or_admin = (current_user.id == doc.approver_id or is_company_admin(current_user))
+    if doc.status == DocumentStatus.pending_approval and not is_approver_or_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot archive or delete a document while approval is pending",
+        )
 
     doc.status = DocumentStatus.archived
     doc.is_editable = False

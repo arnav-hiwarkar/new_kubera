@@ -173,14 +173,14 @@ async def test_non_approver_authorization_guardrails(client: AsyncClient):
     resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"status": "verified"}, headers=h3)
     assert resp.status_code == 403
 
-    # 2. Stranger U3 attempts to edit title during pending approval -> 409 Conflict
+    # 2. Stranger U3 attempts to edit title during pending approval -> 403 Forbidden
     resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"title": "Tampered Spec"}, headers=h3)
-    assert resp.status_code == 409
+    assert resp.status_code == 403
 
-    # 3. Stranger U3 attempts to upload new version -> 409 Conflict
+    # 3. Stranger U3 attempts to upload new version -> 403 Forbidden
     files2 = {"file": ("spec_v2.pdf", b"tampered v2", "application/pdf")}
     resp = await client.post(f"/api/v1/docvault/documents/{doc_id}/versions", files=files2, headers=h3)
-    assert resp.status_code == 409
+    assert resp.status_code == 403
 
     # 4. Assigned approver U2 approves document with notes -> 200 OK
     resp = await client.patch(
@@ -385,4 +385,76 @@ async def test_list_approvers_success_for_employee_caller(client: AsyncClient):
     assert admin_id in approver_ids
     assert doc_id not in approver_ids  # self excluded
     assert nodoc_id not in approver_ids  # nodoc excluded
+
+
+@pytest.mark.asyncio
+async def test_pending_approval_creator_and_peer_cannot_modify_or_delete(client: AsyncClient):
+    await create_test_company(client, name="ImmutCo", email="admin@immut.com", password="pass1234")
+    admin_token = await get_company_token(client, email="admin@immut.com", password="pass1234")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
+
+    # Creator (Alice) and Peer (Charlie) and Approver (Bob)
+    alice_id = await _create_member(client, admin_headers, "alice@immut.com", "pass1234", "Alice Creator", "employee", ["docvault"])
+    bob_id = await _create_member(client, admin_headers, "bob@immut.com", "pass1234", "Bob Approver", "employee", ["docvault"])
+    charlie_id = await _create_member(client, admin_headers, "charlie@immut.com", "pass1234", "Charlie Peer", "employee", ["docvault"])
+
+    alice_headers = {"Authorization": f"Bearer {await get_company_token(client, 'alice@immut.com', 'pass1234')}"}
+    bob_headers = {"Authorization": f"Bearer {await get_company_token(client, 'bob@immut.com', 'pass1234')}"}
+    charlie_headers = {"Authorization": f"Bearer {await get_company_token(client, 'charlie@immut.com', 'pass1234')}"}
+
+    # Alice uploads document with approval requested by Bob
+    files = {"file": ("budget_proposal.pdf", b"budget data", "application/pdf")}
+    resp = await client.post(
+        "/api/v1/docvault/documents",
+        data={"title": "Budget 2026", "needs_approval": "true", "approver_id": bob_id},
+        files=files,
+        headers=alice_headers,
+    )
+    assert resp.status_code == 201
+    doc_id = resp.json()["id"]
+    assert resp.json()["status"] == "pending_approval"
+
+    # 1. Alice (creator) attempts to PATCH title -> 403
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"title": "Hacked Title"}, headers=alice_headers)
+    assert resp.status_code == 403, resp.text
+
+    # 2. Alice attempts to PATCH tags -> 403
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"tags": ["hacked"]}, headers=alice_headers)
+    assert resp.status_code == 403
+
+    # 3. Alice attempts to PATCH is_editable -> 403
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"is_editable": False}, headers=alice_headers)
+    assert resp.status_code == 403
+
+    # 4. Alice attempts to PATCH approver_id -> 403
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"approver_id": charlie_id}, headers=alice_headers)
+    assert resp.status_code == 403
+
+    # 5. Alice attempts to upload new version -> 403
+    v_files = {"file": ("budget_v2.pdf", b"v2", "application/pdf")}
+    resp = await client.post(f"/api/v1/docvault/documents/{doc_id}/versions", files=v_files, headers=alice_headers)
+    assert resp.status_code == 403
+
+    # 6. Alice attempts to DELETE / archive -> 403
+    resp = await client.delete(f"/api/v1/docvault/documents/{doc_id}", headers=alice_headers)
+    assert resp.status_code == 403
+
+    # 7. Charlie (peer employee) attempts to PATCH and DELETE -> 403
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"title": "Charlie Title"}, headers=charlie_headers)
+    assert resp.status_code == 403
+    resp = await client.delete(f"/api/v1/docvault/documents/{doc_id}", headers=charlie_headers)
+    assert resp.status_code == 403
+
+    # 8. Bob (approver) can review and approve -> 200
+    resp = await client.patch(
+        f"/api/v1/docvault/documents/{doc_id}",
+        json={"status": "verified", "approval_notes": "Looks solid, approved."},
+        headers=bob_headers,
+    )
+    assert resp.status_code == 200
+    doc = resp.json()
+    assert doc["status"] == "verified"
+    assert doc["approval_notes"] == "Looks solid, approved."
+    assert doc["approved_at"] is not None
 
