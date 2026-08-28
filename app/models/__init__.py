@@ -13,7 +13,11 @@ from app.models.auditease import (
 from app.models.compliance import ComplianceDomain, DocumentType, MeetingRecord
 from app.models.custom_fields import CustomFieldDefinition
 from app.models.assets import Asset
+from app.models.asset_masters import AssetCategory, Supplier, ItAssetBlock, AssetLookup
+from app.models.financial_year import FinancialYear
+from app.models.depreciation import DepreciationRun, AssetDepreciationLine, ItBlockDepreciationLine
 from app.models.sales import SalesRecord
 from app.models.kra import KRAItem
 from app.models.lead import Lead, LeadStatus
+from app.models.company_smtp import CompanySmtpConfig, EmailLog
 
