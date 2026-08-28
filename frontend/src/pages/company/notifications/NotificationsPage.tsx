@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Bell, CheckCheck, AlertTriangle, Info, CheckCircle2, FileText } from 'lucide-react'
 import { PageHeader, Button, EmptyState } from '@/components/ui'
 import { formatRelative } from '@/lib/format'
@@ -22,10 +23,17 @@ function NotificationItem({
   onMarkRead: (id: string) => void
   pending: boolean
 }) {
+  const navigate = useNavigate()
   const isUnread = !notification.read_at
   const payload = notification.payload as Record<string, string> | undefined
   const message = payload?.message || notification.type
+  const documentId = payload?.document_id
   const Icon = iconFor(notification.type)
+
+  const handleOpenDoc = () => {
+    if (isUnread) onMarkRead(notification.id)
+    navigate(`/app/docvault?doc=${documentId}`)
+  }
 
   return (
     <div
@@ -51,16 +59,28 @@ function NotificationItem({
           </div>
         </div>
       </div>
-      {isUnread && (
-        <Button
-          variant="ghost"
-          size="sm"
-          loading={pending}
-          onClick={() => onMarkRead(notification.id)}
-        >
-          Mark as read
-        </Button>
-      )}
+      <div className="flex items-center gap-2 shrink-0">
+        {documentId && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleOpenDoc}
+            className="text-xs font-semibold"
+          >
+            View Document
+          </Button>
+        )}
+        {isUnread && (
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={pending}
+            onClick={() => onMarkRead(notification.id)}
+          >
+            Mark as read
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
