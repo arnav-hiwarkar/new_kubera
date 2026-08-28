@@ -167,6 +167,14 @@ export type DocumentUpdate = S['DocumentUpdate'] & {
   approval_notes?: string | null
 }
 export type DocumentVersionResponse = S['DocumentVersionResponse']
+export interface DocVaultApproverResponse {
+  id: string
+  full_name?: string | null
+  email: string
+  role: 'admin' | 'employee'
+  department?: string | null
+  designation?: string | null
+}
 
 // Compliance (ROC + Secretarial)
 export type DocumentTypeResponse = S['DocumentTypeResponse']

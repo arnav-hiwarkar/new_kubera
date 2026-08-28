@@ -7,10 +7,13 @@ import type {
   DocumentResponse,
   DocumentUpdate,
   DocumentVersionResponse,
+  DocVaultApproverResponse,
 } from '@/api/types'
 
 export const docvaultApi = {
   listBuckets: () => companyClient.get<BucketResponse[]>('/api/v1/docvault/buckets'),
+  listApprovers: (filters?: { bucket_id?: string }) =>
+    companyClient.get<DocVaultApproverResponse[]>('/api/v1/docvault/approvers', { query: filters }),
   createBucket: (body: BucketCreate) =>
     companyClient.post<BucketResponse>('/api/v1/docvault/buckets', { body }),
   updateBucket: (id: string, body: BucketUpdate) =>

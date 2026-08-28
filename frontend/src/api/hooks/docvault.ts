@@ -14,12 +14,20 @@ export interface DocumentFilters {
 
 export const docvaultKeys = {
   buckets: ['docvault', 'buckets'] as const,
+  approvers: (bucketId?: string | null) => ['docvault', 'approvers', bucketId ?? 'all'] as const,
   documents: (filters?: DocumentFilters) =>
     ['docvault', 'documents', filters ?? {}] as const,
 }
 
 export function useBuckets() {
   return useQuery({ queryKey: docvaultKeys.buckets, queryFn: () => docvaultApi.listBuckets() })
+}
+
+export function useDocVaultApprovers(bucketId?: string | null) {
+  return useQuery({
+    queryKey: docvaultKeys.approvers(bucketId),
+    queryFn: () => docvaultApi.listApprovers(bucketId ? { bucket_id: bucketId } : undefined),
+  })
 }
 
 export function useDocuments(filters?: DocumentFilters) {
