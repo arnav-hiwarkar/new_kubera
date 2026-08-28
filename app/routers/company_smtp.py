@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import asyncio
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, desc
@@ -145,7 +146,8 @@ async def verify_smtp_config(
 
     service = EmailService(config=config)
     try:
-        res = service.verify_connection()
+        # Run synchronous SMTP handshake in a thread to avoid blocking the event loop
+        res = await asyncio.to_thread(service.verify_connection)
         # Update last_tested_at on saved row if exists
         saved_row = (await db.execute(select(CompanySmtpConfig).where(CompanySmtpConfig.company_id == user.company_id))).scalar_one_or_none()
         if saved_row:

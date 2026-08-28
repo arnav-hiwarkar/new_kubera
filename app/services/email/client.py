@@ -117,13 +117,10 @@ class EmailService:
                 )
                 root.attach(part_att)
 
-        # Headers
-        from_header = (
-            f"{self.config.from_name} <{self.config.from_email}>"
-            if self.config.from_name
-            else self.config.from_email
+        # Headers — RFC 5322 compliant, handles special chars and non-ASCII
+        root["From"] = email.utils.formataddr(
+            (self.config.from_name, self.config.from_email)
         )
-        root["From"] = from_header
         root["To"] = ", ".join(message.to)
         root["Subject"] = message.subject
         root["Date"] = email.utils.formatdate(localtime=True)

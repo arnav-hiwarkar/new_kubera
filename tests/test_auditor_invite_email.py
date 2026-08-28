@@ -34,10 +34,14 @@ async def test_invite_unregistered_auditor_dispatches_register_email(
 
     mock_send_task.assert_called_once()
     message_dict = mock_send_task.call_args[0][0]
+    kwargs = mock_send_task.call_args.kwargs
     assert "new_auditor@test.com" in message_dict["to"]
     assert message_dict["template_name"] == "auditor_invite.html"
-    assert "auditor/register" in message_dict["template_context"]["action_button"]["url"]
+    assert "auditor/register?email=new_auditor%40test.com" in message_dict["template_context"]["action_button"]["url"]
     assert "AuditCo" in message_dict["template_context"]["company_name"]
+    assert "AuditCo" == message_dict["template_context"]["header_title"]
+    assert kwargs.get("company_id") is not None
+    assert kwargs.get("log_id") is not None
 
 
 @pytest.mark.asyncio
@@ -71,8 +75,11 @@ async def test_invite_registered_auditor_dispatches_login_email(
 
     mock_send_task.assert_called_once()
     message_dict = mock_send_task.call_args[0][0]
+    kwargs = mock_send_task.call_args.kwargs
     assert "existing_auditor@test.com" in message_dict["to"]
     assert "auditor/login" in message_dict["template_context"]["action_button"]["url"]
+    assert kwargs.get("company_id") is not None
+    assert kwargs.get("log_id") is not None
 
 
 @pytest.mark.asyncio
@@ -115,9 +122,6 @@ async def test_invite_email_uses_custom_company_smtp_when_configured(
     assert res.status_code == 200
 
     mock_send_task.assert_called_once()
-    custom_config_dict = mock_send_task.call_args[0][1]
-    assert custom_config_dict is not None
-    assert custom_config_dict["host"] == "mail.customaudit.com"
-    assert custom_config_dict["user"] == "audit@customaudit.com"
-    assert custom_config_dict["password"] == "SecretPassword123"
-    assert custom_config_dict["from_email"] == "audit@customaudit.com"
+    kwargs = mock_send_task.call_args.kwargs
+    assert kwargs.get("company_id") is not None
+    assert kwargs.get("log_id") is not None

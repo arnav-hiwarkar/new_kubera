@@ -28,11 +28,16 @@ settings = get_settings()
 # Use a separate test database (same server, different name)
 _parts = settings.DATABASE_URL.rsplit("/", 1)
 TEST_DB_URL = _parts[0] + "/kubera_test"
+settings.DATABASE_URL = TEST_DB_URL
 
 from sqlalchemy.pool import NullPool
 
 engine = create_async_engine(TEST_DB_URL, echo=False, poolclass=NullPool)
 TestSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+import app.database as app_db
+app_db.engine = engine
+app_db.async_session_factory = TestSessionLocal
 
 
 @pytest.fixture(scope="session")
