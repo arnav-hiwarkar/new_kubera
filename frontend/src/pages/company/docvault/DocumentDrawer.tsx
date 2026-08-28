@@ -181,7 +181,12 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
               Restore document
             </Button>
           ) : (
-            <Button variant="danger" onClick={() => setConfirmArchive(true)}>
+            <Button
+              variant="danger"
+              onClick={() => setConfirmArchive(true)}
+              disabled={isPendingApproval && !canReview}
+              title={isPendingApproval && !canReview ? 'Cannot archive while pending approval' : undefined}
+            >
               Archive
             </Button>
           )
@@ -302,11 +307,18 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
           </Field>
 
           {/* Editable toggle */}
-          <Field label="Editable" hint="When off, the file is Final: no new versions, renaming, tags or bucket changes.">
+          <Field
+            label="Editable"
+            hint={
+              isPendingApproval && !canReview
+                ? 'Locked while pending approval. Only the assigned approver or admin can adjust.'
+                : 'When off, the file is Final: no new versions, renaming, tags or bucket changes.'
+            }
+          >
             <Switch
               checked={document.is_editable}
               onChange={changeEditable}
-              disabled={isArchived || update.isPending}
+              disabled={isArchived || update.isPending || (isPendingApproval && !canReview)}
               label={document.is_editable ? 'Editable' : 'Final (Locked)'}
             />
           </Field>
