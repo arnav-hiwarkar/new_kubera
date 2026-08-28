@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Search, UserCheck, Check, ChevronDown, X } from 'lucide-react'
-import { useUsers } from '@/api/hooks/users'
+import { useDocVaultApprovers } from '@/api/hooks/docvault'
 import { Spinner } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import type { BucketResponse } from '@/api/types'
@@ -18,11 +18,10 @@ export function ApproverPicker({
   value,
   onChange,
   bucketId,
-  buckets = [],
   disabled = false,
   className,
 }: ApproverPickerProps) {
-  const { data: users = [], isLoading } = useUsers()
+  const { data: approvers = [], isLoading } = useDocVaultApprovers(bucketId)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -48,49 +47,25 @@ export function ApproverPicker({
     }
   }, [open])
 
-  // Target bucket (if any)
-  const targetBucket = useMemo(
-    () => (bucketId ? buckets.find((b) => b.id === bucketId) : null),
-    [bucketId, buckets],
-  )
-
-  // Eligible approvers
-  const eligibleUsers = useMemo(() => {
-    return users.filter((u) => {
-      if (u.deleted_at) return false
-      // Must have docvault access
-      const hasVaultAccess = u.role === 'admin' || u.accessible_modules?.includes('docvault')
-      if (!hasVaultAccess) return false
-
-      // If bucket is restricted, must have access to that bucket
-      if (targetBucket && targetBucket.visibility === 'restricted') {
-        if (u.role !== 'admin' && !targetBucket.access_user_ids?.includes(u.id)) {
-          return false
-        }
-      }
-      return true
-    })
-  }, [users, targetBucket])
-
   // Filtered by search query
-  const filteredUsers = useMemo(() => {
+  const filteredApprovers = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return eligibleUsers
-    return eligibleUsers.filter(
+    if (!q) return approvers
+    return approvers.filter(
       (u) =>
         u.full_name?.toLowerCase().includes(q) ||
         u.email?.toLowerCase().includes(q) ||
         u.designation?.toLowerCase().includes(q) ||
         u.department?.toLowerCase().includes(q),
     )
-  }, [eligibleUsers, search])
+  }, [approvers, search])
 
-  const selectedUser = useMemo(
-    () => users.find((u) => u.id === value) ?? null,
-    [users, value],
+  const selectedApprover = useMemo(
+    () => approvers.find((u) => u.id === value) ?? null,
+    [approvers, value],
   )
 
-  const getInitials = (name?: string, email?: string) => {
+  const getInitials = (name?: string | null, email?: string) => {
     const src = name || email || '?'
     return src
       .split(' ')
@@ -102,24 +77,29 @@ export function ApproverPicker({
 
   return (
     <div ref={dropdownRef} className={cn('relative w-full', className)}>
-      {selectedUser ? (
+      {selectedApprover ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-bg-surface p-2.5 transition-colors hover:border-accent/40">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-subtle font-medium text-xs text-accent">
-              {getInitials(selectedUser.full_name, selectedUser.email)}
+              {getInitials(selectedApprover.full_name, selectedApprover.email)}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="truncate text-sm font-medium text-text-primary">
-                  {selectedUser.full_name || selectedUser.email}
+                  {selectedApprover.full_name || selectedApprover.email}
                 </span>
-                {selectedUser.role === 'admin' && (
+                {selectedApprover.role === 'admin' && (
                   <span className="rounded bg-accent/10 px-1 py-0.2 text-[10px] font-semibold uppercase text-accent">
                     Admin
                   </span>
                 )}
+                {selectedApprover.department && (
+                  <span className="rounded bg-bg-raised px-1 py-0.2 text-[10px] text-text-muted">
+                    {selectedApprover.department}
+                  </span>
+                )}
               </div>
-              <p className="truncate text-xs text-text-muted">{selectedUser.email}</p>
+              <p className="truncate text-xs text-text-muted">{selectedApprover.email}</p>
             </div>
           </div>
           {!disabled && (
@@ -191,12 +171,14 @@ export function ApproverPicker({
               <div className="flex justify-center py-6">
                 <Spinner />
               </div>
-            ) : filteredUsers.length === 0 ? (
+            ) : filteredApprovers.length === 0 ? (
               <div className="p-4 text-center text-sm text-text-muted">
-                {search ? 'No matching team members with DocVault access found.' : 'No eligible approvers found.'}
+                {search
+                  ? 'No matching team members with DocVault access found.'
+                  : 'No other eligible approvers found in your company.'}
               </div>
             ) : (
-              filteredUsers.map((user) => {
+              filteredApprovers.map((user) => {
                 const isSelected = user.id === value
                 return (
                   <button
@@ -209,7 +191,9 @@ export function ApproverPicker({
                     }}
                     className={cn(
                       'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors',
-                      isSelected ? 'bg-accent-subtle/60 text-accent font-medium' : 'hover:bg-bg-raised text-text-primary',
+                      isSelected
+                        ? 'bg-accent-subtle/60 text-accent font-medium'
+                        : 'hover:bg-bg-raised text-text-primary',
                     )}
                   >
                     <div className="flex min-w-0 items-center gap-2.5">
