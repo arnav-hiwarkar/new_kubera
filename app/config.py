@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
 
+    # SMTP / Email
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    SMTP_USE_SSL: bool = False
+    SMTP_FROM_EMAIL: str = "kubera@ethdc.in"
+    SMTP_FROM_NAME: str = "Kubera Compliance"
+    SMTP_TIMEOUT: int = 15
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
