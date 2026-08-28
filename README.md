@@ -446,15 +446,18 @@ All scripts live at the repo root. There are two kinds:
 |--------|---------|
 | `change_password.py <email>` | Reset the password of any company user **or** auditor. |
 | `delete_user.py [email]`     | Soft-delete a user: disables login, frees their email for reuse, keeps their name on existing files. |
+| `send_email.py`              | Send branded transactional/plain emails via SMTP or queue via Celery (interactive wizard or flags). |
 
 ```bash
 # On a running server:
 docker compose exec api python change_password.py user@acme.com
 docker compose exec api python delete_user.py
+docker compose exec api python send_email.py --verify
 
 # Locally:
 uv run change_password.py user@acme.com
 uv run delete_user.py
+uv run send_email.py
 ```
 
 **Scripts that use the HTTP API / `psql`** (standard library only) — run on the host with `python3` from the repo directory (they read `.env` and use `curl` / `docker compose`):
