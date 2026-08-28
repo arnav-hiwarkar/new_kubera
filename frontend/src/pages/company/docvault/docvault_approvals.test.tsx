@@ -202,4 +202,32 @@ describe('DocVault Approvals & Final Status', () => {
     expect(screen.getByText('Annual Audit 2026')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Review & Approve/i })).toBeInTheDocument()
   })
+
+  it('locks controls for non-approver when document is pending approval', async () => {
+    const otherPendingDoc: DocumentResponse = {
+      ...baseDoc,
+      id: 'doc-200',
+      approver_id: 'u-other-approver',
+      approver_name: 'Other Approver',
+      is_editable: true,
+    }
+
+    wrap(<DocumentDrawer document={otherPendingDoc} open onClose={() => {}} buckets={[]} />)
+
+    // Non-approver info message
+    expect(screen.getByText(/Awaiting Document Approval/i)).toBeInTheDocument()
+    expect(screen.getByText(/Assigned to Other Approver/i)).toBeInTheDocument()
+
+    // Editable switch is disabled
+    const editableSwitch = screen.getByRole('checkbox', { name: /Editable/i })
+    expect(editableSwitch).toBeDisabled()
+
+    // Version dropzone is disabled / replaced with message
+    expect(screen.getByText(/Document is pending approval by Other Approver/i)).toBeInTheDocument()
+
+    // Archive button is disabled
+    const archiveBtn = screen.getByRole('button', { name: /Archive/i })
+    expect(archiveBtn).toBeDisabled()
+  })
 })
+
