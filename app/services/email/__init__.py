@@ -6,6 +6,11 @@ from app.services.email.schemas import (
     EmailDeliveryResult,
     EmailMessage,
 )
+from app.services.email.resolver import (
+    get_email_config_for_company,
+    get_email_service_for_company,
+    record_email_log,
+)
 from app.services.email.templates import extract_plain_text, render_email_template
 
 __all__ = [
@@ -16,5 +21,8 @@ __all__ = [
     "EmailMessage",
     "EmailService",
     "extract_plain_text",
+    "get_email_config_for_company",
+    "get_email_service_for_company",
+    "record_email_log",
     "render_email_template",
 ]

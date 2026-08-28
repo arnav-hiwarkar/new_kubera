@@ -59,3 +59,20 @@ def decrypt_file_data(ciphertext: bytes, nonce: bytes, dek: bytes) -> bytes:
     """Decrypt file content with the DEK."""
     aesgcm = AESGCM(dek)
     return aesgcm.decrypt(nonce, ciphertext, None)
+
+
+def encrypt_smtp_password(password: str, company_kek: bytes) -> tuple[bytes, bytes]:
+    """Encrypt an SMTP password string with AES-GCM under the company KEK.
+    Returns (ciphertext, nonce).
+    """
+    aesgcm = AESGCM(company_kek)
+    nonce = os.urandom(12)
+    ciphertext = aesgcm.encrypt(nonce, password.encode("utf-8"), None)
+    return ciphertext, nonce
+
+
+def decrypt_smtp_password(ciphertext: bytes, nonce: bytes, company_kek: bytes) -> str:
+    """Decrypt an AES-GCM encrypted SMTP password using the company KEK."""
+    aesgcm = AESGCM(company_kek)
+    decrypted_bytes = aesgcm.decrypt(nonce, ciphertext, None)
+    return decrypted_bytes.decode("utf-8")
