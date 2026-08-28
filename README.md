@@ -481,6 +481,23 @@ python3 maintenance.py status
 
 ---
 
+## Outbound Email & Custom Company SMTP
+
+Kubera provides a unified email dispatch architecture supporting both platform-level defaults and per-company custom mail servers:
+
+1. **System Default Email (`kubera@ethdc.in`)**:
+   * Configured via `SMTP_*` variables in `.env` (STARTTLS on port 587 or direct SSL on port 465).
+   * Used for system alerts, password recovery, and fallback communications.
+
+2. **Per-Company Custom SMTP (Multi-Tenant)**:
+   * Company Admins can configure their own organization's mail server under **Company Profile → Outbound Email & Custom SMTP**.
+   * **Security**: Passwords are encrypted at rest with AES-256-GCM under the tenant's individual KEK (`CompanyKey`), preventing credential leaks.
+   * **Live Diagnostics**: The UI includes a "Test Connection" button that validates handshake and latency against external SMTP servers before saving.
+   * **Auditor Onboarding Invites**: When an auditor is invited to an audit engagement in AuditEase, Kubera automatically dispatches a branded invitation with smart routing (linking to `/auditor/register` for new auditors or `/auditor/login` for existing auditors) through the company's custom email, or falling back seamlessly to `kubera@ethdc.in`.
+   * **Audit Trail**: Every email dispatched is logged in `email_logs` with delivery status, message IDs, latency, and error tracing.
+
+---
+
 ## Testing
 
 Tests use Postgres (a separate `kubera_test` database is created automatically) and Redis.

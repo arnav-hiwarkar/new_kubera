@@ -1,8 +1,12 @@
 from app.config import Settings
 
 
-def test_smtp_default_settings():
+def test_smtp_default_settings(monkeypatch):
+    for key in ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_USE_TLS", "SMTP_USE_SSL", "SMTP_FROM_EMAIL", "SMTP_FROM_NAME", "SMTP_TIMEOUT"]:
+        monkeypatch.delenv(key, raising=False)
+
     settings = Settings(
+        _env_file=None,
         DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/test",
         JWT_SECRET_KEY="test-secret",
         ROOT_MASTER_KEK="0" * 64,
