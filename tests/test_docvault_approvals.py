@@ -288,3 +288,93 @@ async def test_list_pending_my_approval_filter(client: AsyncClient):
     docs = resp.json()
     assert len(docs) == 1
     assert docs[0]["title"] == "Doc for Admin"
+
+
+@pytest.mark.asyncio
+async def test_list_approvers_success_and_self_exclusion(client: AsyncClient):
+    await create_test_company(client, name="ApproverListCo", email="admin@applist.com", password="pass1234")
+    admin_token = await get_company_token(client, email="admin@applist.com", password="pass1234")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
+
+    e1_id = await _create_member(client, admin_headers, "e1@applist.com", "pass1234", "Employee One", "employee", ["docvault"])
+    e2_id = await _create_member(client, admin_headers, "e2@applist.com", "pass1234", "Employee Two", "employee", ["docvault"])
+    # Employee without docvault module
+    nodoc_id = await _create_member(client, admin_headers, "nodoc@applist.com", "pass1234", "No Doc User", "employee", ["assets"])
+
+    # E1 calls /api/v1/docvault/approvers
+    e1_token = await get_company_token(client, email="e1@applist.com", password="pass1234")
+    e1_headers = {"Authorization": f"Bearer {e1_token}"}
+
+    resp = await client.get("/api/v1/docvault/approvers", headers=e1_headers)
+    assert resp.status_code == 200, resp.text
+    approvers = resp.json()
+    approver_ids = {a["id"] for a in approvers}
+
+    # E1 can see Admin and E2
+    assert admin_id in approver_ids
+    assert e2_id in approver_ids
+
+    # E1 CANNOT see self (self-exclusion)
+    assert e1_id not in approver_ids
+
+    # User without docvault module is excluded
+    assert nodoc_id not in approver_ids
+
+
+@pytest.mark.asyncio
+async def test_list_approvers_filters_inactive_and_restricted_bucket(client: AsyncClient):
+    await create_test_company(client, name="BucketAppCo", email="admin@bapp.com", password="pass1234")
+    admin_token = await get_company_token(client, email="admin@bapp.com", password="pass1234")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
+
+    u1_id = await _create_member(client, admin_headers, "u1@bapp.com", "pass1234", "User One", "employee", ["docvault"])
+    u2_id = await _create_member(client, admin_headers, "u2@bapp.com", "pass1234", "User Two", "employee", ["docvault"])
+    deact_id = await _create_member(client, admin_headers, "deact@bapp.com", "pass1234", "Deact User", "employee", ["docvault"])
+
+    # Deactivate deact_id
+    await client.patch(f"/api/v1/users/{deact_id}/deactivate", headers=admin_headers)
+
+    # Create restricted bucket with access only to u1
+    b_resp = await client.post("/api/v1/docvault/buckets", json={"name": "Confidential Finance"}, headers=admin_headers)
+    bucket_id = b_resp.json()["id"]
+    await client.patch(
+        f"/api/v1/docvault/buckets/{bucket_id}/access",
+        json={"visibility": "restricted", "user_ids": [u1_id]},
+        headers=admin_headers,
+    )
+
+    # General approvers list excludes deactivated user
+    resp = await client.get("/api/v1/docvault/approvers", headers=admin_headers)
+    assert resp.status_code == 200
+    all_ids = {a["id"] for a in resp.json()}
+    assert deact_id not in all_ids
+    assert u1_id in all_ids
+    assert u2_id in all_ids
+
+    # Querying with restricted bucket_id only returns Admin and u1
+    u1_headers = {"Authorization": f"Bearer {await get_company_token(client, 'u1@bapp.com', 'pass1234')}"}
+    resp = await client.get(f"/api/v1/docvault/approvers?bucket_id={bucket_id}", headers=u1_headers)
+    assert resp.status_code == 200
+    bucket_approvers = resp.json()
+    b_ids = {a["id"] for a in bucket_approvers}
+    assert admin_id in b_ids
+    assert u2_id not in b_ids  # u2 does not have access to this restricted bucket
+    assert u1_id not in b_ids  # u1 is caller so excluded by self-exclusion
+
+
+@pytest.mark.asyncio
+async def test_list_approvers_forbidden_for_user_without_docvault_module(client: AsyncClient):
+    await create_test_company(client, name="NoAccessCo", email="admin@noacc.com", password="pass1234")
+    admin_token = await get_company_token(client, email="admin@noacc.com", password="pass1234")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # Employee without docvault module
+    await _create_member(client, admin_headers, "assetsonly@noacc.com", "pass1234", "Assets Only", "employee", ["assets"])
+    assets_token = await get_company_token(client, email="assetsonly@noacc.com", password="pass1234")
+    assets_headers = {"Authorization": f"Bearer {assets_token}"}
+
+    resp = await client.get("/api/v1/docvault/approvers", headers=assets_headers)
+    assert resp.status_code == 403
+

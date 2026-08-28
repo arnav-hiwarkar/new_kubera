@@ -18,7 +18,7 @@ from app.models.docvault import (
 from app.models.notification import Notification, RecipientType
 from app.models.activity_log import ActivityLog, ActorType
 from app.schemas.docvault import (
-    BucketCreate, BucketResponse, BucketUpdate, BucketAccessUpdate, DocumentResponse, DocumentVersionResponse, DocumentUpdate
+    BucketCreate, BucketResponse, BucketUpdate, BucketAccessUpdate, DocumentResponse, DocumentVersionResponse, DocumentUpdate, DocVaultApproverResponse
 )
 from app.encryption import (
     generate_dek, encrypt_dek, decrypt_dek, encrypt_file_data, decrypt_file_data, decrypt_company_kek
@@ -155,6 +155,69 @@ async def list_buckets(
         query = query.where(Bucket.id.in_(accessible))
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get("/approvers", response_model=List[DocVaultApproverResponse])
+async def list_docvault_approvers(
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bucket_id: Optional[uuid.UUID] = Query(None),
+):
+    """List eligible DocVault approvers in the company, excluding the caller.
+
+    Open to any user with DocVault module access (or Admin).
+    Only includes active, non-deleted users who have DocVault access.
+    If bucket_id is provided and the bucket is restricted, only users with access
+    grants to that bucket (plus admins) are returned.
+    """
+    if current_user.role != UserRole.admin and "docvault" not in (current_user.accessible_modules or []):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to the DocVault module",
+        )
+
+    # 1. Fetch active company members excluding current user
+    stmt = (
+        select(CompanyUser)
+        .where(
+            CompanyUser.company_id == current_user.company_id,
+            CompanyUser.id != current_user.id,
+            CompanyUser.deleted_at.is_(None),
+            CompanyUser.is_active == True,
+        )
+        .order_by(func.coalesce(CompanyUser.full_name, CompanyUser.email).asc())
+    )
+    result = await db.execute(stmt)
+    all_users = result.scalars().all()
+
+    # 2. Filter users who have docvault access
+    eligible = [
+        u for u in all_users
+        if u.role == UserRole.admin or "docvault" in (u.accessible_modules or [])
+    ]
+
+    # 3. If bucket_id is restricted, further filter to granted users + admins
+    if bucket_id:
+        b_res = await db.execute(
+            select(Bucket).where(
+                Bucket.id == bucket_id,
+                Bucket.company_id == current_user.company_id,
+            )
+        )
+        bucket = b_res.scalar_one_or_none()
+        if bucket and bucket.visibility == BucketVisibility.restricted:
+            grants_res = await db.execute(
+                select(BucketAccessGrant.company_user_id).where(
+                    BucketAccessGrant.bucket_id == bucket_id
+                )
+            )
+            granted_ids = set(grants_res.scalars().all())
+            eligible = [
+                u for u in eligible
+                if u.role == UserRole.admin or u.id in granted_ids
+            ]
+
+    return eligible
 
 
 @router.patch("/buckets/{bucket_id}", response_model=BucketResponse)

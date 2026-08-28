@@ -81,3 +81,15 @@ class DocumentUpdate(BaseModel):
     is_editable: Optional[bool] = None
     approver_id: Optional[uuid.UUID] = None
     approval_notes: Optional[str] = Field(None, max_length=1000)
+
+
+class DocVaultApproverResponse(BaseModel):
+    id: uuid.UUID
+    full_name: Optional[str] = None
+    email: str
+    role: str
+    department: Optional[str] = None
+    designation: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
