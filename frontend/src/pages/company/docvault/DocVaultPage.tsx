@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Archive, Network, Upload } from 'lucide-react'
+import { useMemo, useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Archive, Network, Upload, CheckCircle2 } from 'lucide-react'
 import {
   PageHeader,
   Button,
   Select,
   DataTable,
   StatusBadge,
+  FinalBadge,
   useToast,
   type Column,
 } from '@/components/ui'
@@ -15,6 +16,7 @@ import { ApiError } from '@/api/http'
 import type { DocumentResponse } from '@/api/types'
 import { formatDate } from '@/lib/format'
 import { useBuckets, useDocuments, useDownloadDocument } from '@/api/hooks/docvault'
+import { useCompanyAuth } from '@/auth/company'
 import { BucketRail, type BucketSelection } from './BucketRail'
 import { UploadDocumentModal } from './UploadDocumentModal'
 import { DocumentDrawer } from './DocumentDrawer'
@@ -23,6 +25,8 @@ const LIVE_STATUSES = DOCUMENT_STATUS.filter((s) => s !== 'archived')
 
 export function DocVaultPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { profile } = useCompanyAuth()
   const toast = useToast()
   const { data: buckets = [] } = useBuckets()
   const { data: documents = [], isLoading } = useDocuments()
@@ -31,7 +35,24 @@ export function DocVaultPage() {
   const [bucketSel, setBucketSel] = useState<BucketSelection>('all')
   const [statusFilter, setStatusFilter] = useState('') // '' = active (non-archived)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('doc') || null)
+
+  // Sync selectedId with URL doc param if changed
+  useEffect(() => {
+    const docParam = searchParams.get('doc')
+    if (docParam && docParam !== selectedId) {
+      setSelectedId(docParam)
+    }
+  }, [searchParams])
+
+  const handleCloseDrawer = () => {
+    setSelectedId(null)
+    if (searchParams.has('doc')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('doc')
+      setSearchParams(next, { replace: true })
+    }
+  }
 
   const bucketName = (id: string | null) =>
     id ? (buckets.find((b) => b.id === id)?.name ?? '—') : 'Uncategorized'
@@ -74,7 +95,10 @@ export function DocVaultPage() {
       sortValue: (d) => d.title.toLowerCase(),
       cell: (d) => (
         <div>
-          <div className="font-medium text-text-primary">{d.title}</div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-text-primary">{d.title}</span>
+            {!d.is_editable && <FinalBadge />}
+          </div>
           {d.tags.length > 0 && (
             <div className="mt-0.5 flex flex-wrap gap-1">
               {d.tags.map((t) => (
@@ -95,7 +119,20 @@ export function DocVaultPage() {
       key: 'status',
       header: 'Status',
       sortValue: (d) => d.status,
-      cell: (d) => <StatusBadge status={d.status} />,
+      cell: (d) => (
+        <div className="flex flex-col items-start gap-1">
+          <StatusBadge status={d.status} />
+          {d.status === 'pending_approval' && (
+            <span className="text-[11px] text-text-muted">
+              {profile?.id === d.approver_id
+                ? 'Needs your review'
+                : d.approver_name
+                ? `Approver: ${d.approver_name}`
+                : 'Pending approval'}
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'version',
@@ -113,17 +150,38 @@ export function DocVaultPage() {
       key: 'actions',
       header: '',
       align: 'right',
-      cell: (d) => (
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            handleDownload(d)
-          }}
-          className="text-accent hover:underline"
-        >
-          Download
-        </button>
-      ),
+      cell: (d) => {
+        const needsReview =
+          d.status === 'pending_approval' &&
+          (profile?.id === d.approver_id || profile?.role === 'admin')
+        return (
+          <div className="flex items-center justify-end gap-2">
+            {needsReview && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelectedId(d.id)
+                }}
+                className="border-accent/40 bg-accent-subtle/40 text-accent hover:bg-accent hover:text-white transition-all text-xs font-semibold py-1 px-2.5 h-7"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                Review & Approve
+              </Button>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                handleDownload(d)
+              }}
+              className="text-accent hover:underline text-sm"
+            >
+              Download
+            </button>
+          </div>
+        )
+      },
     },
   ]
 
@@ -197,7 +255,7 @@ export function DocVaultPage() {
       <DocumentDrawer
         document={selectedDoc}
         open={!!selectedId}
-        onClose={() => setSelectedId(null)}
+        onClose={handleCloseDrawer}
         buckets={buckets}
       />
     </div>

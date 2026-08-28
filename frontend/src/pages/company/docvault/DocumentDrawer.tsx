@@ -7,6 +7,7 @@ import {
   Select,
   Switch,
   StatusBadge,
+  FinalBadge,
   FileUploadDropzone,
   ConfirmDialog,
   useToast,
@@ -21,6 +22,8 @@ import {
   useUploadVersion,
   useDownloadDocument,
 } from '@/api/hooks/docvault'
+import { useCompanyAuth } from '@/auth/company'
+import { CheckCircle2, AlertTriangle, Clock, MessageSquareQuote } from 'lucide-react'
 
 // The dropdown offers every live status; 'archived' is reached only via the
 // Archive action (which also locks the doc), never as a plain status pick.
@@ -35,6 +38,7 @@ export interface DocumentDrawerProps {
 
 export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDrawerProps) {
   const toast = useToast()
+  const { profile } = useCompanyAuth()
   const update = useUpdateDocument()
   const archive = useArchiveDocument()
   const uploadVersion = useUploadVersion()
@@ -42,19 +46,28 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
 
   const [tagsInput, setTagsInput] = useState('')
   const [titleInput, setTitleInput] = useState('')
+  const [approvalNotesInput, setApprovalNotesInput] = useState('')
   const [confirmArchive, setConfirmArchive] = useState(false)
 
   useEffect(() => {
     setTagsInput(document?.tags.join(', ') ?? '')
     setTitleInput(document?.title ?? '')
+    setApprovalNotesInput(document?.approval_notes ?? '')
   }, [document])
 
   if (!document) return null
 
   const isArchived = document.status === 'archived'
+  const isPendingApproval = document.status === 'pending_approval'
+  const isApprover = profile?.id === document.approver_id
+  const isAdmin = profile?.role === 'admin'
+  const canReview = isPendingApproval && (isApprover || isAdmin)
+
   // A locked (non-editable) document freezes its name, tags, bucket and new
   // versions. Status changes (incl. archive) and the editable toggle stay open.
   const locked = !document.is_editable
+  const editFrozen = locked || (isPendingApproval && !canReview)
+
   const bucketName = buckets.find((b) => b.id === document.bucket_id)?.name ?? 'Uncategorized'
   const currentVersion = document.versions.find((v) => v.id === document.current_version_id)
   const currentVersionNo =
@@ -72,7 +85,36 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
   }
 
   const changeStatus = (status: string) =>
-    wrap(update.mutateAsync({ id: document.id, body: { status: status as never } }), 'Status updated')
+    wrap(
+      update.mutateAsync({
+        id: document.id,
+        body: { status: status as never, approval_notes: approvalNotesInput.trim() || undefined },
+      }),
+      'Status updated',
+    )
+
+  const handleApprove = () =>
+    wrap(
+      update.mutateAsync({
+        id: document.id,
+        body: { status: 'verified' as never, approval_notes: approvalNotesInput.trim() || undefined },
+      }),
+      'Document approved (Status: Verified)',
+    )
+
+  const handleRequestChanges = () => {
+    if (!approvalNotesInput.trim()) {
+      toast.error('Please enter notes explaining the requested changes')
+      return
+    }
+    return wrap(
+      update.mutateAsync({
+        id: document.id,
+        body: { status: 'action_required' as never, approval_notes: approvalNotesInput.trim() },
+      }),
+      'Document flagged for changes (Status: Action Required)',
+    )
+  }
 
   const changeBucket = (value: string) =>
     wrap(
@@ -124,8 +166,9 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
         onClose={onClose}
         title={document.title}
         subtitle={
-          <span className="flex items-center gap-2">
+          <span className="flex flex-wrap items-center gap-2">
             <StatusBadge status={document.status} />
+            {!document.is_editable && <FinalBadge />}
             <span className="text-text-muted">·</span>
             <span>{bucketName}</span>
             <span className="text-text-muted">·</span>
@@ -165,19 +208,93 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
             </span>
           </div>
 
+          {/* Pending Approval Review Section */}
+          {isPendingApproval && (
+            <div className="rounded-card border border-amber-500/30 bg-amber-500/5 p-4 flex flex-col gap-3">
+              <div className="flex items-start gap-2.5">
+                <Clock className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-sm font-semibold text-text-primary">
+                    {canReview ? 'Review & Approval Required' : 'Awaiting Document Approval'}
+                  </h4>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    {canReview
+                      ? `Requested by ${document.created_by_name || 'team member'} ${
+                          document.approval_requested_at ? `on ${formatDate(document.approval_requested_at)}` : ''
+                        }`
+                      : `Assigned to ${document.approver_name || 'the designated approver'}. Edits are paused until review is completed.`}
+                  </p>
+                </div>
+              </div>
+
+              {canReview && (
+                <div className="flex flex-col gap-3 pt-2 border-t border-amber-500/20">
+                  <Field label="Review notes / feedback" htmlFor="approval-notes" hint="Optional for approval; required when requesting changes">
+                    <Input
+                      id="approval-notes"
+                      value={approvalNotesInput}
+                      onChange={(e) => setApprovalNotesInput(e.target.value)}
+                      placeholder="e.g. Verified compliance checklist, ready for submission"
+                      disabled={update.isPending}
+                    />
+                  </Field>
+
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleApprove}
+                      loading={update.isPending}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                      Approve (Verified)
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleRequestChanges}
+                      loading={update.isPending}
+                      className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                    >
+                      <AlertTriangle className="h-4 w-4 mr-1.5" />
+                      Request Changes
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Past Review Note display if present and not currently pending */}
+          {!isPendingApproval && document.approved_at && document.approval_notes && (
+            <div className="rounded-card border border-border bg-bg-surface p-3 flex items-start gap-2.5">
+              <MessageSquareQuote className="h-4 w-4 shrink-0 text-accent mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                    Review Note · {document.approver_name || 'Approver'}
+                  </span>
+                  <span className="text-xs text-text-muted">{formatDate(document.approved_at)}</span>
+                </div>
+                <p className="text-sm text-text-primary mt-1">{document.approval_notes}</p>
+              </div>
+            </div>
+          )}
+
           {/* Name */}
-          <Field label="Name" hint={locked ? 'Locked — enable editing to rename' : undefined}>
+          <Field label="Name" hint={editFrozen ? 'Locked from renaming' : undefined}>
             <div className="flex gap-2">
               <Input
                 value={titleInput}
                 onChange={(e) => setTitleInput(e.target.value)}
-                disabled={isArchived || locked}
+                disabled={isArchived || editFrozen}
               />
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={saveTitle}
-                disabled={isArchived || locked || update.isPending}
+                disabled={isArchived || editFrozen || update.isPending}
               >
                 Save
               </Button>
@@ -185,12 +302,12 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
           </Field>
 
           {/* Editable toggle */}
-          <Field label="Editable" hint="When off, the file is locked: no new versions, renaming, tags or bucket changes.">
+          <Field label="Editable" hint="When off, the file is Final: no new versions, renaming, tags or bucket changes.">
             <Switch
               checked={document.is_editable}
               onChange={changeEditable}
               disabled={isArchived || update.isPending}
-              label={document.is_editable ? 'Editable' : 'Locked'}
+              label={document.is_editable ? 'Editable' : 'Final (Locked)'}
             />
           </Field>
 
@@ -200,6 +317,13 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
               <div className="flex items-center gap-2">
                 <StatusBadge status="archived" />
                 <span className="text-sm text-text-muted">Archived documents are locked.</span>
+              </div>
+            ) : isPendingApproval && !canReview ? (
+              <div className="flex items-center gap-2">
+                <StatusBadge status="pending_approval" />
+                <span className="text-sm text-text-muted">
+                  Only {document.approver_name || 'assigned approver'} or admin can update status.
+                </span>
               </div>
             ) : (
               <Select
@@ -221,7 +345,7 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
             <Select
               value={document.bucket_id ?? ''}
               onChange={(e) => changeBucket(e.target.value)}
-              disabled={update.isPending || isArchived || locked}
+              disabled={update.isPending || isArchived || editFrozen}
             >
               <option value="">Uncategorized</option>
               {buckets.map((b) => (
@@ -239,13 +363,13 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
                 placeholder="board, 2026"
-                disabled={isArchived || locked}
+                disabled={isArchived || editFrozen}
               />
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={saveTags}
-                disabled={isArchived || locked || update.isPending}
+                disabled={isArchived || editFrozen || update.isPending}
               >
                 Save
               </Button>
@@ -296,7 +420,11 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
               <p className="text-sm text-text-muted">Archived — new versions are disabled.</p>
             ) : !document.is_editable ? (
               <p className="text-sm text-text-muted">
-                This document is locked (new versions not allowed).
+                This document is marked as Final (new versions disabled).
+              </p>
+            ) : isPendingApproval && !canReview ? (
+              <p className="text-sm text-text-muted">
+                Document is pending approval by {document.approver_name || 'approver'}.
               </p>
             ) : (
               <FileUploadDropzone
