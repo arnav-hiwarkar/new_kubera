@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '@/components/ui/Toast'
@@ -10,7 +10,6 @@ import { DocVaultPage } from './DocVaultPage'
 import { Dashboard } from '@/pages/company/Dashboard'
 import type { DocumentResponse, UserResponse } from '@/api/types'
 import { docvaultApi } from '@/api/endpoints/docvault'
-import { usersApi } from '@/api/endpoints/users'
 
 vi.mock('@/auth/company', () => ({
   useCompanyAuth: () => ({
