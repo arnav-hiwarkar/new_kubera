@@ -365,16 +365,24 @@ async def test_list_approvers_filters_inactive_and_restricted_bucket(client: Asy
 
 
 @pytest.mark.asyncio
-async def test_list_approvers_forbidden_for_user_without_docvault_module(client: AsyncClient):
-    await create_test_company(client, name="NoAccessCo", email="admin@noacc.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@noacc.com", password="pass1234")
+async def test_list_approvers_success_for_employee_caller(client: AsyncClient):
+    await create_test_company(client, name="EmployeeCallCo", email="admin@empcall.com", password="pass1234")
+    admin_token = await get_company_token(client, email="admin@empcall.com", password="pass1234")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
+
+    # Employee with docvault module
+    doc_id = await _create_member(client, admin_headers, "docmember@empcall.com", "pass1234", "Doc Member", "employee", ["docvault"])
+    doc_token = await get_company_token(client, email="docmember@empcall.com", password="pass1234")
+    doc_headers = {"Authorization": f"Bearer {doc_token}"}
 
     # Employee without docvault module
-    await _create_member(client, admin_headers, "assetsonly@noacc.com", "pass1234", "Assets Only", "employee", ["assets"])
-    assets_token = await get_company_token(client, email="assetsonly@noacc.com", password="pass1234")
-    assets_headers = {"Authorization": f"Bearer {assets_token}"}
+    nodoc_id = await _create_member(client, admin_headers, "nodoc@empcall.com", "pass1234", "No Doc", "employee", ["assets"])
 
-    resp = await client.get("/api/v1/docvault/approvers", headers=assets_headers)
-    assert resp.status_code == 403
+    resp = await client.get("/api/v1/docvault/approvers", headers=doc_headers)
+    assert resp.status_code == 200
+    approver_ids = {a["id"] for a in resp.json()}
+    assert admin_id in approver_ids
+    assert doc_id not in approver_ids  # self excluded
+    assert nodoc_id not in approver_ids  # nodoc excluded
 

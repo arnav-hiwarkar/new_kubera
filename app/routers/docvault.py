@@ -157,6 +157,22 @@ async def list_buckets(
     return result.scalars().all()
 
 
+def is_company_admin(user: CompanyUser) -> bool:
+    role_str = str(getattr(user.role, "value", user.role)).lower()
+    return role_str == "admin" or user.role == UserRole.admin
+
+
+def user_has_docvault_access(user: CompanyUser) -> bool:
+    if is_company_admin(user):
+        return True
+    mods = user.accessible_modules or []
+    if isinstance(mods, (list, tuple, set)):
+        return "docvault" in mods
+    if isinstance(mods, str):
+        return "docvault" in mods
+    return False
+
+
 @router.get("/approvers", response_model=List[DocVaultApproverResponse])
 async def list_docvault_approvers(
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
@@ -165,17 +181,12 @@ async def list_docvault_approvers(
 ):
     """List eligible DocVault approvers in the company, excluding the caller.
 
-    Open to any user with DocVault module access (or Admin).
-    Only includes active, non-deleted users who have DocVault access.
+    Open to all active company members.
+    Only includes active, non-deleted users who have DocVault access (Admins or
+    employees with docvault module access).
     If bucket_id is provided and the bucket is restricted, only users with access
     grants to that bucket (plus admins) are returned.
     """
-    if current_user.role != UserRole.admin and "docvault" not in (current_user.accessible_modules or []):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to the DocVault module",
-        )
-
     # 1. Fetch active company members excluding current user
     stmt = (
         select(CompanyUser)
@@ -191,10 +202,7 @@ async def list_docvault_approvers(
     all_users = result.scalars().all()
 
     # 2. Filter users who have docvault access
-    eligible = [
-        u for u in all_users
-        if u.role == UserRole.admin or "docvault" in (u.accessible_modules or [])
-    ]
+    eligible = [u for u in all_users if user_has_docvault_access(u)]
 
     # 3. If bucket_id is restricted, further filter to granted users + admins
     if bucket_id:
@@ -205,17 +213,19 @@ async def list_docvault_approvers(
             )
         )
         bucket = b_res.scalar_one_or_none()
-        if bucket and bucket.visibility == BucketVisibility.restricted:
-            grants_res = await db.execute(
-                select(BucketAccessGrant.company_user_id).where(
-                    BucketAccessGrant.bucket_id == bucket_id
+        if bucket:
+            vis = str(getattr(bucket.visibility, "value", bucket.visibility)).lower()
+            if vis == "restricted" or bucket.visibility == BucketVisibility.restricted:
+                grants_res = await db.execute(
+                    select(BucketAccessGrant.company_user_id).where(
+                        BucketAccessGrant.bucket_id == bucket_id
+                    )
                 )
-            )
-            granted_ids = set(grants_res.scalars().all())
-            eligible = [
-                u for u in eligible
-                if u.role == UserRole.admin or u.id in granted_ids
-            ]
+                granted_ids = set(grants_res.scalars().all())
+                eligible = [
+                    u for u in eligible
+                    if is_company_admin(u) or u.id in granted_ids
+                ]
 
     return eligible
 
@@ -411,7 +421,7 @@ async def upload_document(
         )).scalar_one_or_none()
         if not approver:
             raise HTTPException(status_code=400, detail="Invalid approver selected")
-        if approver.role != UserRole.admin and "docvault" not in (approver.accessible_modules or []):
+        if not user_has_docvault_access(approver):
             raise HTTPException(status_code=400, detail="Selected approver does not have DocVault access")
         if bucket_id and not await can_access_bucket(db, approver, bucket_id):
             raise HTTPException(status_code=400, detail="Selected approver does not have access to this bucket")
@@ -697,7 +707,7 @@ async def update_document(
         )).scalar_one_or_none()
         if not approver:
             raise HTTPException(status_code=400, detail="Invalid approver selected")
-        if approver.role != UserRole.admin and "docvault" not in (approver.accessible_modules or []):
+        if not user_has_docvault_access(approver):
             raise HTTPException(status_code=400, detail="Selected approver does not have DocVault access")
         target_bucket = updates.bucket_id or doc.bucket_id
         if target_bucket and not await can_access_bucket(db, approver, target_bucket):

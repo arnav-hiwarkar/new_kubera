@@ -51,13 +51,18 @@ export function ApproverPicker({
   const filteredApprovers = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return approvers
-    return approvers.filter(
-      (u) =>
-        u.full_name?.toLowerCase().includes(q) ||
-        u.email?.toLowerCase().includes(q) ||
-        u.designation?.toLowerCase().includes(q) ||
-        u.department?.toLowerCase().includes(q),
-    )
+    return approvers.filter((u) => {
+      const name = (u.full_name || '').toLowerCase()
+      const email = (u.email || '').toLowerCase()
+      const designation = (u.designation || '').toLowerCase()
+      const department = (u.department || '').toLowerCase()
+      return (
+        name.includes(q) ||
+        email.includes(q) ||
+        designation.includes(q) ||
+        department.includes(q)
+      )
+    })
   }, [approvers, search])
 
   const selectedApprover = useMemo(
@@ -66,13 +71,11 @@ export function ApproverPicker({
   )
 
   const getInitials = (name?: string | null, email?: string) => {
-    const src = name || email || '?'
-    return src
-      .split(' ')
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase()
+    const src = (name || email || '?').trim()
+    const parts = src.split(/\s+/).filter(Boolean)
+    if (parts.length === 0) return '?'
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
   }
 
   return (
