@@ -1,3 +1,4 @@
+from app.services.email.client import EmailService
 from app.services.email.schemas import (
     EmailAttachment,
     EmailConfig,
@@ -13,6 +14,7 @@ __all__ = [
     "EmailDeliveryError",
     "EmailDeliveryResult",
     "EmailMessage",
+    "EmailService",
     "extract_plain_text",
     "render_email_template",
 ]
