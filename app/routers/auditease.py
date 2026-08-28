@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from typing import Annotated, List, Optional
 from datetime import date, datetime, timezone
@@ -7,6 +8,8 @@ from pydantic import BaseModel, ValidationError, model_validator
 from sqlalchemy import select, and_, or_, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.auth import get_current_company_user, require_admin, require_manager_or_admin
@@ -1089,6 +1092,67 @@ async def invite_auditor(
 
     await db.commit()
     await db.refresh(eng)
+
+    # Dispatch invitation email asynchronously in background
+    try:
+        from app.config import get_settings
+        from app.models.company import Company
+        from app.services.email.resolver import get_email_config_for_company, record_email_log
+        from app.services.email.tasks import send_email_async
+        from app.services.email.schemas import EmailMessage
+
+        domain = get_settings().DOMAIN
+        proto = "https" if domain != "localhost" else "http"
+        base_url = f"{proto}://{domain}"
+
+        if auditor:
+            action_url = f"{base_url}/auditor/login"
+            action_label = "Log In to Audit Portal"
+        else:
+            action_url = f"{base_url}/auditor/register?email={email}"
+            action_label = "Set Up Auditor Account"
+
+        company_config = await get_email_config_for_company(db, current_user.company_id)
+        comp_res = await db.execute(select(Company.name).where(Company.id == current_user.company_id))
+        company_name = comp_res.scalar_one_or_none() or "Kubera Compliance"
+
+        from_email = company_config.from_email if company_config else "kubera@ethdc.in"
+        from_name = company_config.from_name if company_config else "Kubera Compliance"
+
+        email_msg = EmailMessage(
+            to=[email],
+            subject=f"Audit Invitation: {company_name} — {eng.period_label}",
+            template_name="auditor_invite.html",
+            template_context={
+                "company_name": company_name,
+                "period_label": eng.period_label,
+                "action_button": {
+                    "label": action_label,
+                    "url": action_url,
+                },
+                "footer_note": f"Sent by {company_name} via Kubera Corporate Compliance.",
+            },
+        )
+
+        send_email_async.delay(
+            email_msg.model_dump(),
+            company_config.model_dump() if company_config else None,
+        )
+
+        await record_email_log(
+            db=db,
+            company_id=current_user.company_id,
+            sender_email=from_email,
+            sender_name=from_name,
+            recipient_email=email,
+            subject=email_msg.subject,
+            template_name=email_msg.template_name or "auditor_invite.html",
+            status="queued",
+            source="auditease.invite",
+        )
+    except Exception as e:
+        logger.error(f"Failed to queue auditor invite email for {email}: {e}")
+
     return await _hydrate_auditors(db, eng)
 
 
