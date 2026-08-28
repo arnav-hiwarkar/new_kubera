@@ -15,6 +15,7 @@ from app.models.company import CompanyUser, CompanyKey, UserRole
 from app.models.docvault import (
     Bucket, BucketAccessGrant, BucketVisibility, Document, DocumentVersion, DocumentStatus
 )
+from app.models.notification import Notification, RecipientType
 from app.models.activity_log import ActivityLog, ActorType
 from app.schemas.docvault import (
     BucketCreate, BucketResponse, BucketUpdate, BucketAccessUpdate, DocumentResponse, DocumentVersionResponse, DocumentUpdate
@@ -40,13 +41,14 @@ async def log_activity(db: AsyncSession, company_id: uuid.UUID, actor_id: uuid.U
 
 
 async def _attach_uploader_names(db: AsyncSession, docs: List[Document]) -> List[Document]:
-    """Resolve created_by / uploaded_by UUIDs to user names in a single query.
+    """Resolve created_by / uploaded_by / approver_id UUIDs to user names in a single query.
 
     The names are set as transient attributes on the ORM objects so Pydantic
     (from_attributes) picks them up. full_name is retained even for soft-deleted
     users; auditor/deleted-user uploads have a null FK and stay None.
     """
     ids = {d.created_by for d in docs if d.created_by}
+    ids |= {d.approver_id for d in docs if d.approver_id}
     ids |= {v.uploaded_by for d in docs for v in d.versions if v.uploaded_by}
     names: dict[uuid.UUID, str] = {}
     if ids:
@@ -56,6 +58,7 @@ async def _attach_uploader_names(db: AsyncSession, docs: List[Document]) -> List
         names = {row.id: row.full_name for row in rows}
     for d in docs:
         d.created_by_name = names.get(d.created_by)
+        d.approver_name = names.get(d.approver_id)
         for v in d.versions:
             v.uploaded_by_name = names.get(v.uploaded_by)
     return docs
@@ -315,7 +318,9 @@ async def upload_document(
     db: Annotated[AsyncSession, Depends(get_db)],
     bucket_id: Annotated[Optional[uuid.UUID], Form()] = None,
     tags: Annotated[Optional[str], Form()] = None, # comma-separated
-    is_editable: Annotated[bool, Form()] = True
+    is_editable: Annotated[bool, Form()] = True,
+    needs_approval: Annotated[bool, Form()] = False,
+    approver_id: Annotated[Optional[uuid.UUID], Form()] = None,
 ):
     if bucket_id:
         bucket = await db.execute(select(Bucket).where(and_(Bucket.id == bucket_id, Bucket.company_id == current_user.company_id)))
@@ -324,13 +329,44 @@ async def upload_document(
         if not await can_access_bucket(db, current_user, bucket_id):
             raise HTTPException(status_code=403, detail="No access to this bucket")
 
+    initial_status = DocumentStatus.uploaded
+    req_approver_id = None
+    approval_req_at = None
+
+    if needs_approval:
+        if not approver_id:
+            raise HTTPException(status_code=400, detail="Approver is required when requesting approval")
+        approver = (await db.execute(
+            select(CompanyUser).where(
+                and_(
+                    CompanyUser.id == approver_id,
+                    CompanyUser.company_id == current_user.company_id,
+                    CompanyUser.deleted_at.is_(None),
+                    CompanyUser.is_active == True,
+                )
+            )
+        )).scalar_one_or_none()
+        if not approver:
+            raise HTTPException(status_code=400, detail="Invalid approver selected")
+        if approver.role != UserRole.admin and "docvault" not in (approver.accessible_modules or []):
+            raise HTTPException(status_code=400, detail="Selected approver does not have DocVault access")
+        if bucket_id and not await can_access_bucket(db, approver, bucket_id):
+            raise HTTPException(status_code=400, detail="Selected approver does not have access to this bucket")
+
+        initial_status = DocumentStatus.pending_approval
+        req_approver_id = approver_id
+        approval_req_at = datetime.now(timezone.utc)
+
     doc = Document(
         company_id=current_user.company_id,
         bucket_id=bucket_id,
+        status=initial_status,
         title=title,
         tags=[t.strip() for t in tags.split(",")] if tags else [],
         is_editable=is_editable,
-        created_by=current_user.id
+        created_by=current_user.id,
+        approver_id=req_approver_id,
+        approval_requested_at=approval_req_at,
     )
     db.add(doc)
     await db.flush()
@@ -338,6 +374,21 @@ async def upload_document(
     version = await handle_file_upload(file, doc.id, current_user.company_id, current_user.id, 1, db)
     doc.current_version_id = version.id
     
+    if needs_approval and req_approver_id:
+        db.add(
+            Notification(
+                recipient_type=RecipientType.company_user,
+                recipient_id=req_approver_id,
+                type="docvault.approval_requested",
+                payload={
+                    "document_id": str(doc.id),
+                    "title": doc.title,
+                    "uploader_name": current_user.full_name,
+                    "message": f"{current_user.full_name} requested your approval on '{doc.title}'",
+                },
+            )
+        )
+
     await log_activity(db, current_user.company_id, current_user.id, "document.uploaded", "document", doc.id)
     await db.commit()
     
@@ -366,6 +417,8 @@ async def upload_document_version(
         raise HTTPException(status_code=404, detail="Document not found")
     if not doc.is_editable:
         raise HTTPException(status_code=409, detail="Document is not editable")
+    if doc.status == DocumentStatus.pending_approval and current_user.id != doc.approver_id and current_user.role != UserRole.admin:
+        raise HTTPException(status_code=409, detail="Document is pending approval; new versions cannot be uploaded")
         
     doc_id = doc.id
     next_version = max([v.version_number for v in doc.versions], default=0) + 1
@@ -390,7 +443,9 @@ async def list_documents(
     bucket_id: Optional[uuid.UUID] = None,
     status: Optional[DocumentStatus] = None,
     tag: Optional[str] = None,
-    doc_type_id: Optional[uuid.UUID] = None
+    doc_type_id: Optional[uuid.UUID] = None,
+    approver_id: Optional[uuid.UUID] = None,
+    pending_my_approval: Optional[bool] = None,
 ):
     query = select(Document).options(selectinload(Document.versions)).where(Document.company_id == current_user.company_id)
     accessible = await accessible_bucket_ids(db, current_user)
@@ -405,6 +460,10 @@ async def list_documents(
         query = query.where(Document.tags.any(tag))
     if doc_type_id:
         query = query.where(Document.doc_type_id == doc_type_id)
+    if approver_id:
+        query = query.where(Document.approver_id == approver_id)
+    if pending_my_approval:
+        query = query.where(and_(Document.status == DocumentStatus.pending_approval, Document.approver_id == current_user.id))
         
     query = query.order_by(desc(Document.created_at))
     result = await db.execute(query)
@@ -531,6 +590,21 @@ async def update_document(
     if not update_data:
         return (await _attach_uploader_names(db, [doc]))[0]
 
+    # Approval permission guardrails
+    is_approver_or_admin = (current_user.id == doc.approver_id or current_user.role == UserRole.admin)
+    if doc.status == DocumentStatus.pending_approval:
+        if "status" in update_data or "approval_notes" in update_data:
+            if not is_approver_or_admin:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only the assigned approver or an admin can review or change status on this document",
+                )
+        if not is_approver_or_admin and ({"title", "tags", "bucket_id"} & update_data.keys()):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Document is pending approval and cannot be modified",
+            )
+
     # A locked (non-editable) document freezes its content/metadata — title, tags
     # and bucket. Status changes (incl. archive) and toggling is_editable back on
     # are always allowed. A request that re-enables editing in the same call may
@@ -546,6 +620,45 @@ async def update_document(
             raise HTTPException(status_code=400, detail="Invalid bucket")
         if not await can_access_bucket(db, current_user, updates.bucket_id):
             raise HTTPException(status_code=403, detail="No access to this bucket")
+
+    if updates.approver_id:
+        approver = (await db.execute(
+            select(CompanyUser).where(
+                and_(
+                    CompanyUser.id == updates.approver_id,
+                    CompanyUser.company_id == current_user.company_id,
+                    CompanyUser.deleted_at.is_(None),
+                    CompanyUser.is_active == True,
+                )
+            )
+        )).scalar_one_or_none()
+        if not approver:
+            raise HTTPException(status_code=400, detail="Invalid approver selected")
+        if approver.role != UserRole.admin and "docvault" not in (approver.accessible_modules or []):
+            raise HTTPException(status_code=400, detail="Selected approver does not have DocVault access")
+        target_bucket = updates.bucket_id or doc.bucket_id
+        if target_bucket and not await can_access_bucket(db, approver, target_bucket):
+            raise HTTPException(status_code=400, detail="Selected approver does not have access to this bucket")
+
+    # If transitioning away from pending_approval, record resolution timestamp and notify creator
+    if doc.status == DocumentStatus.pending_approval and updates.status and updates.status != DocumentStatus.pending_approval:
+        doc.approved_at = datetime.now(timezone.utc)
+        if doc.created_by and doc.created_by != current_user.id:
+            db.add(
+                Notification(
+                    recipient_type=RecipientType.company_user,
+                    recipient_id=doc.created_by,
+                    type="docvault.approval_resolved",
+                    payload={
+                        "document_id": str(doc.id),
+                        "title": doc.title,
+                        "status": updates.status.value,
+                        "approver_name": current_user.full_name,
+                        "notes": updates.approval_notes,
+                        "message": f"{current_user.full_name} updated status of '{doc.title}' to {updates.status.value}",
+                    },
+                )
+            )
 
     for key, value in update_data.items():
         setattr(doc, key, value)
