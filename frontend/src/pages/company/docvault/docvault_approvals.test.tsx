@@ -8,7 +8,7 @@ import { UploadDocumentModal } from './UploadDocumentModal'
 import { DocumentDrawer } from './DocumentDrawer'
 import { DocVaultPage } from './DocVaultPage'
 import { Dashboard } from '@/pages/company/Dashboard'
-import type { DocumentResponse, UserResponse } from '@/api/types'
+import type { DocumentResponse } from '@/api/types'
 import { docvaultApi } from '@/api/endpoints/docvault'
 
 vi.mock('@/auth/company', () => ({
@@ -35,30 +35,22 @@ vi.mock('@/api/endpoints/docvault', () => ({
     downloadDocument: vi.fn().mockResolvedValue(new Blob()),
     listDocuments: vi.fn().mockResolvedValue([]),
     listBuckets: vi.fn().mockResolvedValue([]),
-  },
-}))
-
-vi.mock('@/api/endpoints/users', () => ({
-  usersApi: {
-    list: vi.fn().mockResolvedValue([
-      {
-        id: 'u-approver-1',
-        full_name: 'Approver Alice',
-        email: 'approver@acme.test',
-        role: 'employee',
-        accessible_modules: ['docvault'],
-        is_active: true,
-      },
+    listApprovers: vi.fn().mockResolvedValue([
       {
         id: 'u-approver-2',
         full_name: 'Bob Manager',
         email: 'bob@acme.test',
         role: 'admin',
-        accessible_modules: ['docvault'],
-        is_active: true,
+        department: 'Management',
       },
-    ] as UserResponse[]),
-    me: vi.fn().mockResolvedValue({}),
+      {
+        id: 'u-approver-3',
+        full_name: 'Dana Peer',
+        email: 'dana@acme.test',
+        role: 'employee',
+        department: 'Finance',
+      },
+    ]),
   },
 }))
 
