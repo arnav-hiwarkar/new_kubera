@@ -1,3 +1,4 @@
+import html as html_mod
 import os
 import re
 from typing import Any, Dict, Optional
@@ -28,4 +29,5 @@ def extract_plain_text(html_content: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
     # Collapse multiple blank lines
     text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
-    return text.strip()
+    # Decode HTML entities (Jinja2 autoescape produces &amp; &lt; etc.)
+    return html_mod.unescape(text).strip()

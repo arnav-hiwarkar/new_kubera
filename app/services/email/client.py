@@ -10,6 +10,8 @@ import ssl
 import time
 from typing import Any, Dict, List, Optional
 
+from jinja2 import TemplateNotFound
+
 from app.config import get_settings
 from app.services.email.schemas import (
     EmailAttachment,
@@ -52,16 +54,21 @@ class EmailService:
             server = smtplib.SMTP_SSL(self.config.host, self.config.port, timeout=timeout, context=context)
         else:
             server = smtplib.SMTP(self.config.host, self.config.port, timeout=timeout)
-            if self.config.use_tls:
+
+        try:
+            if not self.config.use_ssl and self.config.use_tls:
                 context = ssl.create_default_context()
                 server.starttls(context=context)
 
-        if self.config.user and self.config.password:
-            try:
+            if self.config.user and self.config.password:
                 server.login(self.config.user, self.config.password)
-            except smtplib.SMTPAuthenticationError as e:
-                err_msg = e.smtp_error.decode("utf-8", errors="ignore") if isinstance(e.smtp_error, bytes) else str(e)
-                raise EmailDeliveryError(f"SMTP authentication failed for user '{self.config.user}': {err_msg}")
+        except smtplib.SMTPAuthenticationError as e:
+            server.close()
+            err_msg = e.smtp_error.decode("utf-8", errors="ignore") if isinstance(e.smtp_error, bytes) else str(e)
+            raise EmailDeliveryError(f"SMTP authentication failed for user '{self.config.user}': {err_msg}")
+        except Exception:
+            server.close()
+            raise
 
         return server
 
@@ -79,7 +86,10 @@ class EmailService:
         # Render HTML from template if provided
         html_body = message.body_html
         if message.template_name:
-            html_body = render_email_template(message.template_name, message.template_context or {})
+            try:
+                html_body = render_email_template(message.template_name, message.template_context or {})
+            except TemplateNotFound:
+                raise EmailDeliveryError(f"Email template '{message.template_name}' not found.")
 
         text_body = message.body_text
         if not text_body and html_body:
@@ -103,8 +113,7 @@ class EmailService:
                 part_att.set_payload(att.content)
                 encoders.encode_base64(part_att)
                 part_att.add_header(
-                    "Content-Disposition",
-                    f'attachment; filename="{att.filename}"',
+                    "Content-Disposition", "attachment", filename=att.filename
                 )
                 root.attach(part_att)
 
@@ -173,6 +182,11 @@ class EmailService:
         try:
             with self._get_connection() as server:
                 code, resp = server.noop()
+                if code != 250:
+                    resp_str = resp.decode("utf-8", errors="ignore") if isinstance(resp, bytes) else str(resp)
+                    raise EmailDeliveryError(f"SMTP NOOP check returned status {code}: {resp_str}")
+        except EmailDeliveryError:
+            raise
         except Exception as e:
             raise EmailDeliveryError(f"SMTP connection test failed: {e}")
 

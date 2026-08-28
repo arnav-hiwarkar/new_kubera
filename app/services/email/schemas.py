@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+import base64
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
 class EmailAttachment(BaseModel):
@@ -8,9 +8,22 @@ class EmailAttachment(BaseModel):
     content: bytes
     content_type: str = "application/octet-stream"
 
+    @field_serializer("content")
+    def serialize_content(self, value: bytes, _info) -> str:
+        """Encode bytes as base64 string for JSON serialization (Celery tasks)."""
+        return base64.b64encode(value).decode("ascii")
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def deserialize_content(cls, v):
+        """Accept both raw bytes and base64-encoded strings (from Celery task payloads)."""
+        if isinstance(v, str):
+            return base64.b64decode(v)
+        return v
+
 
 class EmailMessage(BaseModel):
-    to: List[str]
+    to: List[str] = Field(min_length=1)
     subject: str
     body_text: Optional[str] = None
     body_html: Optional[str] = None

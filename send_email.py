@@ -115,8 +115,15 @@ def run_interactive(settings) -> int:
             content = fh.read()
         if body_input.endswith(".html") or "<html" in content or "<p>" in content:
             body_html = content
-        else:
+        elif is_plain:
             body_text = content
+        else:
+            # User selected branded HTML — wrap text file content in template
+            template_name = "branded_message.html"
+            template_context = {
+                "headline": subject,
+                "paragraphs": [p.strip() for p in content.split("\n\n") if p.strip()],
+            }
     else:
         if is_plain:
             body_text = body_input
@@ -244,8 +251,15 @@ def run_cli(argv: Optional[List[str]] = None) -> int:
             content = fh.read()
         if args.html or args.body_file.endswith(".html"):
             body_html = content
-        else:
+        elif args.plain:
             body_text = content
+        else:
+            # Apply branded template to text file content (same as --body)
+            template_name = "branded_message.html"
+            template_context = {
+                "headline": args.subject,
+                "paragraphs": [p.strip() for p in content.split("\n\n") if p.strip()],
+            }
     elif args.body:
         if args.html:
             body_html = args.body
