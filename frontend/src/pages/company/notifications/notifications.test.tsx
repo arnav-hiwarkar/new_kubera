@@ -14,11 +14,15 @@ vi.mock('@/api/endpoints/notifications', () => ({
   },
 }))
 
+import { MemoryRouter } from 'react-router-dom'
+
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <ToastProvider>{ui}</ToastProvider>
+      <ToastProvider>
+        <MemoryRouter>{ui}</MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
