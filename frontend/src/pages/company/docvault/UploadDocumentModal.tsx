@@ -3,6 +3,7 @@ import { Modal, Button, Field, Input, Select, FileUploadDropzone, useToast } fro
 import { useUploadDocument } from '@/api/hooks/docvault'
 import { ApiError } from '@/api/http'
 import type { BucketResponse } from '@/api/types'
+import { ApproverPicker } from './ApproverPicker'
 
 export interface UploadDocumentModalProps {
   open: boolean
@@ -31,6 +32,8 @@ export function UploadDocumentModal({
   const [bucketId, setBucketId] = useState(defaultBucketId ?? '')
   const [tags, setTags] = useState('')
   const [isEditable, setIsEditable] = useState(true)
+  const [needsApproval, setNeedsApproval] = useState(false)
+  const [approverId, setApproverId] = useState<string | null>(null)
   const [titleTouched, setTitleTouched] = useState(false)
 
   const reset = () => {
@@ -39,6 +42,8 @@ export function UploadDocumentModal({
     setBucketId(defaultBucketId ?? '')
     setTags('')
     setIsEditable(true)
+    setNeedsApproval(false)
+    setApproverId(null)
     setTitleTouched(false)
   }
 
@@ -54,19 +59,33 @@ export function UploadDocumentModal({
     if (!titleTouched && !title) setTitle(stripExtension(f.name))
   }
 
-  const canSubmit = !!file && title.trim().length > 0 && !upload.isPending
+  const canSubmit =
+    !!file &&
+    title.trim().length > 0 &&
+    (!needsApproval || !!approverId) &&
+    !upload.isPending
 
   const handleSubmit = async () => {
     if (!file || !title.trim()) return
+    if (needsApproval && !approverId) {
+      toast.error('Please select an approver')
+      return
+    }
+
     const fd = new FormData()
     fd.append('title', title.trim())
     fd.append('file', file)
     if (bucketId) fd.append('bucket_id', bucketId)
     if (tags.trim()) fd.append('tags', tags.trim())
     fd.append('is_editable', String(isEditable))
+    fd.append('needs_approval', String(needsApproval))
+    if (needsApproval && approverId) {
+      fd.append('approver_id', approverId)
+    }
+
     try {
       await upload.mutateAsync(fd)
-      toast.success('Document uploaded')
+      toast.success(needsApproval ? 'Document uploaded & sent for approval' : 'Document uploaded')
       handleClose()
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Upload failed')
@@ -84,7 +103,7 @@ export function UploadDocumentModal({
             Cancel
           </Button>
           <Button onClick={handleSubmit} loading={upload.isPending} disabled={!canSubmit}>
-            Upload
+            {needsApproval ? 'Upload & Request Approval' : 'Upload'}
           </Button>
         </>
       }
@@ -123,14 +142,51 @@ export function UploadDocumentModal({
             placeholder="board, 2026, finance"
           />
         </Field>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-text-secondary">
+
+        {/* Approval request section */}
+        <div className="rounded-lg border border-border bg-bg-surface/50 p-3 flex flex-col gap-3">
+          <label className="flex cursor-pointer items-center justify-between text-sm font-medium text-text-primary">
+            <span className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={needsApproval}
+                onChange={(e) => {
+                  setNeedsApproval(e.target.checked)
+                  if (!e.target.checked) setApproverId(null)
+                }}
+                className="h-4 w-4 accent-accent rounded"
+              />
+              <span>Request document approval</span>
+            </span>
+            <span className="text-xs text-text-muted">Sends notification to reviewer</span>
+          </label>
+
+          {needsApproval && (
+            <Field label="Designated Approver" required hint="Only users with DocVault access are eligible">
+              <ApproverPicker
+                value={approverId}
+                onChange={setApproverId}
+                bucketId={bucketId || null}
+                buckets={buckets}
+              />
+            </Field>
+          )}
+        </div>
+
+        {/* Editable / Final toggle */}
+        <label className="flex cursor-pointer items-start gap-2.5 text-sm text-text-secondary">
           <input
             type="checkbox"
-            checked={isEditable}
-            onChange={(e) => setIsEditable(e.target.checked)}
-            className="h-4 w-4 accent-accent"
+            checked={!isEditable}
+            onChange={(e) => setIsEditable(!e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-accent rounded"
           />
-          Allow new versions to be uploaded later
+          <div>
+            <span className="font-medium text-text-primary">Mark as Final (Lock document)</span>
+            <p className="text-xs text-text-muted">
+              When locked, further edits, renaming, and new version uploads will be disabled.
+            </p>
+          </div>
         </label>
       </div>
     </Modal>

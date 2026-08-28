@@ -34,3 +34,6 @@ export { TopBar } from './TopBar'
 export type { TopBarProps } from './TopBar'
 export { Switch } from './Switch'
 export type { SwitchProps } from './Switch'
+export { FinalBadge } from './FinalBadge'
+export type { FinalBadgeProps } from './FinalBadge'
+
