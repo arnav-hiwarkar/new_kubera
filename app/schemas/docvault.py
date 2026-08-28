@@ -61,6 +61,11 @@ class DocumentResponse(BaseModel):
     is_editable: bool
     created_by: Optional[uuid.UUID]
     created_by_name: Optional[str] = None
+    approver_id: Optional[uuid.UUID] = None
+    approver_name: Optional[str] = None
+    approval_requested_at: Optional[datetime] = None
+    approved_at: Optional[datetime] = None
+    approval_notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     versions: List[DocumentVersionResponse] = []
@@ -74,3 +79,5 @@ class DocumentUpdate(BaseModel):
     bucket_id: Optional[uuid.UUID] = None
     tags: Optional[List[str]] = None
     is_editable: Optional[bool] = None
+    approver_id: Optional[uuid.UUID] = None
+    approval_notes: Optional[str] = Field(None, max_length=1000)

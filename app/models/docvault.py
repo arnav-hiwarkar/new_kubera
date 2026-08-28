@@ -79,6 +79,10 @@ class Document(Base, TimestampMixin, TenantScopedMixin):
     is_editable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Nullable for auditor-uploaded audit attachments (no company_users row for an auditor).
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True)
+    approver_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("company_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    approval_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approval_notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     versions = relationship("DocumentVersion", back_populates="document", foreign_keys="[DocumentVersion.document_id]")
 
