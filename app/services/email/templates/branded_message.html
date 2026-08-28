@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+  {% if headline %}
+    <h2 style="margin-top: 0; color: #0f172a; font-size: 18px; font-weight: 600;">{{ headline }}</h2>
+  {% endif %}
+
+  {% for paragraph in paragraphs %}
+    <p style="margin-bottom: 16px; color: #334155;">{{ paragraph }}</p>
+  {% endfor %}
+
+  {% if action_button and action_button.url and action_button.label %}
+    <div class="button-container">
+      <a href="{{ action_button.url }}" class="button" target="_blank">{{ action_button.label }}</a>
+    </div>
+  {% endif %}
+{% endblock %}

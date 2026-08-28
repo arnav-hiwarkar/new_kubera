@@ -63,3 +63,7 @@ def nightly_backup():
         
     return {"status": "success", "timestamp": timestamp}
 
+
+# Import celery tasks so worker discovers them upon startup
+import app.services.email.tasks  # noqa: F401
+
