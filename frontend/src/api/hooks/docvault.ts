@@ -3,9 +3,18 @@ import { docvaultApi } from '@/api/endpoints/docvault'
 import type { BucketAccessUpdate, BucketUpdate, DocumentUpdate } from '@/api/types'
 import { saveBlob } from '@/lib/download'
 
+export interface DocumentFilters {
+  bucket_id?: string
+  status?: string
+  tag?: string
+  doc_type_id?: string
+  approver_id?: string
+  pending_my_approval?: boolean
+}
+
 export const docvaultKeys = {
   buckets: ['docvault', 'buckets'] as const,
-  documents: (filters?: { bucket_id?: string; status?: string }) =>
+  documents: (filters?: DocumentFilters) =>
     ['docvault', 'documents', filters ?? {}] as const,
 }
 
@@ -13,10 +22,17 @@ export function useBuckets() {
   return useQuery({ queryKey: docvaultKeys.buckets, queryFn: () => docvaultApi.listBuckets() })
 }
 
-export function useDocuments(filters?: { bucket_id?: string; status?: string }) {
+export function useDocuments(filters?: DocumentFilters) {
   return useQuery({
     queryKey: docvaultKeys.documents(filters),
     queryFn: () => docvaultApi.listDocuments(filters),
+  })
+}
+
+export function usePendingApprovals() {
+  return useQuery({
+    queryKey: docvaultKeys.documents({ pending_my_approval: true }),
+    queryFn: () => docvaultApi.listDocuments({ pending_my_approval: true }),
   })
 }
 

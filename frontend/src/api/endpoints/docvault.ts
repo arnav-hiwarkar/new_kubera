@@ -20,8 +20,14 @@ export const docvaultApi = {
   deleteBucket: (id: string) =>
     companyClient.delete<void>(`/api/v1/docvault/buckets/${id}`),
 
-  listDocuments: (filters?: { bucket_id?: string; status?: string }) =>
-    companyClient.get<DocumentResponse[]>('/api/v1/docvault/documents', { query: filters }),
+  listDocuments: (filters?: {
+    bucket_id?: string
+    status?: string
+    tag?: string
+    doc_type_id?: string
+    approver_id?: string
+    pending_my_approval?: boolean
+  }) => companyClient.get<DocumentResponse[]>('/api/v1/docvault/documents', { query: filters }),
   searchDocuments: (q: string) =>
     companyClient.get<DocumentResponse[]>('/api/v1/docvault/documents/search', { query: { q } }),
   getDocument: (id: string) =>

@@ -155,8 +155,17 @@ export type BucketCreate = S['BucketCreate']
 export type BucketUpdate = S['BucketUpdate']
 export type BucketAccessUpdate = S['BucketAccessUpdate']
 export type BucketVisibility = S['BucketVisibility']
-export type DocumentResponse = S['DocumentResponse']
-export type DocumentUpdate = S['DocumentUpdate']
+export type DocumentResponse = S['DocumentResponse'] & {
+  approver_id?: string | null
+  approver_name?: string | null
+  approval_requested_at?: string | null
+  approved_at?: string | null
+  approval_notes?: string | null
+}
+export type DocumentUpdate = S['DocumentUpdate'] & {
+  approver_id?: string | null
+  approval_notes?: string | null
+}
 export type DocumentVersionResponse = S['DocumentVersionResponse']
 
 // Compliance (ROC + Secretarial)
