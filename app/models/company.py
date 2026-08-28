@@ -56,6 +56,7 @@ class Company(Base, TimestampMixin):
 
     users = relationship("CompanyUser", back_populates="company", lazy="selectin")
     keys = relationship("CompanyKey", back_populates="company", lazy="selectin")
+    smtp_config = relationship("CompanySmtpConfig", back_populates="company", uselist=False, cascade="all, delete-orphan", lazy="selectin")
 
 
 class CompanyKey(Base, TimestampMixin):

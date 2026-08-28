@@ -21,6 +21,7 @@ from app.models.financial_year import FinancialYear  # noqa
 from app.models.depreciation import DepreciationRun, AssetDepreciationLine, ItBlockDepreciationLine  # noqa
 from app.models.assets import Asset  # noqa
 from app.models.auditease import AuditEngagement  # noqa
+from app.models.company_smtp import CompanySmtpConfig, EmailLog  # noqa
 
 settings = get_settings()
 
