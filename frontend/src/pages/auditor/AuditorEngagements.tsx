@@ -28,6 +28,12 @@ export function AuditorEngagements() {
       cell: (e) => <span className="font-medium text-text-primary">{e.period_label}</span>,
     },
     {
+      key: 'company_name',
+      header: 'Company',
+      sortValue: (e) => (e.company_name ?? '').toLowerCase(),
+      cell: (e) => <span className="text-text-secondary">{e.company_name ?? '—'}</span>,
+    },
+    {
       key: 'status',
       header: 'Status',
       sortValue: (e) => e.status,

@@ -340,6 +340,9 @@ class AuditEngagementResponse(AuditEngagementBase):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    # Auditor view only: the company this engagement belongs to. Populated by the
+    # router for the auditor-facing engagement list.
+    company_name: Optional[str] = None
     # Company view: everyone ever granted (including revoked). Populated by the
     # router via attribute injection before serialization.
     auditors: List[EngagementAuditorResponse] = []
