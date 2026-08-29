@@ -299,7 +299,7 @@ export function CompanySmtpCard({ canEdit }: { canEdit: boolean }) {
               >
                 {verifyMutation.isPending ? (
                   <>
-                    <Spinner size="sm" className="mr-2" /> Testing Connection...
+                    <Spinner className="h-4 w-4 mr-2" /> Testing Connection...
                   </>
                 ) : (
                   <>
@@ -336,9 +336,9 @@ export function CompanySmtpCard({ canEdit }: { canEdit: boolean }) {
       <ConfirmDialog
         open={showResetConfirm}
         title="Reset Outbound Email"
-        description="Are you sure you want to delete your custom SMTP configuration? All future emails will be sent through the platform's default email (kubera@ethdc.in)."
+        message="Are you sure you want to delete your custom SMTP configuration? All future emails will be sent through the platform's default email (kubera@ethdc.in)."
         confirmLabel="Reset to Default"
-        variant="destructive"
+        destructive={true}
         onConfirm={handleReset}
         onCancel={() => setShowResetConfirm(false)}
       />
