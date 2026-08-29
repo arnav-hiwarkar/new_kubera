@@ -294,6 +294,26 @@ async def test_engagement_lifecycle(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_auditor_engagement_list_includes_company_name(client: AsyncClient):
+    await create_test_company(client, name="Acme Audit Co", email="acme@a.com", password="pass1234")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='acme@a.com', password='pass1234')}"}
+
+    await client.post("/api/v1/auth/auditor/register", json={"email": "aud2@a.com", "password": "pass1234", "name": "Auditor"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud2@a.com", "password": "pass1234"})
+    aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    eng_id = await make_engagement(client, co_headers)
+    resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud2@a.com"}, headers=co_headers)
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get("/api/v1/auditor/engagements", headers=aud_headers)
+    assert resp.status_code == 200
+    engagements = resp.json()
+    assert len(engagements) == 1
+    assert engagements[0]["company_name"] == "Acme Audit Co"
+
+
+@pytest.mark.asyncio
 async def test_delete_engagement_guard(client: AsyncClient):
     await create_test_company(client, email="del@a.com", password="pass1234")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@a.com', password='pass1234')}"}

@@ -12,6 +12,7 @@ from app.database import get_db
 from app.auth import get_current_auditor
 from app.models.auditor import Auditor
 from app.models.docvault import Document, DocumentVersion
+from app.models.company import Company
 from app.models.auditease import (
     AuditEngagement, AuditorEngagementGrant, AuditEntry, AuditEntryLine,
     RequirementRequest, RequirementResponse, Query, QueryMessage, TrialBalanceAccount,
@@ -73,8 +74,9 @@ async def list_engagements(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     result = await db.execute(
-        select(AuditEngagement, AuditorEngagementGrant.status, AuditorEngagementGrant.area_permissions)
+        select(AuditEngagement, AuditorEngagementGrant.status, AuditorEngagementGrant.area_permissions, Company.name)
         .join(AuditorEngagementGrant, AuditEngagement.id == AuditorEngagementGrant.engagement_id)
+        .join(Company, Company.id == AuditEngagement.company_id)
         .where(
             and_(
                 AuditorEngagementGrant.auditor_id == current_auditor.id,
@@ -87,7 +89,7 @@ async def list_engagements(
 
     rows = result.all()
     out = []
-    for eng, grant_status, perms in rows:
+    for eng, grant_status, perms, company_name in rows:
         # If the grant is accepted, the engagement is active from the auditor's perspective.
         # This prevents Pydantic validation errors since 'accepted' is not a valid EngagementStatus.
         display_status = grant_status
@@ -103,6 +105,7 @@ async def list_engagements(
             "created_at": eng.created_at,
             "updated_at": eng.updated_at,
             "area_permissions": perms or {},
+            "company_name": company_name,
         })
     return out
 

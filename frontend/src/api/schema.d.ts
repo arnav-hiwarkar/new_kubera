@@ -4093,6 +4093,8 @@ export interface components {
             area_permissions?: {
                 [key: string]: boolean;
             } | null;
+            /** Company Name */
+            company_name?: string | null;
         };
         /** AuditEntryCreate */
         AuditEntryCreate: {
