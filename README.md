@@ -15,6 +15,7 @@ Kubera is a comprehensive **multi-tenant** platform featuring DocVault, AuditEas
 2. [Prerequisites](#prerequisites)
 3. [Configuration (`.env`)](#configuration-env)
 4. [Deploy (server / production)](#deploy-server--production)
+4.5. [Security & network exposure](#security--network-exposure)
 5. [Zero-downtime maintenance mode](#zero-downtime-maintenance-mode)
 6. [Everyday operations](#everyday-operations)
 6.5. [Server migration & disaster recovery](#server-migration--disaster-recovery)
@@ -32,16 +33,23 @@ Kubera is a comprehensive **multi-tenant** platform featuring DocVault, AuditEas
 
 `docker compose` runs these services:
 
-| Service    | What it is                                   | Port (host)      |
-|------------|----------------------------------------------|------------------|
-| `postgres` | PostgreSQL 16 database                       | `5433` → 5432    |
-| `redis`    | Redis (cache, rate limits, Celery broker)    | `6379`           |
-| `api`      | FastAPI app (runs migrations, then Uvicorn)  | `8000`           |
-| `worker`   | Celery worker (background jobs, backups)     | —                |
-| `beat`     | Celery beat (scheduled jobs, e.g. nightly backup) | —           |
-| `frontend` | Built React app served by Nginx              | — (behind Caddy) |
-| `gateway`  | Persistent app/maintenance traffic switch    | — (behind Caddy) |
-| `caddy`    | Reverse proxy + automatic HTTPS              | `80`, `443`      |
+| Service    | What it is                                   | Port (host, production) | Network |
+|------------|----------------------------------------------|-------------------------|---------|
+| `postgres` | PostgreSQL 16 database                       | none — internal only    | `data`  |
+| `redis`    | Redis (rate limits, Celery broker), password-protected | none — internal only | `data` |
+| `api`      | FastAPI app (runs migrations, then Uvicorn)  | `127.0.0.1:8000`        | `edge` + `data` |
+| `worker`   | Celery worker (background jobs, backups)     | —                       | `data`  |
+| `beat`     | Celery beat (scheduled jobs, e.g. nightly backup) | —                  | `data`  |
+| `frontend` | Built React app served by Nginx              | — (behind Caddy)        | `edge`  |
+| `gateway`  | Persistent app/maintenance traffic switch    | — (behind Caddy)        | `edge`  |
+| `caddy`    | Reverse proxy + automatic HTTPS              | `80`, `443`             | `edge`  |
+
+**`caddy` is the only service exposed to the internet.** Postgres and Redis publish
+no host port at all on a server, and only `api`, `worker` and `beat` sit on the
+`data` network that can reach them. Locally, `docker-compose.override.yml`
+publishes Postgres and Redis on `127.0.0.1` for host-side tooling — see
+[Local development](#local-development-uv) and
+[docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md).
 
 Public traffic follows this path:
 
@@ -105,20 +113,39 @@ Everything is configured through a single `.env` file at the repo root.
 cp .env.example .env
 ```
 
-Then set the secrets:
+Then set the secrets. **Every one of these is mandatory** — the API refuses to
+start if any is left as the `.env.example` placeholder, because those placeholders
+are public in this repository and are reachable through port 443, which is
+intentionally open. See [Security & network exposure](#security--network-exposure).
 
 | Variable            | How to set it |
 |---------------------|---------------|
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Your database credentials. |
-| `JWT_SECRET_KEY`    | `openssl rand -hex 32` |
-| `ROOT_MASTER_KEK`   | 32-byte hex (64 chars): `python3 -c "import secrets; print(secrets.token_hex(32))"` |
-| `INTERNAL_API_KEY`  | A long random secret. **This is the root key** used to create companies/admins — keep it safe. |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Your database credentials. Not `kubera_secret`. |
+| `REDIS_PASSWORD`    | `openssl rand -hex 32`. Redis requires authentication; it is the Celery broker **and** the login rate-limit store. |
+| `REDIS_URL` / `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | Must embed `REDIS_PASSWORD`: `redis://:<password>@localhost:6379/0`. There is no variable expansion inside `.env` — write the literal value in all three. |
+| `JWT_SECRET_KEY`    | `openssl rand -hex 32`. Anyone holding this can forge a token for any user. |
+| `ROOT_MASTER_KEK`   | 32-byte hex (64 chars): `python3 -c "import secrets; print(secrets.token_hex(32))"`. Protects every tenant's vault — **back it up separately from the database.** |
+| `INTERNAL_API_KEY`  | `openssl rand -hex 32`. **This is the root key** used to create companies/admins — keep it safe. |
 | `DOMAIN`            | Your domain for production (Caddy will auto-provision HTTPS), or `localhost` for local use. |
 
+Use hex values for passwords that appear inside a URL: a `@`, `:`, `/` or `%`
+needs URL-escaping in the connection string and fails in confusing ways otherwise.
+
+If something is missing or still a placeholder, `api` exits at startup and lists
+every problem at once:
+
+```bash
+docker compose logs api --tail=40
+```
+
 ### Host vs. container URLs (important)
-The `DATABASE_URL`, `REDIS_URL`, and `CELERY_*` values in `.env` use **`localhost`** (Postgres on `5433`, Redis on `6379`). These are for running commands **directly on your machine** (outside Docker).
+The `DATABASE_URL`, `REDIS_URL`, and `CELERY_*` values in `.env` use **`localhost`** (Postgres on `5433`, Redis on `6379`). These are for running commands **directly on your machine** (outside Docker), against the ports that `docker-compose.override.yml` publishes locally.
 
 When you run the stack with `docker compose`, these are **automatically overridden** with the in-network service names (`postgres:5432`, `redis:6379`). So **the same `.env` works for both** — you don't change anything for deployment.
+
+On a **server**, Postgres and Redis publish no host port at all, so the `localhost`
+values there are inert — nothing on a server uses them, because every ops script
+goes through `docker compose exec`.
 
 ---
 
@@ -130,23 +157,47 @@ git clone <your-repo-url> && cd new_kubera
 
 # 2. Configure
 cp .env.example .env
-#    …edit .env: set POSTGRES_* , JWT_SECRET_KEY, ROOT_MASTER_KEK,
-#    INTERNAL_API_KEY, and DOMAIN (your domain, or localhost)
+#    …edit .env: set POSTGRES_*, REDIS_PASSWORD (+ the three Redis URLs),
+#    JWT_SECRET_KEY, ROOT_MASTER_KEK, INTERNAL_API_KEY, and DOMAIN.
+#    The API refuses to start on any placeholder value — see Configuration above.
 
 # 3. Build and start everything
 docker compose up -d --build
+
+# 4. Lock the host down: allow SSH + 80 + 443, drop everything else.
+#    Dry run first, then apply. Run this inside tmux/screen.
+sudo ./ops/kubera-harden-firewall.sh --ssh-port 22
+sudo ./ops/kubera-harden-firewall.sh --ssh-port 22 --apply
+
+# 5. Confirm from OUTSIDE the box (run on your laptop, not the server).
+./ops/kubera-verify-exposure.sh --remote <server-ip>
 ```
+
+Steps 4 and 5 are not optional extras. A `ufw`/`firewalld` rule does **not** block
+a Docker-published port — Docker's DNAT runs before the `filter/INPUT` chain that
+those tools write to — so the `DOCKER-USER` rules in step 4 are the only host-level
+control that actually applies to containers.
+[docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md) explains this in detail.
+
+Do **not** create `docker-compose.override.yml` on a server. That file is for local
+development and republishes Postgres and Redis.
 
 What happens:
 - All images build (backend deps installed from `uv.lock`; frontend built with Vite).
 - The `api` container **runs `alembic upgrade head` automatically** before serving — there is no separate migration step.
-- Services come up in the background.
+- Services come up in the background, on two networks: `edge` (public path) and `data` (Postgres/Redis).
+- Redis starts with `--requirepass`, so a missing `REDIS_PASSWORD` fails the stack fast rather than running unauthenticated.
 
 Once up:
 - **App (via Caddy):** `http://<DOMAIN>` (or `https://<DOMAIN>` for a real domain — Caddy handles the certificate automatically).
-- **API directly:** `http://localhost:8000` · Swagger at `/docs`.
+- **API directly:** `http://localhost:8000` — from the server itself only; it is bound to loopback. Swagger at `/docs`.
 
 Next: [create your first company & admin](#creating-companies--users).
+
+> **Already running an older deployment?** Follow the migration runbook in
+> [docs/SECURITY_HARDENING.md §5](docs/SECURITY_HARDENING.md#5-runbook-upgrading-a-live-production-server).
+> Postgres and Redis were previously published to `0.0.0.0`, and Redis had no
+> password, so that upgrade includes credential rotation — not just a `git pull`.
 
 ### Upgrading an existing production installation to the maintenance gateway
 
@@ -172,6 +223,61 @@ it also cannot load a newly changed Caddyfile by itself. The maintenance `on`
 and `off` commands now detect this condition, validate the mounted Caddyfile,
 and safely reconcile live Caddy before continuing. `status` detects a mismatch
 but remains read-only.
+
+---
+
+## Security & network exposure
+
+Full detail, including the production migration runbook, lives in
+**[docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)**. The short version:
+
+**One public surface.** `caddy` on 80/443 is the only thing the internet can reach.
+`api` is bound to `127.0.0.1:8000`. Postgres and Redis publish **no host port** and
+sit on a separate `data` network that `caddy`, `gateway` and `frontend` cannot
+reach. Nothing on a server needs a database port — every ops script uses
+`docker compose exec`.
+
+**Dev and prod are different files.** `docker-compose.yml` is production-safe.
+Local conveniences — published Postgres/Redis ports, `uvicorn --reload`, a source
+bind-mount — live in `docker-compose.override.yml`, which is gitignored. Compose
+loads it automatically when present, so a server that does not have it runs the
+hardened configuration by default. **Never create that file on a server.**
+
+**Redis requires a password.** It is the Celery broker *and* the login rate-limit
+store, so unauthenticated access means task injection and an erasable brute-force
+throttle. Compose uses `${REDIS_PASSWORD:?}` and refuses to start without it.
+
+**Placeholder secrets are rejected at startup.** `app/config.py` fails fast if
+`JWT_SECRET_KEY`, `ROOT_MASTER_KEK`, `INTERNAL_API_KEY`, the database password or
+any Redis URL still holds a value from `.env.example`. Those values are public in
+this repository and reachable through port 443, so no firewall protects them.
+
+**`ufw` does not block Docker ports.** Docker's published-port DNAT lands in
+`nat/PREROUTING`, which is traversed *before* the `filter/INPUT` chain where `ufw`
+and `firewalld` write. `ufw deny 5433` reports success and the port stays open. The
+`DOCKER-USER` chain is the only filter hook in front of container ports.
+`ops/kubera-harden-firewall.sh` configures both it and `INPUT`.
+
+```bash
+# Lock the host down (dry run first; requires an explicit SSH port).
+sudo ./ops/kubera-harden-firewall.sh --ssh-port 22
+sudo ./ops/kubera-harden-firewall.sh --ssh-port 22 --apply
+
+# Verify. --local checks configuration; --remote is ground truth, run it off-box.
+./ops/kubera-verify-exposure.sh --local
+./ops/kubera-verify-exposure.sh --remote <server-ip>
+
+# Static checks (also run as part of the test suite).
+uv run pytest unit_tests/test_compose_exposure.py unit_tests/test_config_secrets.py -q
+```
+
+Also configure your **provider's** network firewall (AWS security group,
+DigitalOcean/Hetzner cloud firewall) to allow only 22/80/443. It filters before
+traffic reaches the host, so it is immune to the Docker/iptables ordering problem
+entirely — highest-value control available, and it costs one form.
+
+Known limitations are listed explicitly in
+[docs/SECURITY_HARDENING.md §10](docs/SECURITY_HARDENING.md#10-known-limitations).
 
 ---
 
@@ -355,13 +461,19 @@ Run the backend directly on your machine (fast iteration, debugging, tests), usi
 # 1. Install dependencies into .venv (exact locked versions, Python 3.12)
 uv sync
 
-# 2. Create .env (see Configuration). The default localhost URLs are correct for host dev.
-cp .env.example .env    # then fill in the keys
+# 2. Enable the dev compose overrides — this is what publishes Postgres on
+#    127.0.0.1:5433 and Redis on 127.0.0.1:6379, and turns on uvicorn --reload.
+#    The production docker-compose.yml deliberately publishes neither.
+cp docker-compose.override.yml.example docker-compose.override.yml
 
-# 3. Start just the infra you need
+# 3. Create .env (see Configuration). The localhost URLs are correct for host dev,
+#    but you must still generate real secrets — the API rejects the placeholders.
+cp .env.example .env    # then fill in the keys, including REDIS_PASSWORD
+
+# 4. Start just the infra you need
 docker compose up -d postgres redis
 
-# 4. Run things with `uv run` (no need to activate the venv)
+# 5. Run things with `uv run` (no need to activate the venv)
 uv run alembic upgrade head                                   # apply migrations
 uv run uvicorn app.main:app --reload                          # run the API on :8000
 uv run celery -A app.worker.celery_app worker --loglevel=info # background worker
@@ -376,6 +488,11 @@ uv lock --upgrade-package <package> # bump a single locked version
 uv sync                             # apply the lockfile to your .venv
 ```
 Commit the updated `pyproject.toml` **and** `uv.lock` together.
+
+> `docker-compose.override.yml` is gitignored on purpose — it must never reach a
+> server, where it would republish Postgres and Redis. Edit
+> `docker-compose.override.yml.example` if you want to change the dev defaults for
+> everyone.
 
 ---
 
@@ -470,6 +587,16 @@ uv run send_email.py
 | `list_users.py [filter]` | List users across companies (marks `DELETED` / `INACTIVE`). |
 | `maintenance.py on\|off\|status` | Safely control the persistent public maintenance gateway. |
 
+**Security and exposure scripts** (in `ops/`) — see
+[docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md):
+
+| Script | Purpose |
+|--------|---------|
+| `ops/kubera-harden-firewall.sh --ssh-port N [--apply]` | Lock the host to SSH + 80 + 443, at both the `DOCKER-USER` and `INPUT` layers. Dry-run by default; `--revert --apply` to undo; `--status` to inspect. |
+| `ops/kubera-verify-exposure.sh --local` | On the server: check Docker bindings, host listeners, the `DOCKER-USER` chain, and that no dev override file is present. |
+| `ops/kubera-verify-exposure.sh --remote <host>` | From another machine: actually connect to each port. Ground truth. Exits non-zero if anything private answers. |
+| `ops/kubera-rotate-root-kek.py --old-kek X --new-kek Y [--apply]` | Rotate `ROOT_MASTER_KEK` by re-wrapping one row per company. Documents are never re-encrypted. Dry-run by default. Required if a deployment ever ran with the all-zero placeholder key. |
+
 ```bash
 python3 create_company.py
 python3 delete_company.py
@@ -500,15 +627,25 @@ Kubera provides a unified email dispatch architecture supporting both platform-l
 
 ## Testing
 
-Tests use Postgres (a separate `kubera_test` database is created automatically) and Redis.
+Tests use Postgres (a separate `kubera_test` database is created automatically) and Redis, reached through the ports that `docker-compose.override.yml` publishes on `127.0.0.1`.
 
 ```bash
+cp docker-compose.override.yml.example docker-compose.override.yml  # once
 docker compose up -d postgres redis     # ensure infra is running
 uv run pytest                            # run the whole suite
 uv run pytest tests/test_auth.py -q      # a single file
 uv run pytest -k "archive" -q            # by keyword
+uv run pytest unit_tests -q              # unit tests only — no DB needed
 node --test maintenance/maintenance.test.js # maintenance countdown logic
 ```
+
+Two suites in `unit_tests/` guard the deployment posture and need no infrastructure:
+
+- `test_compose_exposure.py` parses `docker-compose.yml` and fails if any service other than `caddy` publishes to `0.0.0.0`, if Postgres or Redis publish anything, if the edge tier can reach the `data` network, or if `api` runs `--reload` in production.
+- `test_config_secrets.py` covers the startup rejection of placeholder secrets, including a check that `.env.example` never gains a placeholder the validator does not know about.
+
+The root `conftest.py` sets `KUBERA_ALLOW_INSECURE_DEFAULTS=1` so the suite runs
+against a throwaway `.env`. **That variable must never be set on a server.**
 
 ---
 
@@ -523,9 +660,15 @@ With the backend running:
 ## Troubleshooting
 
 - **`docker: permission denied`** — you're not in the `docker` group yet; log out and back in (see [Prerequisites](#prerequisites)).
+- **`REDIS_PASSWORD` … `not set`, and the stack won't start** — working as intended. `docker-compose.yml` uses `${REDIS_PASSWORD:?}` so a missing password fails loudly instead of starting an unauthenticated Redis. Add `REDIS_PASSWORD` to `.env` (`openssl rand -hex 32`) and put the same value in `REDIS_URL`, `CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND`.
+- **`Refusing to start with an insecure configuration`** — also intended. `.env` still holds a placeholder from `.env.example`. The message lists every offending variable and the command to generate a replacement; fix them all in one pass. See [Security & network exposure](#security--network-exposure).
+- **`NOAUTH Authentication required` from Redis** — a URL is missing the password. All three of `REDIS_URL`, `CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND` need `redis://:<password>@host:6379/0`. There is no variable expansion inside `.env`, so the literal password must appear in each.
+- **Host commands can't reach Postgres/Redis on `localhost:5433` / `localhost:6379`** — you haven't created the dev override. Run `cp docker-compose.override.yml.example docker-compose.override.yml` and `docker compose up -d postgres redis`. The production compose file publishes neither port. On a **server** this is expected and correct: use `docker compose exec` instead.
 - **Scripts/host commands can't reach the DB (`could not translate host name "postgres"`)** — your `.env` still has container hostnames. For host commands use the `localhost` values from `.env.example` (`localhost:5433` for Postgres, `localhost:6379` for Redis). Compose overrides these for the containers, so this doesn't affect deployment.
 - **Config validation error about missing `DATABASE_URL` / `JWT_SECRET_KEY` / …** — those required keys aren't set in `.env` (or you're running outside the repo dir, so `.env` isn't found).
-- **Port already in use (`5433`, `6379`, `8000`, `80`)** — another process/stack is using it; stop it or change the mapping in `docker-compose.yml`.
+- **Port already in use (`5433`, `6379`, `8000`, `80`)** — another process/stack is using it; stop it or change the mapping in `docker-compose.override.yml` (dev ports) or `docker-compose.yml` (80/443/8000).
+- **A `ufw` rule doesn't block a container port** — it can't. Docker's DNAT runs before the `filter/INPUT` chain `ufw` writes to. Use `ops/kubera-harden-firewall.sh`, which also configures `DOCKER-USER`. See [docs/SECURITY_HARDENING.md §3](docs/SECURITY_HARDENING.md#3-why-a-firewall-alone-does-not-fix-it).
+- **Code changes on a server aren't picked up** — production no longer bind-mounts the source tree, by design; the image contains the code. Rebuild: `docker compose up -d --build api worker beat`.
 - **Changed dependencies but they're not picked up** — rebuild: `docker compose up -d --build` (containers) or `uv sync` (local).
 - **Migrations didn't run** — check `docker compose logs api` for the `alembic upgrade head` output; run it manually with `docker compose exec api alembic upgrade head`.
 - On localhost: keep API_BASE_URL= to http://localhost:8000 and on deployed servers keep it unset

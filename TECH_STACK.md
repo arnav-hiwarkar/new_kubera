@@ -203,8 +203,20 @@ The entire platform deploys reproducibly onto any Linux/macOS host with Docker a
 | **`api`** | `python:3.12-slim` | `127.0.0.1:8000:8000` | FastAPI ASGI server; runs Alembic migrations on boot. |
 | **`worker`** | `python:3.12-slim` | Internal | Celery asynchronous worker process. |
 | **`beat`** | `python:3.12-slim` | Internal | Celery Beat periodic task scheduler. |
-| **`postgres`** | `postgres:16-alpine` | `5433:5432` | Relational database. |
-| **`redis`** | `redis:7-alpine` | `6379:6379` | In-memory broker, cache, and rate-limiting store. |
+| **`postgres`** | `postgres:16-alpine` | Internal (`postgres:5432`, `data` network) | Relational database. Publishes no host port in production. |
+| **`redis`** | `redis:7-alpine` | Internal (`redis:6379`, `data` network) | In-memory broker, cache, and rate-limiting store. Requires `--requirepass`; publishes no host port in production. |
+
+
+### Network exposure
+
+`caddy` is the only service published to a wildcard address. Two Docker networks
+separate the tiers: `edge` (`caddy`, `gateway`, `frontend`, `api`) and `data`
+(`api`, `worker`, `beat`, `postgres`, `redis`). `api` is the only member of both,
+so the edge containers have no route to the database or broker.
+
+Local development ports (Postgres on `127.0.0.1:5433`, Redis on `127.0.0.1:6379`,
+`uvicorn --reload`) come from `docker-compose.override.yml`, which is gitignored
+and must never exist on a server. See `docs/SECURITY_HARDENING.md`.
 
 ### Docker Named Volumes
 * `pgdata`: Persistent PostgreSQL database data directory.
@@ -212,6 +224,7 @@ The entire platform deploys reproducibly onto any Linux/macOS host with Docker a
 * `backup_data`: Automated database SQL dumps and vault archives (`/data/backups`).
 * `caddy_data` & `caddy_config`: Persistent TLS certificates and edge configurations.
 * `maintenance_runtime`: Shared runtime volume storing active gateway routing configs and maintenance timestamps.
+* `beat_data`: Celery Beat schedule database (`/var/lib/kubera-beat`), so a redeploy does not re-fire missed schedules.
 
 ---
 

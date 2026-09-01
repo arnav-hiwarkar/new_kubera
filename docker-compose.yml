@@ -1,12 +1,27 @@
+# Kubera — PRODUCTION compose file.
+#
+# SECURITY INVARIANT: `caddy` is the ONLY service that may publish a port to a
+# wildcard address (0.0.0.0). Everything else publishes nothing, or publishes to
+# 127.0.0.1 only. `unit_tests/test_compose_exposure.py` enforces this — if you add
+# a `ports:` entry here, that test will fail. That is deliberate.
+#
+# Local development conveniences (published Postgres/Redis ports, --reload, source
+# bind-mounts) live in docker-compose.override.yml, which is gitignored and never
+# exists on a server. Copy docker-compose.override.yml.example to create it.
+# See docs/SECURITY_HARDENING.md.
+
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5433:5432"
+    # No `ports:` — reachable only from the `data` network (api, worker, beat).
+    # Operators reach it with `docker compose exec postgres psql ...`.
+    networks:
+      - data
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -17,10 +32,22 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    # Password auth is mandatory, not defence-in-depth theatre: Redis is both the
+    # Celery broker and the login/activation rate-limit store, so unauthenticated
+    # access means task injection and unthrottled credential brute-force.
+    environment:
+      # `:?` makes compose refuse to start the stack if the password is missing,
+      # rather than silently falling back to an unauthenticated Redis.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?not set — add REDIS_PASSWORD to .env, generated with `openssl rand -hex 32`}
+    command: ["sh", "-c", 'exec redis-server --requirepass "$$REDIS_PASSWORD"']
+    # No `ports:` — reachable only from the `data` network.
+    networks:
+      - data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # A bare `redis-cli ping` returns NOAUTH once requirepass is on, so the
+      # healthcheck has to authenticate.
+      test: ["CMD-SHELL", 'redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping | grep -q PONG']
       interval: 5s
       timeout: 3s
       retries: 5
@@ -29,8 +56,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # Loopback only. Maintenance mode depends on this (public traffic cannot bypass
+    # the gateway via the server's public IP), and ops/kubera-import.sh probes
+    # http://127.0.0.1:8000/readyz as a fallback readiness check.
     ports:
       - "127.0.0.1:8000:8000"
     env_file:
@@ -40,11 +71,15 @@ services:
       # the host-oriented localhost values in .env (which are for running outside
       # Docker). This keeps container networking correct regardless of .env.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    # `api` bridges both networks: it serves the gateway on `edge` and reaches
+    # Postgres/Redis on `data`. caddy/gateway/frontend have no route to `data`.
+    networks:
+      - edge
+      - data
     volumes:
-      - .:/code
       - vault_data:/data/vault
       - backup_data:/data/backups
     depends_on:
@@ -63,17 +98,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     command: >
       celery -A app.worker.celery_app worker --loglevel=info
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    networks:
+      - data
     volumes:
-      - .:/code
       - vault_data:/data/vault
       - backup_data:/data/backups
     depends_on:
@@ -86,18 +123,25 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
+    # The schedule database lives on a named volume. Without the dev bind-mount of
+    # `.:/code` it would otherwise be written to the container filesystem and lost
+    # on every recreate, causing beat to re-fire missed schedules after a deploy.
     command: >
       celery -A app.worker.celery_app beat --loglevel=info
+      --schedule=/var/lib/kubera-beat/celerybeat-schedule
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    networks:
+      - data
     volumes:
-      - .:/code
       - backup_data:/data/backups
+      - beat_data:/var/lib/kubera-beat
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,6 +152,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - edge
     depends_on:
       - api
     healthcheck:
@@ -122,6 +169,8 @@ services:
       context: .
       dockerfile: gateway/Dockerfile
     restart: unless-stopped
+    networks:
+      - edge
     volumes:
       - maintenance_runtime:/var/lib/kubera-maintenance
     healthcheck:
@@ -133,12 +182,15 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    # The only intentionally internet-facing service.
     ports:
       - "80:80"
       - "443:443"
     environment:
       - DOMAIN=${DOMAIN}
       - LANDING_DOMAIN=${LANDING_DOMAIN:-kuberacompliance.com}
+    networks:
+      - edge
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
@@ -147,10 +199,18 @@ services:
       gateway:
         condition: service_healthy
 
+networks:
+  # Public-facing tier: caddy -> gateway -> {api, frontend}.
+  edge:
+  # Data tier: only api, worker and beat can reach Postgres and Redis. Not marked
+  # `internal: true` because worker/beat need outbound egress for SMTP delivery.
+  data:
+
 volumes:
   pgdata:
   vault_data:
   backup_data:
+  beat_data:
   caddy_data:
   caddy_config:
   maintenance_runtime:
