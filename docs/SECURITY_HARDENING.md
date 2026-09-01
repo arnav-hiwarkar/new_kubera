@@ -401,6 +401,25 @@ The values `docker-compose.yml` passes to the containers are overridden to the
 in-network hostnames anyway, so the exact host in these URLs does not matter for
 the containers — but keep them consistent so host-side tooling works.
 
+> **What rotating `JWT_SECRET_KEY` / `INTERNAL_API_KEY` actually costs.** Neither
+> value is persisted anywhere — no migration, no re-encryption, nothing in the
+> database is keyed to them.
+>
+> - `JWT_SECRET_KEY` signs both access and refresh tokens (`app/auth.py`).
+>   Rotating it makes every existing token fail signature verification: every
+>   logged-in user (and auditor) gets a 401 and has to log in again. That is the
+>   entire effect — no data loss.
+> - `INTERNAL_API_KEY` gates company-creation/leads endpoints
+>   (`app/routers/auth.py`, `app/routers/leads.py`). The operator CLI scripts
+>   (`create_company.py`, `delete_company.py`, `list_companies.py`,
+>   `list_leads.py`) read it fresh from `.env` on every run, so they need no
+>   changes. The owner portal's Leads page takes it via a manual paste-in field
+>   in the browser (it is not baked into the frontend build) — whoever uses that
+>   page needs the new value out of band.
+>
+> Only `api` actually checks either value; recreating `worker`/`beat` too is
+> harmless (they share `env_file: .env`) but not required for this rotation.
+
 > **Changing `POSTGRES_PASSWORD` on an existing volume.** The
 > `POSTGRES_PASSWORD` environment variable only initialises a *new* data
 > directory; it does not change the password of an existing database. To actually
@@ -451,17 +470,43 @@ Then hand the data directories to the non-root user the containers now run as.
 still root-owned from the previous deployment:
 
 ```bash
-docker compose run --rm --no-deps --user root api \
+docker compose run --rm --no-deps --user root --cap-add CHOWN --cap-add DAC_OVERRIDE api \
   chown -R 10001:10001 /data/vault /data/backups
-docker compose run --rm --no-deps --user root beat \
+docker compose run --rm --no-deps --user root --cap-add CHOWN --cap-add DAC_OVERRIDE beat \
   chown -R 10001:10001 /var/lib/kubera-beat
 ```
+
+> **`--cap-add` is not optional here.** `api`/`beat` run with `cap_drop: [ALL]`,
+> and `docker compose run --user root` does not undo that — root with every
+> capability dropped cannot `chown` (needs `CAP_CHOWN`) and cannot write into a
+> directory owned by another uid (needs `CAP_DAC_OVERRIDE`), regardless of being
+> uid 0. Confirmed empirically: omitting these flags fails on every file with
+> `chown: changing ownership of '...': Operation not permitted`. If you hit that
+> error, this is why — add the two flags and re-run.
 
 This is one-time. Newly created volumes inherit the right ownership from the
 image, because the Dockerfile creates and chowns those paths before any volume is
 attached.
 
 ### 5.5 Rebuild and restart
+
+Build first, then validate `.env` in a single throwaway container **before**
+starting `api`/`worker`/`beat` for real:
+
+```bash
+docker compose build
+
+docker compose run --rm --no-deps api \
+  python -c "from app.config import get_settings; get_settings(); print('config OK')"
+```
+
+This runs the exact same startup validation the app runs (`app/config.py`'s
+`_reject_insecure_secrets`), and reports **every** placeholder/too-short secret
+at once, not just the first one it happens to hit. Doing this first matters on a
+memory-constrained host: `api`, `worker` and `beat` all read the same `.env`, so
+a single leftover placeholder crash-loops all three simultaneously under
+`restart: unless-stopped`, and repeated restarts of three Python/Celery
+processes is real, avoidable load. Fix everything it reports, then:
 
 ```bash
 docker compose up -d --build
@@ -472,8 +517,9 @@ This recreates everything: the two new networks, the authenticated Redis, and
 rebuild is required — without it the containers would still be running the old
 configuration.
 
-If `.env` still has a placeholder secret, `api` will exit and its logs will list
-exactly what to fix:
+If `.env` still has a placeholder secret despite the check above (e.g. it was
+edited again in between), `api` will exit and its logs will list exactly what to
+fix:
 
 ```bash
 docker compose logs api --tail=40
@@ -843,9 +889,31 @@ Unlike the first pass, this one was exercised against a live Docker daemon
   database backup this system has made.
 - 351 unit tests and 474 integration tests pass.
 
-Still not verified: behaviour on the production host itself, the firewall
-scripts (no root Linux host available here), and the KEK rotation script against
-a real multi-company database.
+Still not verified: the firewall scripts (no root Linux host available here),
+and the KEK rotation script against a real multi-company database.
+
+**2026-09-01: run against the actual production host** (the upgrade in §5, for
+real, on a 4 GB Ubuntu server, migrating from the pre-hardening configuration).
+Two real, previously-unknown bugs surfaced and are now fixed:
+
+- The `docker compose run --user root ... chown` commands in §5.4 fail with
+  `Operation not permitted` against `api`/`beat`, because `cap_drop: [ALL]`
+  is not bypassed by `--user root` — `CAP_CHOWN`/`CAP_DAC_OVERRIDE` are also
+  required. Fixed in §5.4 and in `ops/kubera-migrate-vault-to-volume.sh`.
+- This server's `.env` still had the literal `.env.example` placeholder
+  `POSTGRES_PASSWORD` (i.e. the exposed, internet-reachable Postgres from before
+  this hardening was using a publicly-known password). `api`/`worker`/`beat`
+  crash-looped simultaneously on the new secret-validation check until it was
+  rotated with `ALTER USER` per §5.3. Added the §5.5 preflight config check
+  specifically so this surfaces as one clear error before recreating containers,
+  instead of a live three-service crash loop on a memory-constrained host.
+
+Everything else in this section was re-confirmed on that host: vault data
+survived (it was already on the `vault_data` named volume, not the bind-mount
+path — the §5.4 migration script correctly no-opped), the KEK chain decrypted an
+existing tenant document after the rebuild, and
+`./ops/kubera-verify-exposure.sh --remote <ip>` reported 5433/6379/8000/2019
+closed from off-box.
 
 ---
 
@@ -857,6 +925,8 @@ Before every deployment:
       secret checks.
 - [ ] `docker-compose.override.yml` does not exist on the server.
 - [ ] `KUBERA_ALLOW_INSECURE_DEFAULTS` is not set on the server.
+- [ ] Preflight the secrets in `.env` before recreating containers (§5.5):
+      `docker compose run --rm --no-deps api python -c "from app.config import get_settings; get_settings(); print('config OK')"`
 - [ ] The image carries no secrets:
       `docker compose exec api sh -c 'ls /code/.env* 2>/dev/null; find /code/data -type f | wc -l'`
 - [ ] Containers are not root: `docker compose exec api id` shows uid 10001.
