@@ -16,13 +16,43 @@ require_repo() {
   [ -f docker-compose.yml ] || die "docker-compose.yml not found in $PWD (run from the repo root)"
 }
 
+# Parse a .env file WITHOUT sourcing it.
+#
+# `. .env` under `set -e` aborted every ops script the moment a value contained a
+# space (SMTP_FROM_NAME=Kubera Compliance -> "Compliance: command not found",
+# exit 127), which silently disabled backup, restore and migration. Sourcing is
+# also a code-execution path: a password containing $(...) or backticks would run
+# as a command.
+#
+# Semantics deliberately match Docker Compose's env_file parser, so the shell and
+# the containers always agree on a value:
+#   * blank lines and #-comments are skipped
+#   * a leading `export ` is tolerated
+#   * quoted values are taken literally
+#   * unquoted values drop a trailing whitespace-preceded #comment
 load_env() {
   local f="$1"
   [ -f "$f" ] || die ".env not found at $f"
-  set -a
-  # shellcheck disable=SC1090
-  . "$f"
-  set +a
+  local line key value
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"          # strip leading whitespace
+    case "$line" in ''|'#'*) continue ;; esac
+    line="${line#export }"
+    case "$line" in *=*) ;; *) continue ;; esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"             # strip trailing whitespace
+    case "$key" in ''|*[!A-Za-z0-9_]*) continue ;; esac
+    case "$value" in
+      \"*\") value="${value#\"}"; value="${value%\"}" ;;
+      \'*\') value="${value#\'}"; value="${value%\'}" ;;
+      *)
+        value="${value%%[[:space:]]#*}"
+        value="${value%"${value##*[![:space:]]}"}"
+        ;;
+    esac
+    export "$key=$value"
+  done < "$f"
 }
 
 hash_cmd() {

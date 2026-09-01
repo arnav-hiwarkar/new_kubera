@@ -1,7 +1,51 @@
+# Kubera edge. Caddy terminates TLS and is the only internet-facing service;
+# everything behind it lives on the internal `edge` Docker network.
+
+(kubera_site) {
+	header {
+		# Framing protection. Deliberately X-Frame-Options and NOT a CSP
+		# `frame-ancestors` directive: a srcdoc iframe inherits its parent's CSP,
+		# and AssetReportsPage.tsx renders report previews in exactly such an
+		# iframe, so `frame-ancestors 'none'` would blank the preview. XFO is an
+		# HTTP response header, so it never applies to srcdoc content.
+		X-Frame-Options "DENY"
+
+		# Stop content-type sniffing. Document downloads echo a client-supplied
+		# MIME type, so a file claiming to be text/html must not be treated as
+		# such on the strength of its bytes.
+		X-Content-Type-Options "nosniff"
+
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Cross-Origin-Opener-Policy "same-origin"
+
+		# Do not advertise the upstream server and version.
+		-Server
+	}
+
+	# HSTS, but never for localhost: pinning HTTPS for `localhost` in a developer's
+	# browser affects every other project on that machine, and cannot be undone
+	# without clearing browser state.
+	@public_host not host localhost 127.0.0.1 ::1
+	header @public_host Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	reverse_proxy gateway:80 {
+		# Set, not append. Caddy 2.11 already replaces X-Forwarded-For for
+		# untrusted peers, which is why app/rate_limit.py taking the first entry
+		# is currently safe — but that is a framework default, not a guarantee.
+		# Pinning it here means the rate limiter keeps seeing the real client IP
+		# even if that default changes or `trusted_proxies` is ever configured.
+		#
+		# NOTE: if a CDN (Cloudflare et al.) is ever put in front of this,
+		# {remote_host} becomes the CDN's IP and this must be revisited, or every
+		# visitor will share one rate-limit bucket.
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
 {$DOMAIN} {
-    reverse_proxy gateway:80
+	import kubera_site
 }
 
 {$LANDING_DOMAIN} {
-    reverse_proxy gateway:80
+	import kubera_site
 }

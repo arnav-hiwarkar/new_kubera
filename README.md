@@ -123,6 +123,9 @@ intentionally open. See [Security & network exposure](#security--network-exposur
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Your database credentials. Not `kubera_secret`. |
 | `REDIS_PASSWORD`    | `openssl rand -hex 32`. Redis requires authentication; it is the Celery broker **and** the login rate-limit store. |
 | `REDIS_URL` / `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | Must embed `REDIS_PASSWORD`: `redis://:<password>@localhost:6379/0`. There is no variable expansion inside `.env` — write the literal value in all three. |
+| `CORS_ALLOWED_ORIGINS` | Leave **empty** on a server — the allow-list is derived from `DOMAIN` and `LANDING_DOMAIN`, and the SPA is same-origin so CORS is not needed. Set it only for the Vite dev server (`http://localhost:5173`). Never `*`. |
+| `BACKUP_RETENTION_DAYS` | Nightly backups older than this are pruned (default 14). The vault tarball is a full copy each night, so `0` eventually fills the disk. |
+| `VAULT_STORAGE_PATH` / `BACKUP_PATH` | Host-oriented, like the URLs above. `docker-compose.yml` pins the absolute container paths, so a relative value here cannot send documents into a container's ephemeral filesystem. |
 | `JWT_SECRET_KEY`    | `openssl rand -hex 32`. Anyone holding this can forge a token for any user. |
 | `ROOT_MASTER_KEK`   | 32-byte hex (64 chars): `python3 -c "import secrets; print(secrets.token_hex(32))"`. Protects every tenant's vault — **back it up separately from the database.** |
 | `INTERNAL_API_KEY`  | `openssl rand -hex 32`. **This is the root key** used to create companies/admins — keep it safe. |
@@ -596,6 +599,7 @@ uv run send_email.py
 | `ops/kubera-verify-exposure.sh --local` | On the server: check Docker bindings, host listeners, the `DOCKER-USER` chain, and that no dev override file is present. |
 | `ops/kubera-verify-exposure.sh --remote <host>` | From another machine: actually connect to each port. Ground truth. Exits non-zero if anything private answers. |
 | `ops/kubera-rotate-root-kek.py --old-kek X --new-kek Y [--apply]` | Rotate `ROOT_MASTER_KEK` by re-wrapping one row per company. Documents are never re-encrypted. Dry-run by default. Required if a deployment ever ran with the all-zero placeholder key. |
+| `ops/kubera-migrate-vault-to-volume.sh [--apply]` | One-time: copy an existing host-side `data/vault` into the `vault_data` volume. **Required when upgrading a server that ran the old bind-mounted compose file** — without it every document 404s. Dry-run by default; never overwrites; leaves the host copy in place. |
 
 ```bash
 python3 create_company.py
@@ -669,6 +673,13 @@ With the backend running:
 - **Port already in use (`5433`, `6379`, `8000`, `80`)** — another process/stack is using it; stop it or change the mapping in `docker-compose.override.yml` (dev ports) or `docker-compose.yml` (80/443/8000).
 - **A `ufw` rule doesn't block a container port** — it can't. Docker's DNAT runs before the `filter/INPUT` chain `ufw` writes to. Use `ops/kubera-harden-firewall.sh`, which also configures `DOCKER-USER`. See [docs/SECURITY_HARDENING.md §3](docs/SECURITY_HARDENING.md#3-why-a-firewall-alone-does-not-fix-it).
 - **Code changes on a server aren't picked up** — production no longer bind-mounts the source tree, by design; the image contains the code. Rebuild: `docker compose up -d --build api worker beat`.
+- **Every document 404s after upgrading a server** — the vault was not migrated into its volume. `.env` uses a relative `VAULT_STORAGE_PATH`, which used to resolve to the host directory through the old `.:/code` bind-mount; production no longer has that mount. Nothing is deleted — run `ops/kubera-migrate-vault-to-volume.sh` to see the counts, then `--apply`. See [docs/SECURITY_HARDENING.md §5.4](docs/SECURITY_HARDENING.md).
+- **`Permission denied` writing to `/data/vault` or `/data/backups`** — the containers now run as uid 10001, and volumes created by an older root-running deployment are still root-owned. One-time fix: `docker compose run --rm --no-deps --user root api chown -R 10001:10001 /data/vault /data/backups`.
+- **`password authentication failed for user "kubera"` and `api` restart-loops** — `POSTGRES_PASSWORD` only applies when the `pgdata` volume is first created; changing it in `.env` does not change an existing database. The logs now print the exact `ALTER USER` command to run.
+- **An ops script exits immediately with no output** — this was `ops/lib.sh` sourcing `.env`, which aborted on any value containing a space (exit 127). Fixed; if you see it again, check you're on the current `ops/lib.sh`.
+- **Uploads fail with `413 Request Entity Too Large`** — the gateway is on an old config. `client_max_body_size 0` is now set in `gateway/nginx.conf`; rebuild with `docker compose up -d --build gateway`.
+- **A CORS error in the browser console** — the origin isn't in the allow-list. In production the SPA is same-origin so this shouldn't happen; check `DOMAIN`/`LANDING_DOMAIN`. In dev against the Vite server, set `CORS_ALLOWED_ORIGINS=http://localhost:5173`.
+- **Caddy logs `Unnecessary header_up X-Forwarded-For`** — benign, twice at startup. The directive is deliberate: it pins the client IP the rate limiter sees rather than relying on a Caddy default. See the comment in `Caddyfile`.
 - **Changed dependencies but they're not picked up** — rebuild: `docker compose up -d --build` (containers) or `uv sync` (local).
 - **Migrations didn't run** — check `docker compose logs api` for the `alembic upgrade head` output; run it manually with `docker compose exec api alembic upgrade head`.
 - On localhost: keep API_BASE_URL= to http://localhost:8000 and on deployed servers keep it unset

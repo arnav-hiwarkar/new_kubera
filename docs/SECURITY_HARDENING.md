@@ -234,6 +234,96 @@ It is dry-run by default and requires an explicit `--ssh-port`.
 
 ---
 
+### 4.7 Nothing secret in the image
+
+`Dockerfile` ends with `COPY . .`, so the build context *is* the image.
+`.gitignore` and `.dockerignore` had drifted, and the published image contained
+`.env.bak.20260831-175813` (a live SMTP password) plus 3013 encrypted tenant
+documents copied out of `data/vault/`. Anyone who could `docker exec` into any of
+the three Python containers, or pull the image, had both.
+
+`.dockerignore` is now a superset of `.gitignore`'s sensitive entries and
+`unit_tests/test_dockerignore_covers_secrets.py` fails if they diverge again. The
+api image's `/code` went from 48 MB to 6 MB as a side effect.
+
+A leaked layer is permanent. On the server, rebuild and then prune:
+
+```bash
+docker compose up -d --build
+docker image prune -af
+```
+
+and treat the exposed `SMTP_PASSWORD` as compromised — rotate it at the provider.
+
+### 4.8 Non-root containers
+
+`api`, `worker` and `beat` ran as uid 0 while holding the root KEK and the
+decrypted vault. They now run as `kubera` (uid 10001), with `cap_drop: ALL` and
+`no-new-privileges`. The Dockerfile creates and chowns `/data/vault`,
+`/data/backups` and `/var/lib/kubera-beat` *before* any volume is attached, so a
+newly created named volume inherits the right ownership automatically; only
+pre-existing volumes need the one-time chown in §5.4.
+
+`gateway` and `frontend` keep exactly four capabilities
+(`NET_BIND_SERVICE`, `SETUID`, `SETGID`, `CHOWN`) — determined by removing them
+and watching nginx fail on `chown("/var/cache/nginx/client_temp")`. nginx already
+drops its worker processes to an unprivileged user; only the master is root.
+
+### 4.9 Working backups
+
+Two independent faults meant there was no database backup at all:
+
+- `ops/lib.sh` *sourced* `.env` under `set -euo pipefail`. `.env.example` ships
+  `SMTP_FROM_NAME=Kubera Compliance`, unquoted, so the shell tried to run
+  `Compliance`, and every export, import and migrate aborted with exit 127 and no
+  output. `load_env` now parses instead of sourcing, which also removes a
+  code-execution path — a secret containing `$(...)` used to run as a command.
+- `app/worker.py` passed `postgresql+asyncpg://...` to `pg_dump`. pg_dump does not
+  reject the unknown dialect; it ignores the URI entirely and falls back to a
+  local Unix socket that does not exist in the worker container. The nightly task
+  failed every night, caught the error, and printed it. The vault tarball beside
+  it kept succeeding, so the backup directory looked healthy.
+
+The task now strips the dialect, passes the password via `PGPASSWORD` rather than
+argv (argv is readable by anything that can run `ps` in the container), writes
+`-Fc` dumps matching what `ops/kubera-import.sh` restores, prunes past
+`BACKUP_RETENTION_DAYS`, and raises instead of printing.
+
+### 4.10 Edge headers and the upload limit
+
+Caddy now sets `X-Frame-Options`, `X-Content-Type-Options`,
+`Referrer-Policy`, `Cross-Origin-Opener-Policy` and HSTS, and strips the upstream
+`Server` header. HSTS is deliberately not applied to `localhost` — pinning HTTPS
+there affects every other project in a developer's browser.
+
+There is deliberately **no CSP `frame-ancestors`**: a `srcdoc` iframe inherits its
+parent's CSP, and `AssetReportsPage.tsx` renders report previews in exactly such
+an iframe, so the directive would blank the preview. `X-Frame-Options` gives the
+same framing protection and never applies to `srcdoc`. A full CSP is worth doing
+but needs its own pass against the SPA.
+
+Separately, no `client_max_body_size` was set anywhere, so nginx's 1 MiB default
+silently rejected every document over 1 MiB — including the 2 MB company logos the
+frontend already permits. The cap is removed (`client_max_body_size 0`) and
+uploads stream through rather than buffering whole. **The binding constraint is
+now the api container's 1 GB memory limit**, because `docvault.py` reads an upload
+fully into memory before encrypting it. A deliberate cap and streaming encryption
+are still worth doing.
+
+### 4.11 CORS
+
+`app/main.py` used `allow_origins=["*"]` with `allow_credentials=True`. Starlette
+reflects the caller's origin in that configuration: a preflight from
+`https://evil.example` was answered with
+`access-control-allow-origin: https://evil.example` and
+`access-control-allow-credentials: true`. Tokens live in `localStorage` rather
+than cookies, so this was not an immediate session-hijack path — but it would
+become one the day a cookie is introduced.
+
+Origins are now derived from `DOMAIN` and `LANDING_DOMAIN`, overridable with
+`CORS_ALLOWED_ORIGINS` for the Vite dev server. In production the SPA is
+same-origin, so CORS is not needed for normal operation at all.
+
 ## 5. Runbook: upgrading a live production server
 
 Read this whole section before starting. Budget about 15 minutes, plus KEK
@@ -328,7 +418,50 @@ the containers — but keep them consistent so host-side tooling works.
 > the `data` network, so rotating it is lower urgency than the Redis password —
 > but do it, because it was internet-facing until now.
 
-### 5.4 Rebuild and restart
+### 5.4 Move the vault into its volume — do not skip this
+
+**Skipping this step makes every uploaded document disappear.** Nothing is
+deleted, but the application will look at an empty vault and 404 every download.
+
+`.env` ships `VAULT_STORAGE_PATH=./data/vault`, a *relative* path. Inside a
+container it resolves against `WORKDIR /code`, so the application has been
+reading and writing `/code/data/vault`. That worked only because the old compose
+file bind-mounted `.:/code`, which made `/code/data/vault` the host directory
+`<repo>/data/vault`. The hardened compose file removes that bind-mount — it
+existed purely for `uvicorn --reload` — and pins `VAULT_STORAGE_PATH=/data/vault`,
+which is where the `vault_data` volume is mounted.
+
+So on an existing server the real documents are on the host, and the volume the
+application is about to read is empty or nearly so.
+
+```bash
+# Shows what is on the host vs. what is in the volume. Changes nothing.
+ops/kubera-migrate-vault-to-volume.sh
+
+# Copy them in. Never overwrites a file already in the volume, and leaves the
+# host copy in place as a fallback.
+ops/kubera-migrate-vault-to-volume.sh --apply
+```
+
+The script fails loudly if the volume ends up with fewer files than the host had.
+Keep the host copy until you have confirmed a real download works (§5.6).
+
+Then hand the data directories to the non-root user the containers now run as.
+`api`/`worker`/`beat` run as uid 10001 instead of root, and existing volumes are
+still root-owned from the previous deployment:
+
+```bash
+docker compose run --rm --no-deps --user root api \
+  chown -R 10001:10001 /data/vault /data/backups
+docker compose run --rm --no-deps --user root beat \
+  chown -R 10001:10001 /var/lib/kubera-beat
+```
+
+This is one-time. Newly created volumes inherit the right ownership from the
+image, because the Dockerfile creates and chowns those paths before any volume is
+attached.
+
+### 5.5 Rebuild and restart
 
 ```bash
 docker compose up -d --build
@@ -349,7 +482,7 @@ docker compose logs api --tail=40
 Redis has no volume, so its queue was always ephemeral across restarts — nothing
 is lost by recreating it.
 
-### 5.5 Migrate and verify
+### 5.6 Migrate and verify
 
 ```bash
 docker compose exec api alembic upgrade head
@@ -368,9 +501,31 @@ curl -I https://<your-domain>/
 ```
 
 Then log in through the UI and open a tenant document — that exercises the whole
-KEK chain and is the check that matters most.
+KEK chain and is the check that matters most. If §5.4 was skipped, this is where
+it shows up as a 404.
 
-### 5.6 Lock down the host
+Confirm the things this upgrade repaired:
+
+```bash
+# Backups actually produce a database dump now. Should report a non-zero db_bytes.
+docker compose exec worker python -c \
+  "from app.worker import nightly_backup; print(nightly_backup())"
+
+# The ops tooling runs at all (it used to abort with exit 127 and no output).
+DRY_RUN=1 ops/kubera-export.sh --dest /tmp/probe && echo "export tooling OK"
+
+# The image no longer carries secrets or tenant documents.
+docker compose exec api sh -c 'ls /code/.env.bak.* 2>/dev/null; find /code/data -type f 2>/dev/null | wc -l'
+# expected: no .env.bak files, and 0
+
+# Containers are no longer root.
+docker compose exec api id     # uid=10001(kubera)
+
+# Uploads over 1 MiB are no longer rejected by the gateway, and headers are set.
+curl -sI https://<your-domain>/ | grep -iE 'x-frame|x-content-type|strict-transport'
+```
+
+### 5.7 Lock down the host
 
 Do this **inside `tmux` or `screen`**, and keep your current SSH session open
 until you have confirmed a second one works.
@@ -394,7 +549,7 @@ sudo ./ops/kubera-harden-firewall.sh --ssh-port 22 --revert --apply
 If SSH runs on a non-standard port, pass that port. If you need another port open
 (a monitoring agent, for instance), add `--allow-tcp 9100`.
 
-### 5.7 Confirm from outside
+### 5.8 Confirm from outside
 
 From your laptop, not the server:
 
@@ -421,7 +576,7 @@ And on the server:
 ./ops/kubera-verify-exposure.sh --local
 ```
 
-### 5.8 Rollback
+### 5.9 Rollback
 
 Everything above is reversible before you delete `.env.bak.*`:
 
@@ -622,7 +777,7 @@ inbound `22`, `80`, `443` and nothing else. This is the single highest-value
 control available, and it costs one form.
 
 **Other containers and services on the same box.** Nothing here constrains
-software outside this compose project. The `DOCKER-USER` rules installed in §5.6
+software outside this compose project. The `DOCKER-USER` rules installed in §5.7
 default-drop inbound traffic to *all* containers on the host, not just Kubera's,
 so an unrelated stack that publishes a port will stop being reachable from
 outside — intended, but worth knowing before you run it on a shared machine. If
@@ -655,12 +810,42 @@ there.
 4. **`migrate.py` still hardcodes `kubera:kubera_secret@localhost:5433`.** It is a
    development one-off, listed in the README as not needed for normal operation,
    and it will now fail. Left alone deliberately rather than expanding scope.
-5. **This configuration has not been exercised against a live Docker daemon.**
-   Compose file parsing and rendering were verified with `docker compose config`
-   for both the production and dev-override cases, and the validator and exposure
-   invariants are covered by unit tests — but a full `docker compose up` with real
-   Postgres, Redis and Celery traffic was not run. Do the first rollout on a
-   staging box if you have one.
+5. **Uploads have no size limit.** `client_max_body_size 0` removes the accidental
+   1 MiB cap, and `docvault.py` reads an upload fully into memory before
+   encrypting it. An authenticated user can therefore push the api container into
+   its 1 GB memory limit and force a restart. The limit contains the damage to one
+   container rather than the host, but this is a deliberate, temporary state: a
+   real cap plus streaming encryption is outstanding work.
+6. **No Content-Security-Policy.** Only `frame-ancestors` was considered and
+   rejected (§4.10). A real CSP would meaningfully reduce XSS impact on a document
+   platform and deserves a dedicated pass against the SPA.
+7. **Document downloads echo a client-supplied MIME type**, and
+   `Content-Disposition` interpolates the original filename without escaping.
+   `nosniff` plus `attachment` make this hard to exploit today, but neither is
+   the actual fix.
+8. **Image tags float** (`postgres:16-alpine`, `caddy:2-alpine`, ...). Rebuilds
+   pick up patches, which is usually what you want without automated dependency
+   updates, but two builds of the same commit are not byte-identical.
+
+### What was verified, and how
+
+Unlike the first pass, this one was exercised against a live Docker daemon
+(29.7.2, Caddy 2.11.4), not just `docker compose config`:
+
+- The image leak was confirmed by inspecting the built layer, and the fix by
+  re-inspecting it (48 MB → 6 MB of `/code`, zero vault files).
+- The 1 MiB cap was measured (1,048,000 bytes → 403; 1,200,000 → 413) and
+  re-measured after the fix (20 MB reaches the application).
+- CORS reflection was reproduced against the running stack and re-tested after.
+- Non-root, capability drops and volume writability were confirmed in the
+  running containers; the nginx capability set was derived by watching it fail.
+- The nightly backup was run and produced a 224 KB dump — the first working
+  database backup this system has made.
+- 351 unit tests and 474 integration tests pass.
+
+Still not verified: behaviour on the production host itself, the firewall
+scripts (no root Linux host available here), and the KEK rotation script against
+a real multi-company database.
 
 ---
 
@@ -668,9 +853,13 @@ there.
 
 Before every deployment:
 
-- [ ] `pytest unit_tests -q` passes — this includes the exposure and secret checks.
+- [ ] `pytest unit_tests -q` passes — this includes the exposure, image-leak and
+      secret checks.
 - [ ] `docker-compose.override.yml` does not exist on the server.
 - [ ] `KUBERA_ALLOW_INSECURE_DEFAULTS` is not set on the server.
+- [ ] The image carries no secrets:
+      `docker compose exec api sh -c 'ls /code/.env* 2>/dev/null; find /code/data -type f | wc -l'`
+- [ ] Containers are not root: `docker compose exec api id` shows uid 10001.
 
 Periodically:
 
@@ -679,6 +868,10 @@ Periodically:
       the rules survived the last reboot.
 - [ ] Rotate `JWT_SECRET_KEY` and `INTERNAL_API_KEY`. Both are cheap: the first
       logs users out, the second only affects operator scripts.
+- [ ] Confirm backups are real, not just present. A file in `/data/backups` is
+      not evidence — check that the *database* dump has a plausible size:
+      `docker compose exec api sh -c 'ls -la /data/backups | tail'`
+- [ ] Restore a backup into a throwaway stack. An untested backup is a guess.
 - [ ] Confirm `ROOT_MASTER_KEK` is backed up somewhere that is *not* the server
       and *not* the database backup. Losing it loses the vault.
 

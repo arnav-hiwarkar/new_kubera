@@ -1,6 +1,10 @@
+from pathlib import Path
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.models.docvault import DocumentVersion
 from tests.conftest import create_test_company, get_company_token
 
 
@@ -27,6 +31,44 @@ async def _create_member(
     )
     assert resp.status_code == 201, resp.text
     return resp.json()["id"]
+
+@pytest.mark.asyncio
+async def test_uploaded_document_is_actually_encrypted_at_rest(client: AsyncClient, db):
+    """The point of docVault: the plaintext must never appear on disk. This
+    catches a regression as basic as `encrypt_file_data` being skipped, or the
+    storage path being wrong, that a pure API round-trip test would miss because
+    the same process both writes and reads the file."""
+    await create_test_company(client, name="CryptoCo", email="crypto@co.com", password="pass1234")
+    token = await get_company_token(client, email="crypto@co.com", password="pass1234")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    secret = b"THIS EXACT STRING MUST NEVER APPEAR UNENCRYPTED ON DISK - 8f3c2a1"
+    files = {"file": ("secret.txt", secret, "text/plain")}
+    resp = await client.post(
+        "/api/v1/docvault/documents", data={"title": "Encrypted"}, files=files, headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    doc_id = resp.json()["id"]
+
+    version = (
+        await db.execute(
+            select(DocumentVersion).where(DocumentVersion.document_id == doc_id)
+        )
+    ).scalar_one()
+    storage_path = Path(version.storage_path)
+    assert storage_path.is_file(), "upload must persist the file to VAULT_STORAGE_PATH"
+
+    raw_on_disk = storage_path.read_bytes()
+    assert secret not in raw_on_disk, "plaintext must not appear in the stored file"
+    assert raw_on_disk != secret, "stored bytes must not equal the plaintext"
+    # nonce(12) + AES-GCM ciphertext, which is plaintext length + 16-byte tag.
+    assert len(raw_on_disk) == 12 + len(secret) + 16
+
+    # And the API still decrypts it correctly for an authorized user.
+    resp = await client.get(f"/api/v1/docvault/documents/{doc_id}/download", headers=headers)
+    assert resp.status_code == 200
+    assert resp.content == secret
+
 
 @pytest.mark.asyncio
 async def test_bucket_crud(client: AsyncClient):

@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # Storage
     VAULT_STORAGE_PATH: str = "/data/vault"
     BACKUP_PATH: str = "/data/backups"
+    # Nightly backups are pruned past this age. The vault tarball is a full copy
+    # every night, so without pruning the disk fills and Postgres fails to write.
+    BACKUP_RETENTION_DAYS: int = 14
 
     # Celery
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
@@ -68,6 +71,13 @@ class Settings(BaseSettings):
 
     # Domain
     DOMAIN: str = "localhost"
+    LANDING_DOMAIN: str = "kuberacompliance.com"
+
+    # CORS. Empty means "derive from DOMAIN and LANDING_DOMAIN", which is what a
+    # server should use — the SPA is served from the same origin as the API, so
+    # cross-origin access is never needed in production. Set this explicitly only
+    # for local development (e.g. the Vite dev server on http://localhost:5173).
+    CORS_ALLOWED_ORIGINS: str = ""
 
     # SMTP / Email
     SMTP_HOST: str = ""
@@ -158,6 +168,26 @@ class Settings(BaseSettings):
                     f"{name} uses the .env.example placeholder password — {_GENERATE}"
                 )
         return problems
+
+    def cors_origins(self) -> list[str]:
+        """Explicit allow-list of browser origins.
+
+        Never returns "*". Starlette echoes the caller's Origin back when the
+        allow-list is a wildcard, so `allow_origins=["*"]` with
+        `allow_credentials=True` told every website on the internet that its own
+        origin was permitted, with credentials."""
+        if self.CORS_ALLOWED_ORIGINS.strip():
+            return [o.strip() for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+        origins: list[str] = []
+        app_host = (self.DOMAIN or "").strip()
+        if app_host:
+            origins.append(f"https://{app_host}")
+        # The landing domain is an apex, and gateway/modes/app.conf already treats
+        # `www.` as an alias for it, so both spellings are legitimate origins.
+        landing = (self.LANDING_DOMAIN or "").strip()
+        if landing:
+            origins += [f"https://{landing}", f"https://www.{landing}"]
+        return sorted(set(origins))
 
 
 @lru_cache()
