@@ -123,14 +123,32 @@ verify_local() {
 # Remote mode: what can the internet actually reach?
 # ---------------------------------------------------------------------------
 
+with_timeout() {
+  # Portable timeout: neither GNU `timeout`/`gtimeout` nor a `nc` flag that
+  # reliably bounds connect() can be assumed present. macOS ships neither
+  # coreutils' `timeout` nor a `nc` whose `-w` covers the initial connection —
+  # confirmed empirically: `nc -z -w 4` against a firewalled (packet-dropping)
+  # host took ~75s (the OS TCP connect timeout), not 4s. This backgrounds the
+  # probe, races it against a `sleep`, and kills whichever loses.
+  local secs="$1"; shift
+  "$@" &
+  local work_pid=$!
+  ( sleep "$secs"; kill -TERM "$work_pid" ) 2>/dev/null &
+  local watcher_pid=$!
+  local status
+  if wait "$work_pid" 2>/dev/null; then status=0; else status=1; fi
+  kill "$watcher_pid" 2>/dev/null
+  wait "$watcher_pid" 2>/dev/null
+  return "$status"
+}
+
 probe() {
   # Returns 0 if the TCP port accepts a connection.
   local host="$1" port="$2"
   if command -v nc >/dev/null 2>&1; then
-    nc -z -w "$TIMEOUT" "$host" "$port" >/dev/null 2>&1
+    with_timeout "$TIMEOUT" nc -z "$host" "$port" >/dev/null 2>&1
   else
-    # bash /dev/tcp fallback; `timeout` guards against a hanging connect.
-    timeout "$TIMEOUT" bash -c "exec 3<>/dev/tcp/$host/$port" >/dev/null 2>&1
+    with_timeout "$TIMEOUT" bash -c "exec 3<>/dev/tcp/$host/$port" >/dev/null 2>&1
   fi
 }
 

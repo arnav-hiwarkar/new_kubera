@@ -89,7 +89,12 @@ fi
 log "copying (existing files in the volume are never overwritten) ..."
 # `cp -a -n`: preserve everything, never clobber. Runs as root because the volume
 # may still be root-owned from a pre-non-root deployment; the chown follows.
-docker compose run --rm --no-deps --user root \
+# --cap-add CHOWN/DAC_OVERRIDE: the `api` service has `cap_drop: [ALL]`, which
+# `docker compose run --user root` does NOT override — root without CAP_CHOWN
+# cannot chown, and without CAP_DAC_OVERRIDE cannot write into a directory owned
+# by another uid, even as uid 0. Confirmed empirically: omitting these two flags
+# fails with "Operation not permitted" on every file.
+docker compose run --rm --no-deps --user root --cap-add CHOWN --cap-add DAC_OVERRIDE \
   -v "$SRC:/migrate-src:ro" --entrypoint sh api \
   -c 'mkdir -p /data/vault && cp -a -n /migrate-src/. /data/vault/ && chown -R 10001:10001 /data/vault'
 
