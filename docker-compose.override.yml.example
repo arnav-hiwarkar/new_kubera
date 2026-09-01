@@ -1,0 +1,51 @@
+# Kubera — LOCAL DEVELOPMENT overrides.
+#
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#
+# `docker-compose.override.yml` is gitignored and MUST NEVER exist on a server.
+# Docker Compose loads it automatically when present, so `docker compose up -d`
+# picks up these settings locally while a server — which does not have the file —
+# runs the hardened production configuration from docker-compose.yml alone.
+#
+# What this adds, and why none of it belongs in production:
+#
+#   * Published Postgres/Redis ports, so you can run the app, Alembic and pytest
+#     directly on your machine against the containers. On a server nothing needs
+#     these: every ops script uses `docker compose exec`.
+#   * uvicorn --reload plus a bind-mount of the source tree, so edits are picked
+#     up live. In production the code is baked into the image by `COPY . .` and a
+#     deploy is `docker compose up -d --build`.
+#
+# Ports are bound to 127.0.0.1, not 0.0.0.0, even here — there is no reason for a
+# laptop on an untrusted network to serve its dev database to the LAN.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5433:5432"
+
+  redis:
+    ports:
+      # Redis still requires REDIS_PASSWORD from .env. Host-side tooling must use
+      # redis://:<password>@localhost:6379/0 — see .env.example.
+      - "127.0.0.1:6379:6379"
+
+  api:
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - .:/code
+      - vault_data:/data/vault
+      - backup_data:/data/backups
+
+  worker:
+    volumes:
+      - .:/code
+      - vault_data:/data/vault
+      - backup_data:/data/backups
+
+  beat:
+    volumes:
+      - .:/code
+      - backup_data:/data/backups
+      - beat_data:/var/lib/kubera-beat

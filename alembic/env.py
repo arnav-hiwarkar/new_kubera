@@ -50,9 +50,53 @@ async def run_async_migrations() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
-    await connectable.dispose()
+    try:
+        async with connectable.connect() as connection:
+            await connection.run_sync(do_run_migrations)
+    except Exception as exc:  # noqa: BLE001 - re-raised below unless recognised
+        _explain_connection_failure(exc)
+        raise
+    finally:
+        await connectable.dispose()
+
+
+def _explain_connection_failure(exc: BaseException) -> None:
+    """Turn the common startup failures into one actionable line.
+
+    `api` runs `alembic upgrade head` before uvicorn, so a connection problem
+    manifests as a container restart loop whose logs are ~80 lines of SQLAlchemy
+    and asyncpg stack frames with the actual cause on the last line. The most
+    common cause by far is rotating POSTGRES_PASSWORD in .env, which does NOT
+    change the password of an already-initialised pgdata volume."""
+    import sys
+
+    text = f"{type(exc).__name__}: {exc}"
+    if "password authentication failed" in text.lower():
+        message = (
+            "Postgres rejected the credentials in DATABASE_URL.\n"
+            "  POSTGRES_PASSWORD only takes effect when the pgdata volume is first\n"
+            "  created; changing it in .env does not change an existing database.\n"
+            "  Point the running database at the new password with:\n"
+            "    docker compose exec postgres psql -U <user> -d <db> \\\n"
+            "      -c \"ALTER USER <user> WITH PASSWORD '<new-password>';\"\n"
+            "  See docs/SECURITY_HARDENING.md."
+        )
+    elif "could not translate host name" in text.lower() or "connection refused" in text.lower():
+        message = (
+            "Could not reach Postgres at the host in DATABASE_URL.\n"
+            "  Inside Docker the host must be `postgres`, not `localhost` —\n"
+            "  docker-compose.yml sets this; check for a stray override."
+        )
+    else:
+        return
+
+    print(
+        "\n" + "=" * 72 + "\n"
+        "  Kubera: database migration could not start\n" + "=" * 72 + "\n"
+        f"  {message}\n" + "=" * 72 + "\n",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def run_migrations_online() -> None:

@@ -31,6 +31,8 @@ dev = [
     "pytest==8.4.1",
     "pytest-asyncio==1.0.0",
     "pytest-xdist>=3.8.0",
+    # docker-compose.yml is parsed by unit_tests/test_compose_exposure.py.
+    "pyyaml>=6.0",
 ]
 
 [tool.uv]

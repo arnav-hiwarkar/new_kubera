@@ -798,6 +798,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -829,6 +830,7 @@ dev = [
     { name = "pytest", specifier = "==8.4.1" },
     { name = "pytest-asyncio", specifier = "==1.0.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]

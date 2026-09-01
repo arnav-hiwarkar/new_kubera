@@ -1,30 +1,90 @@
-# Keep the build context small and never ship host-only or secret files.
+# Build context exclusions for the `api`/`worker`/`beat` image (Dockerfile) and
+# the `gateway` image (gateway/Dockerfile) — both build from the repository root,
+# and the api image ends with `COPY . .`, so ANYTHING not excluded here is baked
+# into a layer and shipped to every container.
+#
+# INVARIANT: this file must exclude everything .gitignore treats as secret or as
+# local runtime data. The two drifted once and shipped live credentials plus 3013
+# tenant vault files inside the image. `unit_tests/test_dockerignore_covers_secrets.py`
+# now fails if they drift again — do not remove an entry without updating that test.
+#
+# Note: `frontend/` builds from its own context (./frontend) using
+# frontend/.dockerignore, so excluding it here is safe. `gateway/`, `maintenance/`,
+# `ops/` and the root operator scripts (change_password.py, send_email.py, ...) are
+# deliberately NOT excluded — they are run inside the container.
+
+# --- Secrets. Never in an image. -------------------------------------------
+.env
+.env.*
+!.env.example
+creds.txt
+*.key
+*.pem
+m.txt
+
+# --- Tenant data and local vault storage -----------------------------------
+# `data/` is the bind-mounted vault used by local development, `.tmp_vault/` and
+# `.vault_dev/` hold encrypted upload fixtures. None belong in an image.
+data/
+.tmp_vault/
+.vault_dev/
+
+# --- Migration bundles and database dumps (contain .env + the whole vault) ---
+kubera-migration-*
+*.dump
+*.tar.gz
+*.sql
+
+# --- Version control and CI -------------------------------------------------
 .git
 .gitignore
+.github
 
-# Host virtualenv (wrong architecture) — the image builds its own at /opt/venv.
+# --- Host virtualenv (wrong architecture; the image builds /opt/venv) -------
 .venv
 
-# Python caches / build artifacts
+# --- Python caches / build artifacts ---------------------------------------
 __pycache__
 *.py[cod]
 *.egg-info
+dist/
+build/
+.eggs/
 .pytest_cache
 .coverage
 htmlcov
 
-# Secrets and local env
-.env
+# --- Tests. Not executed inside the image (README runs pytest on the host). --
+tests/
+unit_tests/
+conftest.py
+pytest.ini
 
-# Frontend (built by frontend/Dockerfile, not this image)
-frontend/node_modules
-frontend/dist
+# --- Frontend: built by frontend/Dockerfile from its own context ------------
+frontend/
 
-# Celery beat runtime state
+# --- Celery beat runtime state (lives on the beat_data volume in production) -
 celerybeat-schedule
 celerybeat-schedule.*
 
-# Editor
+# --- Host-side maintenance lock, used by the operator CLI on the host --------
+.maintenance.lock
+
+# --- Compose overrides. Dev-only; must never influence a server image -------
+docker-compose.override.yml
+
+# --- Large binaries and working documents -----------------------------------
+*.pdf
+*.xlsx
+*.tsbuildinfo
+
+# --- Editor / OS --------------------------------------------------------------
 .vscode
 .idea
 *.swp
+*.swo
+.DS_Store
+
+# --- Agent workspaces --------------------------------------------------------
+.superpowers/
+.agents/

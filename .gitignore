@@ -9,6 +9,11 @@ build/
 
 # Env
 .env
+# Timestamped .env backups, as created by the hardening runbook in
+# docs/SECURITY_HARDENING.md. These hold live secrets.
+.env.bak
+.env.bak.*
+.env.local
 
 # IDE
 .vscode/
@@ -18,6 +23,10 @@ build/
 
 # Docker volumes
 data/
+
+# Local dev compose overrides (published DB/Redis ports, --reload, source mounts).
+# MUST NOT exist on a server — see docker-compose.override.yml.example.
+docker-compose.override.yml
 
 # pytest
 .pytest_cache/

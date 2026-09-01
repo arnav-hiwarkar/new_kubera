@@ -1,7 +1,19 @@
 import os
+
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.config import get_settings
+
+
+class CompanyKeyDecryptionError(RuntimeError):
+    """A company's KEK would not decrypt under the configured ROOT_MASTER_KEK.
+
+    In practice this means ROOT_MASTER_KEK in .env does not match the key this
+    company's KEK was wrapped under — usually because it was regenerated without
+    running ops/kubera-rotate-root-kek.py first. Every document, SMTP credential
+    and DEK for the company is unreachable until the correct key is restored or
+    the rotation script is run. See docs/SECURITY_HARDENING.md §6."""
 
 
 def get_root_kek() -> bytes:
@@ -26,7 +38,17 @@ def decrypt_company_kek(encrypted_kek: bytes, nonce: bytes) -> bytes:
     """Decrypt a company's KEK using the root master KEK."""
     root_kek = get_root_kek()
     aesgcm = AESGCM(root_kek)
-    return aesgcm.decrypt(nonce, encrypted_kek, None)
+    try:
+        return aesgcm.decrypt(nonce, encrypted_kek, None)
+    except InvalidTag as exc:
+        raise CompanyKeyDecryptionError(
+            "Could not decrypt a company KEK with the configured ROOT_MASTER_KEK. "
+            "This root key does not match the one this company's KEK was wrapped "
+            "under. If ROOT_MASTER_KEK was recently changed, run "
+            "ops/kubera-rotate-root-kek.py to re-wrap existing company keys before "
+            "changing it, or restore the previous value. See "
+            "docs/SECURITY_HARDENING.md §6."
+        ) from exc
 
 
 def generate_dek() -> tuple[bytes, bytes]:

@@ -53,7 +53,11 @@ PENDING_PASSWORD = "__pending__"
 def _require_internal_key(x_internal_api_key: str) -> None:
     """Guard for operator-only endpoints."""
     settings = get_settings()
-    if x_internal_api_key != settings.INTERNAL_API_KEY:
+    # compare_digest, not `!=`: string comparison short-circuits on the first
+    # differing byte. app/routers/leads.py already guards the same secret this way.
+    if not x_internal_api_key or not secrets.compare_digest(
+        x_internal_api_key, settings.INTERNAL_API_KEY
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid internal API key",
