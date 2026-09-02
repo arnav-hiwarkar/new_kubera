@@ -45,14 +45,14 @@ async def test_soft_delete_user_disables_login_frees_email_keeps_row(
     await create_test_company(client, name="SoftCo", email="admin@softco.com")
     admin_token = await get_company_token(client, email="admin@softco.com")
 
-    emp = await _create_user(client, admin_token, email="emp@softco.com", password="emppass123")
+    emp = await _create_user(client, admin_token, email="emp@softco.com", password="Valid1!Pass")
     emp_id = uuid.UUID(emp["id"])
     company_id = uuid.UUID(emp["company_id"])
 
     # The employee can log in before deletion.
     login = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "emp@softco.com", "password": "emppass123"},
+        json={"email": "emp@softco.com", "password": "Valid1!Pass"},
     )
     assert login.status_code == 200
 
@@ -71,7 +71,7 @@ async def test_soft_delete_user_disables_login_frees_email_keeps_row(
     # Login is now blocked.
     login = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "emp@softco.com", "password": "emppass123"},
+        json={"email": "emp@softco.com", "password": "Valid1!Pass"},
     )
     assert login.status_code == 401
 
@@ -95,7 +95,7 @@ async def test_soft_delete_user_disables_login_frees_email_keeps_row(
     assert bucket.created_by == emp_id
 
     # The email is free — a brand-new (live) user can reuse it.
-    again = await _create_user(client, admin_token, email="emp@softco.com", password="newpass123", full_name="New Hire")
+    again = await _create_user(client, admin_token, email="emp@softco.com", password="Valid1!Pass", full_name="New Hire")
     assert again["id"] != emp["id"]
 
 
@@ -106,19 +106,19 @@ async def test_deactivate_then_reactivate_user(client: AsyncClient):
     admin_token = await get_company_token(client, email="admin@deactco.com")
     hdr = {"Authorization": f"Bearer {admin_token}"}
 
-    emp = await _create_user(client, admin_token, email="d@deactco.com", password="emppass123")
+    emp = await _create_user(client, admin_token, email="d@deactco.com", password="Valid1!Pass")
     emp_id = emp["id"]
 
     # Deactivate -> login blocked.
     r = await client.patch(f"/api/v1/users/{emp_id}/deactivate", headers=hdr)
     assert r.status_code == 200 and r.json()["is_active"] is False
-    blocked = await client.post("/api/v1/auth/company/login", json={"email": "d@deactco.com", "password": "emppass123"})
+    blocked = await client.post("/api/v1/auth/company/login", json={"email": "d@deactco.com", "password": "Valid1!Pass"})
     assert blocked.status_code == 401
 
     # Reactivate -> login works again.
     r = await client.patch(f"/api/v1/users/{emp_id}/reactivate", headers=hdr)
     assert r.status_code == 200 and r.json()["is_active"] is True
-    ok = await client.post("/api/v1/auth/company/login", json={"email": "d@deactco.com", "password": "emppass123"})
+    ok = await client.post("/api/v1/auth/company/login", json={"email": "d@deactco.com", "password": "Valid1!Pass"})
     assert ok.status_code == 200
 
     # Delete, then reactivate must be refused (409).
@@ -131,40 +131,46 @@ async def test_deactivate_then_reactivate_user(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_set_password_company_user(client: AsyncClient, db: AsyncSession):
-    await create_test_company(client, name="PwCo", email="admin@pwco.com", password="oldpass123")
+    await create_test_company(client, name="PwCo", email="admin@pwco.com", password="OldPassword123!")
 
     matches = await account_admin.find_accounts(db, "admin@pwco.com")
     assert len(matches) == 1 and matches[0]["principal_type"] == account_admin.COMPANY_USER
-    await account_admin.set_password(db, matches[0]["principal_type"], matches[0]["id"], "brandnew123")
+    await account_admin.set_password(db, matches[0]["principal_type"], matches[0]["id"], "NewValid1!Pass")
     await db.commit()
 
     # New password works; old one does not.
     ok = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "admin@pwco.com", "password": "brandnew123"},
+        json={"email": "admin@pwco.com", "password": "NewValid1!Pass"},
     )
     assert ok.status_code == 200
     bad = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "admin@pwco.com", "password": "oldpass123"},
+        json={"email": "admin@pwco.com", "password": "OldPassword123!"},
     )
     assert bad.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_set_password_auditor(client: AsyncClient, db: AsyncSession):
-    await create_test_auditor(client, email="aud@x.com", password="oldpass123")
+    await create_test_auditor(client, email="aud@x.com", password="OldPassword123!")
 
     matches = await account_admin.find_accounts(db, "aud@x.com")
     assert len(matches) == 1 and matches[0]["principal_type"] == account_admin.AUDITOR
-    await account_admin.set_password(db, matches[0]["principal_type"], matches[0]["id"], "brandnew123")
+    await account_admin.set_password(db, matches[0]["principal_type"], matches[0]["id"], "NewValid1!Pass")
     await db.commit()
 
     ok = await client.post(
         "/api/v1/auth/auditor/login",
-        json={"email": "aud@x.com", "password": "brandnew123"},
+        json={"email": "aud@x.com", "password": "NewValid1!Pass"},
     )
     assert ok.status_code == 200
+
+    bad = await client.post(
+        "/api/v1/auth/auditor/login",
+        json={"email": "aud@x.com", "password": "OldPassword123!"},
+    )
+    assert bad.status_code == 401
 
 
 # --- Purge company --------------------------------------------------------------
@@ -282,14 +288,14 @@ async def test_purge_company_deletes_everything_and_frees_name_and_email(
     """The operator delete is a hard delete: every tenant row and every encrypted
     file goes, and the same name + admin email can be used from scratch afterwards
     — including activation and login, which used to 500 on the duplicate rows."""
-    data = await create_test_company(client, name="PurgeCo", email="purge@x.com", password="adminpass123")
+    data = await create_test_company(client, name="PurgeCo", email="purge@x.com", password="Valid1!Pass")
     company_id = uuid.UUID(data["company"]["id"])
-    admin_token = await get_company_token(client, email="purge@x.com", password="adminpass123")
+    admin_token = await get_company_token(client, email="purge@x.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {admin_token}"}
-    await _create_user(client, admin_token, email="u2@purgeco.com", password="u2pass123")
+    await _create_user(client, admin_token, email="u2@purgeco.com", password="Valid1!Pass")
 
-    await create_test_auditor(client, email="purgeaud@x.com", password="audpass123")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='purgeaud@x.com', password='audpass123')}"}
+    await create_test_auditor(client, email="purgeaud@x.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='purgeaud@x.com', password='Valid1!Pass')}"}
 
     eng_id, doc_id = await _build_tenant_data(client, co_headers, aud_headers)
 
@@ -344,14 +350,14 @@ async def test_purge_company_deletes_everything_and_frees_name_and_email(
     # The auditor account survives — it may serve other companies.
     aud_login = await client.post(
         "/api/v1/auth/auditor/login",
-        json={"email": "purgeaud@x.com", "password": "audpass123"},
+        json={"email": "purgeaud@x.com", "password": "Valid1!Pass"},
     )
     assert aud_login.status_code == 200
 
     # The company is no longer listed, and nobody can log in.
     listing = await client.get("/api/v1/auth/companies", headers=INTERNAL_HEADERS)
     assert all(c["id"] != str(company_id) for c in listing.json())
-    for email, pw in (("purge@x.com", "adminpass123"), ("u2@purgeco.com", "u2pass123")):
+    for email, pw in (("purge@x.com", "Valid1!Pass"), ("u2@purgeco.com", "Valid1!Pass")):
         blocked = await client.post(
             "/api/v1/auth/company/login", json={"email": email, "password": pw}
         )
@@ -359,10 +365,10 @@ async def test_purge_company_deletes_everything_and_frees_name_and_email(
 
     # The whole point: same name, same admin email, fully usable from scratch.
     fresh = await create_test_company(
-        client, name="PurgeCo", email="purge@x.com", password="newpass123"
+        client, name="PurgeCo", email="purge@x.com", password="Valid1!Pass"
     )
     assert uuid.UUID(fresh["company"]["id"]) != company_id
-    token = await get_company_token(client, email="purge@x.com", password="newpass123")
+    token = await get_company_token(client, email="purge@x.com", password="Valid1!Pass")
 
     # ...and it starts empty — no documents or engagements from the old company.
     new_headers = {"Authorization": f"Bearer {token}"}
@@ -380,7 +386,7 @@ async def test_purge_company_wrong_name_and_unknown_id(client: AsyncClient):
     # Still there, and still able to log in.
     assert (await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "guard@x.com", "password": "testpass123"},
+        json={"email": "guard@x.com", "password": "Valid1!Pass"},
     )).status_code == 200
 
     assert (await _purge(client, company_id, "GuardCo")).status_code == 204
@@ -418,10 +424,10 @@ async def test_purge_company_works_on_legacy_archived_company(
     ).scalar_one() == 0
 
     # The freed email now activates and logs in instead of 500ing on duplicate rows.
-    await create_test_company(client, name="LegacyCo", email="legacy@x.com", password="newpass123")
+    await create_test_company(client, name="LegacyCo", email="legacy@x.com", password="Valid1!Pass")
     assert (await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "legacy@x.com", "password": "newpass123"},
+        json={"email": "legacy@x.com", "password": "Valid1!Pass"},
     )).status_code == 200
 
 
@@ -429,9 +435,9 @@ async def test_purge_company_works_on_legacy_archived_company(
 async def test_activate_and_login_tolerate_soft_deleted_namesake(client: AsyncClient):
     """A soft-deleted user row must not shadow a live account with the same email:
     both lookups used to raise MultipleResultsFound and return a 500."""
-    await create_test_company(client, name="ShadowCo", email="shadow@x.com", password="adminpass123")
-    admin_token = await get_company_token(client, email="shadow@x.com", password="adminpass123")
-    emp = await _create_user(client, admin_token, email="dup@x.com", password="emppass123")
+    await create_test_company(client, name="ShadowCo", email="shadow@x.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="shadow@x.com", password="Valid1!Pass")
+    emp = await _create_user(client, admin_token, email="dup@x.com", password="Valid1!Pass")
     assert (await client.delete(
         f"/api/v1/users/{emp['id']}", headers={"Authorization": f"Bearer {admin_token}"}
     )).status_code == 204
@@ -444,13 +450,13 @@ async def test_activate_and_login_tolerate_soft_deleted_namesake(client: AsyncCl
         json={
             "email": "dup@x.com",
             "activation_key": data["activation_key"],
-            "password": "duppass123",
+            "password": "Valid1!Pass",
             "full_name": "Dup Admin",
         },
     )
     assert activate.status_code == 204, activate.text
     login = await client.post(
-        "/api/v1/auth/company/login", json={"email": "dup@x.com", "password": "duppass123"}
+        "/api/v1/auth/company/login", json={"email": "dup@x.com", "password": "Valid1!Pass"}
     )
     assert login.status_code == 200, login.text
     assert login.json()["full_name"] == "Dup Admin"

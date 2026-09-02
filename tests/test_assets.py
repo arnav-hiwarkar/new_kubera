@@ -794,7 +794,7 @@ async def test_module_access_is_required_server_side(client: AsyncClient):
         "/api/v1/users",
         json={
             "email": "as_nomod@a.com",
-            "password": "pass1234",
+            "password": "Valid1!Pass",
             "full_name": "No Module",
             "role": "employee",
             "accessible_modules": [],

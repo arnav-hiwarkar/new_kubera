@@ -54,7 +54,7 @@ async def test_invite_registered_auditor_dispatches_login_email(
     token = await get_company_token(client, email="admin@auditco2.com")
 
     # Create registered auditor
-    await create_test_auditor(client, email="existing_auditor@test.com", password="password123")
+    await create_test_auditor(client, email="existing_auditor@test.com", password="Valid1!Pass")
 
     # Create engagement
     eng_res = await client.post(

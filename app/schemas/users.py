@@ -3,15 +3,16 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, computed_field, field_validator
 from app.models.company import UserRole
 from app.access_modules import validate_accessible_modules
+from app.services.user_security import Password
 
 class UserChangePasswordRequest(BaseModel):
     old_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=8, max_length=128)
-    confirm_password: str = Field(..., min_length=8, max_length=128)
+    new_password: Password
+    confirm_password: Password
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str
+    password: Password
     full_name: str
     role: UserRole
     manager_id: uuid.UUID | None = None

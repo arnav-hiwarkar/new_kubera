@@ -76,8 +76,8 @@ async def get_tb(client, eng_id, headers):
 
 @pytest.mark.asyncio
 async def test_trial_balance_import_flow(client: AsyncClient):
-    await create_test_company(client, email="tb@a.com", password="pass1234")
-    token = await get_company_token(client, email="tb@a.com", password="pass1234")
+    await create_test_company(client, email="tb@a.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="tb@a.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
 
     eng_id = await make_engagement(client, headers)
@@ -122,8 +122,8 @@ async def test_trial_balance_import_flow(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_tb_import_skips_bad_rows(client: AsyncClient):
-    await create_test_company(client, email="bad@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='bad@a.com', password='pass1234')}"}
+    await create_test_company(client, email="bad@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='bad@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, headers)
 
     csv = (
@@ -147,8 +147,8 @@ async def test_tb_import_skips_bad_rows(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_tb_import_flexible_layouts_and_preview_is_read_only(client: AsyncClient):
-    await create_test_company(client, email="layouts@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='layouts@a.com', password='pass1234')}"}
+    await create_test_company(client, email="layouts@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='layouts@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, headers)
 
     movements = b"Name,Debit,Credit\nCash,100,\nSales,,100\n"
@@ -172,8 +172,8 @@ async def test_tb_import_flexible_layouts_and_preview_is_read_only(client: Async
 
 @pytest.mark.asyncio
 async def test_tb_import_header_total_suffix_indian_and_oversized_diagnostics(client: AsyncClient):
-    await create_test_company(client, email="formats@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='formats@a.com', password='pass1234')}"}
+    await create_test_company(client, email="formats@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='formats@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, headers)
     csv = (
         b"Example Private Limited,,,\n"
@@ -203,8 +203,8 @@ async def test_tb_import_header_total_suffix_indian_and_oversized_diagnostics(cl
 
 @pytest.mark.asyncio
 async def test_tb_reimport_replaces(client: AsyncClient):
-    await create_test_company(client, email="re@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='re@a.com', password='pass1234')}"}
+    await create_test_company(client, email="re@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='re@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, headers)
 
     await import_tb(client, eng_id, headers)
@@ -217,8 +217,8 @@ async def test_tb_reimport_replaces(client: AsyncClient):
 async def test_tb_reimport_preserves_mappings_and_ids(client: AsyncClient):
     """Re-import upserts. The old code deleted every row and reinserted, throwing away
     all of the user's mapping work (and cascade-deleting audit entry lines)."""
-    await create_test_company(client, email="upsert@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='upsert@a.com', password='pass1234')}"}
+    await create_test_company(client, email="upsert@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='upsert@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, headers)
 
     resp = await import_tb(client, eng_id, headers)
@@ -245,8 +245,8 @@ async def test_tb_reimport_preserves_mappings_and_ids(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_engagement_starts_draft(client: AsyncClient):
-    await create_test_company(client, email="dr@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='dr@a.com', password='pass1234')}"}
+    await create_test_company(client, email="dr@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='dr@a.com', password='Valid1!Pass')}"}
     resp = await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=headers)
     assert resp.status_code == 201
     assert resp.json()["status"] == EngagementStatus.draft.value
@@ -254,11 +254,11 @@ async def test_engagement_starts_draft(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_engagement_lifecycle(client: AsyncClient):
-    await create_test_company(client, email="co@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co@a.com', password='pass1234')}"}
+    await create_test_company(client, email="co@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co@a.com', password='Valid1!Pass')}"}
 
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud@a.com", "password": "pass1234", "name": "Auditor"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud@a.com", "password": "pass1234"})
+    await client.post("/api/v1/auth/auditor/register", json={"email": "aud@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
@@ -295,11 +295,11 @@ async def test_engagement_lifecycle(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_auditor_engagement_list_includes_company_name(client: AsyncClient):
-    await create_test_company(client, name="Acme Audit Co", email="acme@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='acme@a.com', password='pass1234')}"}
+    await create_test_company(client, name="Acme Audit Co", email="acme@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='acme@a.com', password='Valid1!Pass')}"}
 
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud2@a.com", "password": "pass1234", "name": "Auditor"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud2@a.com", "password": "pass1234"})
+    await client.post("/api/v1/auth/auditor/register", json={"email": "aud2@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud2@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
@@ -315,10 +315,10 @@ async def test_auditor_engagement_list_includes_company_name(client: AsyncClient
 
 @pytest.mark.asyncio
 async def test_delete_engagement_guard(client: AsyncClient):
-    await create_test_company(client, email="del@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@a.com', password='pass1234')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "deld@a.com", "password": "pass1234", "name": "A"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "deld@a.com", "password": "pass1234"})
+    await create_test_company(client, email="del@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@a.com', password='Valid1!Pass')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "deld@a.com", "password": "Valid1!Pass", "name": "A"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "deld@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     # Draft engagement can be deleted
@@ -341,8 +341,8 @@ async def test_delete_engagement_guard(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_pending_invite_autoconverts_on_registration(client: AsyncClient):
-    await create_test_company(client, email="pi@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='pi@a.com', password='pass1234')}"}
+    await create_test_company(client, email="pi@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='pi@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, co_headers)
 
     # Invite an email with no auditor account yet -> pending
@@ -352,8 +352,8 @@ async def test_pending_invite_autoconverts_on_registration(client: AsyncClient):
     assert resp.json()["auditors"][0]["status"] == "pending"
 
     # Auditor registers with that email -> pending invite becomes a grant
-    await client.post("/api/v1/auth/auditor/register", json={"email": "future@aud.com", "password": "pass1234", "name": "Future"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "future@aud.com", "password": "pass1234"})
+    await client.post("/api/v1/auth/auditor/register", json={"email": "future@aud.com", "password": "Valid1!Pass", "name": "Future"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "future@aud.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     resp = await client.get("/api/v1/auditor/engagements", headers=aud_headers)
@@ -364,12 +364,12 @@ async def test_pending_invite_autoconverts_on_registration(client: AsyncClient):
 
 async def _engagement_with_entry(client, slug, approve=False):
     """An engagement with an imported TB and one adjusting entry, for re-import tests."""
-    await create_test_company(client, email=f"{slug}@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email=f'{slug}@a.com', password='pass1234')}"}
+    await create_test_company(client, email=f"{slug}@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email=f'{slug}@a.com', password='Valid1!Pass')}"}
     await client.post("/api/v1/auth/auditor/register",
-                      json={"email": f"{slug}aud@a.com", "password": "pass1234", "name": "A"})
+                      json={"email": f"{slug}aud@a.com", "password": "Valid1!Pass", "name": "A"})
     resp = await client.post("/api/v1/auth/auditor/login",
-                             json={"email": f"{slug}aud@a.com", "password": "pass1234"})
+                             json={"email": f"{slug}aud@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
@@ -473,8 +473,8 @@ def find_group(groups, name):
 
 @pytest.mark.asyncio
 async def test_chart_of_accounts(client: AsyncClient):
-    await create_test_company(client, email="coa2@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='coa2@a.com', password='pass1234')}"}
+    await create_test_company(client, email="coa2@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='coa2@a.com', password='Valid1!Pass')}"}
 
     groups = await get_groups(client, headers)
     tops = {g["name"] for g in groups if g["level"] == 0}
@@ -523,10 +523,10 @@ async def test_chart_of_accounts(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_ledger_mapping(client: AsyncClient):
-    await create_test_company(client, email="map@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='map@a.com', password='pass1234')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "mapaud@a.com", "password": "pass1234", "name": "A"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "mapaud@a.com", "password": "pass1234"})
+    await create_test_company(client, email="map@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='map@a.com', password='Valid1!Pass')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "mapaud@a.com", "password": "Valid1!Pass", "name": "A"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "mapaud@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
@@ -589,9 +589,9 @@ async def test_ledger_mapping(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_import_mapping_from_another_engagement(client: AsyncClient):
-    await create_test_company(client, email="mapping-import@a.com", password="pass1234")
+    await create_test_company(client, email="mapping-import@a.com", password="Valid1!Pass")
     headers = {
-        "Authorization": f"Bearer {await get_company_token(client, email='mapping-import@a.com', password='pass1234')}"
+        "Authorization": f"Bearer {await get_company_token(client, email='mapping-import@a.com', password='Valid1!Pass')}"
     }
     source_id = await make_engagement(client, headers, "FY23")
     target_id = await make_engagement(client, headers, "FY24")
@@ -750,9 +750,9 @@ async def test_import_mapping_from_another_engagement(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_mapping_import_validation_and_tenant_isolation(client: AsyncClient):
-    await create_test_company(client, email="mapping-a@a.com", password="pass1234")
+    await create_test_company(client, email="mapping-a@a.com", password="Valid1!Pass")
     headers_a = {
-        "Authorization": f"Bearer {await get_company_token(client, email='mapping-a@a.com', password='pass1234')}"
+        "Authorization": f"Bearer {await get_company_token(client, email='mapping-a@a.com', password='Valid1!Pass')}"
     }
     source_id = await make_engagement(client, headers_a, "Source")
     target_without_tb = await make_engagement(client, headers_a, "Target")
@@ -774,9 +774,9 @@ async def test_mapping_import_validation_and_tenant_isolation(client: AsyncClien
     assert response.status_code == 409
     assert "no mapped ledgers" in response.json()["detail"]
 
-    await create_test_company(client, email="mapping-b@a.com", password="pass1234")
+    await create_test_company(client, email="mapping-b@a.com", password="Valid1!Pass")
     headers_b = {
-        "Authorization": f"Bearer {await get_company_token(client, email='mapping-b@a.com', password='pass1234')}"
+        "Authorization": f"Bearer {await get_company_token(client, email='mapping-b@a.com', password='Valid1!Pass')}"
     }
     foreign_target = await make_engagement(client, headers_b, "Foreign")
     await import_tb(client, foreign_target, headers_b)
@@ -791,10 +791,10 @@ async def test_mapping_import_validation_and_tenant_isolation(client: AsyncClien
 
 @pytest.mark.asyncio
 async def test_audit_entries(client: AsyncClient):
-    await create_test_company(client, email="co2@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co2@a.com', password='pass1234')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud2@a.com", "password": "pass1234", "name": "Auditor"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud2@a.com", "password": "pass1234"})
+    await create_test_company(client, email="co2@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co2@a.com', password='Valid1!Pass')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "aud2@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud2@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
@@ -821,10 +821,10 @@ async def test_audit_entries(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_requirements_and_queries(client: AsyncClient):
-    await create_test_company(client, email="co3@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co3@a.com', password='pass1234')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud3@a.com", "password": "pass1234", "name": "Auditor"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud3@a.com", "password": "pass1234"})
+    await create_test_company(client, email="co3@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co3@a.com', password='Valid1!Pass')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "aud3@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud3@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
@@ -950,10 +950,10 @@ async def test_requirements_and_queries(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_auditease_cross_tenant_leak(client: AsyncClient):
-    await create_test_company(client, email="coa@a.com", password="pass1234")
-    headers_a = {"Authorization": f"Bearer {await get_company_token(client, email='coa@a.com', password='pass1234')}"}
-    await create_test_company(client, email="cob@a.com", password="pass1234")
-    headers_b = {"Authorization": f"Bearer {await get_company_token(client, email='cob@a.com', password='pass1234')}"}
+    await create_test_company(client, email="coa@a.com", password="Valid1!Pass")
+    headers_a = {"Authorization": f"Bearer {await get_company_token(client, email='coa@a.com', password='Valid1!Pass')}"}
+    await create_test_company(client, email="cob@a.com", password="Valid1!Pass")
+    headers_b = {"Authorization": f"Bearer {await get_company_token(client, email='cob@a.com', password='Valid1!Pass')}"}
 
     eng_id = await make_engagement(client, headers_a)
     await import_tb(client, eng_id, headers_a)
@@ -977,15 +977,15 @@ async def test_auditease_cross_tenant_leak(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_auditor_document_access_and_queries(client: AsyncClient):
-    await create_test_company(client, email="co4@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co4@a.com', password='pass1234')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud4@a.com", "password": "pass1234", "name": "Auditor"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud4@a.com", "password": "pass1234"})
+    await create_test_company(client, email="co4@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co4@a.com', password='Valid1!Pass')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "aud4@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud4@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
     
     # second auditor for cross-check
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud_other@a.com", "password": "pass1234", "name": "Other"})
-    resp2 = await client.post("/api/v1/auth/auditor/login", json={"email": "aud_other@a.com", "password": "pass1234"})
+    await client.post("/api/v1/auth/auditor/register", json={"email": "aud_other@a.com", "password": "Valid1!Pass", "name": "Other"})
+    resp2 = await client.post("/api/v1/auth/auditor/login", json={"email": "aud_other@a.com", "password": "Valid1!Pass"})
     aud_other_headers = {"Authorization": f"Bearer {resp2.json()['access_token']}"}
 
     eng_id = await make_engagement(client, co_headers)
@@ -1045,8 +1045,8 @@ async def test_auditor_document_access_and_queries(client: AsyncClient):
 # --- Entry ledger names + report preview ---------------------------------------
 
 async def _accept_auditor(client, co_headers, eng_id, email):
-    await client.post("/api/v1/auth/auditor/register", json={"email": email, "password": "pass1234", "name": "A"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "pass1234"})
+    await client.post("/api/v1/auth/auditor/register", json={"email": email, "password": "Valid1!Pass", "name": "A"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": email}, headers=co_headers)
     await client.post(f"/api/v1/auditor/engagements/{eng_id}/accept", headers=aud_headers)
@@ -1057,8 +1057,8 @@ async def _accept_auditor(client, co_headers, eng_id, email):
 async def test_entry_lines_include_ledger_name(client: AsyncClient):
     """Both the auditor and company entry views must carry the ledger name/code so
     the UI never shows 'Unknown Ledger'."""
-    await create_test_company(client, email="eln@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='eln@a.com', password='pass1234')}"}
+    await create_test_company(client, email="eln@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='eln@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, co_headers)
     imp = await import_tb(client, eng_id, co_headers)
     ledgers = {a["ledger_name"]: a for a in imp.json()["accounts"]}
@@ -1104,8 +1104,8 @@ async def test_entry_lines_include_ledger_name(client: AsyncClient):
 async def test_delete_closed_engagement_with_children(client: AsyncClient):
     """A closed engagement that accumulated entries, a query and a requirement must
     still delete cleanly (regression: FK 500 when children weren't cascaded)."""
-    await create_test_company(client, email="delc@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='delc@a.com', password='pass1234')}"}
+    await create_test_company(client, email="delc@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='delc@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, co_headers)
     imp = await import_tb(client, eng_id, co_headers)
     ledgers = imp.json()["accounts"]
@@ -1187,8 +1187,8 @@ async def test_report_preview_signed_trial_balance(client: AsyncClient):
     """Regression: a signed trial balance (credit accounts negative) must still yield
     net profit = Income - Expenditure, not -(|Income| + |Expenditure|). Previously the
     negative Income flipped the subtraction into an addition and reported a false loss."""
-    await create_test_company(client, email="signed@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='signed@a.com', password='pass1234')}"}
+    await create_test_company(client, email="signed@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='signed@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, co_headers)
     imp = await import_tb(client, eng_id, co_headers, csv=SIGNED_REPORT_CSV)
     ledgers = {a["ledger_name"]: a for a in imp.json()["accounts"]}
@@ -1213,8 +1213,8 @@ async def test_report_preview_signed_trial_balance(client: AsyncClient):
 async def test_report_preview_signed_net_loss(client: AsyncClient):
     """A signed trial balance where Expenditure > Income reports a real net LOSS
     (negative net_profit), confirming the sign is genuine and not a flip artifact."""
-    await create_test_company(client, email="loss@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='loss@a.com', password='pass1234')}"}
+    await create_test_company(client, email="loss@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='loss@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, co_headers)
     imp = await import_tb(client, eng_id, co_headers, csv=SIGNED_LOSS_CSV)
     ledgers = {a["ledger_name"]: a for a in imp.json()["accounts"]}
@@ -1231,8 +1231,8 @@ async def test_report_preview_signed_net_loss(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_report_contra_balances_reduce_credit_nature_groups(client: AsyncClient):
-    await create_test_company(client, email="contra@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='contra@a.com', password='pass1234')}"}
+    await create_test_company(client, email="contra@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='contra@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, headers)
     csv = (
         b"Code,Name,Opening,Debit,Credit,Closing\n"
@@ -1274,8 +1274,8 @@ async def test_report_contra_balances_reduce_credit_nature_groups(client: AsyncC
 
 @pytest.mark.asyncio
 async def test_tb_sign_convention_repair_with_approved_entry(client: AsyncClient):
-    await create_test_company(client, email="repair@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='repair@a.com', password='pass1234')}"}
+    await create_test_company(client, email="repair@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='repair@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, headers)
     csv = b"Code,Name,Closing\nA1,Cash,100\nL1,Loan,100\n"
     cmap = {"ledger_code": "Code", "ledger_name": "Name", "closing_balance": "Closing"}
@@ -1312,8 +1312,8 @@ async def test_tb_sign_convention_repair_with_approved_entry(client: AsyncClient
 
 @pytest.mark.asyncio
 async def test_report_preview(client: AsyncClient):
-    await create_test_company(client, email="rep@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='rep@a.com', password='pass1234')}"}
+    await create_test_company(client, email="rep@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='rep@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, co_headers)
     imp = await import_tb(client, eng_id, co_headers, csv=REPORT_CSV)
     ledgers = {a["ledger_name"]: a for a in imp.json()["accounts"]}
@@ -1479,10 +1479,10 @@ async def test_requirement_bulk_import_roundtrip(client: AsyncClient):
     import openpyxl
     from app.services.requirement_import import build_template_xlsx
 
-    await create_test_company(client, email="coi@a.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='coi@a.com', password='pass1234')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "audi@a.com", "password": "pass1234", "name": "Aud"})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "audi@a.com", "password": "pass1234"})
+    await create_test_company(client, email="coi@a.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='coi@a.com', password='Valid1!Pass')}"}
+    await client.post("/api/v1/auth/auditor/register", json={"email": "audi@a.com", "password": "Valid1!Pass", "name": "Aud"})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": "audi@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
     eng_id = await make_engagement(client, co_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "audi@a.com"}, headers=co_headers)

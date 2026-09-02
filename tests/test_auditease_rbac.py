@@ -7,7 +7,7 @@ async def _create_user(
     client: AsyncClient,
     admin_headers: dict,
     email: str,
-    password: str = "pass1234",
+    password: str = "Valid1!Pass",
     role: str = "employee",
     modules: list[str] | None = None,
 ) -> str:
@@ -28,12 +28,12 @@ async def _create_user(
 
 @pytest.mark.asyncio
 async def test_non_admin_cannot_create_engagement(client: AsyncClient):
-    await create_test_company(client, email="admin@ae-rbac.com", password="adminpass123")
-    admin_token = await get_company_token(client, email="admin@ae-rbac.com", password="adminpass123")
+    await create_test_company(client, email="admin@ae-rbac.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@ae-rbac.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    await _create_user(client, admin_headers, email="emp@ae-rbac.com", password="emppass123", role="employee", modules=["auditease"])
-    emp_token = await get_company_token(client, email="emp@ae-rbac.com", password="emppass123")
+    await _create_user(client, admin_headers, email="emp@ae-rbac.com", password="Valid1!Pass", role="employee", modules=["auditease"])
+    emp_token = await get_company_token(client, email="emp@ae-rbac.com", password="Valid1!Pass")
     emp_headers = {"Authorization": f"Bearer {emp_token}"}
 
     # Employee tries to create engagement -> 403
@@ -43,8 +43,8 @@ async def test_non_admin_cannot_create_engagement(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_non_admin_cannot_close_delete_or_invite_auditor(client: AsyncClient):
-    await create_test_company(client, email="admin2@ae-rbac.com", password="adminpass123")
-    admin_token = await get_company_token(client, email="admin2@ae-rbac.com", password="adminpass123")
+    await create_test_company(client, email="admin2@ae-rbac.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin2@ae-rbac.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
     # Admin creates engagement
@@ -53,8 +53,8 @@ async def test_non_admin_cannot_close_delete_or_invite_auditor(client: AsyncClie
     eng_id = create_res.json()["id"]
 
     # Create employee
-    await _create_user(client, admin_headers, email="emp2@ae-rbac.com", password="emppass123", role="employee", modules=["auditease"])
-    emp_token = await get_company_token(client, email="emp2@ae-rbac.com", password="emppass123")
+    await _create_user(client, admin_headers, email="emp2@ae-rbac.com", password="Valid1!Pass", role="employee", modules=["auditease"])
+    emp_token = await get_company_token(client, email="emp2@ae-rbac.com", password="Valid1!Pass")
     emp_headers = {"Authorization": f"Bearer {emp_token}"}
 
     # Employee tries to invite auditor -> 403

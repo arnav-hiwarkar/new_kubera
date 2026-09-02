@@ -51,7 +51,7 @@ async def test_company_login(client: AsyncClient):
     await create_test_company(client)
     resp = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "admin@testco.com", "password": "testpass123"},
+        json={"email": "admin@testco.com", "password": "Valid1!Pass"},
     )
     assert resp.status_code == 200
     assert "access_token" in resp.json()
@@ -76,7 +76,7 @@ async def test_company_refresh(client: AsyncClient):
     await create_test_company(client)
     login_resp = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "admin@testco.com", "password": "testpass123"},
+        json={"email": "admin@testco.com", "password": "Valid1!Pass"},
     )
     refresh_token = login_resp.json()["refresh_token"]
     resp = await client.post(
@@ -117,7 +117,7 @@ async def test_auditor_register_duplicate(client: AsyncClient):
     await create_test_auditor(client)
     resp = await client.post(
         "/api/v1/auth/auditor/register",
-        json={"email": "auditor@test.com", "password": "pass1234", "name": "Dup"},
+        json={"email": "auditor@test.com", "password": "Valid1!Pass", "name": "Dup"},
     )
     assert resp.status_code == 409
 
@@ -130,7 +130,7 @@ async def test_auditor_login(client: AsyncClient):
     await create_test_auditor(client)
     resp = await client.post(
         "/api/v1/auth/auditor/login",
-        json={"email": "auditor@test.com", "password": "testpass123"},
+        json={"email": "auditor@test.com", "password": "Valid1!Pass"},
     )
     assert resp.status_code == 200
     assert "access_token" in resp.json()
@@ -144,7 +144,7 @@ async def test_auditor_refresh(client: AsyncClient):
     await create_test_auditor(client)
     login_resp = await client.post(
         "/api/v1/auth/auditor/login",
-        json={"email": "auditor@test.com", "password": "testpass123"},
+        json={"email": "auditor@test.com", "password": "Valid1!Pass"},
     )
     refresh_token = login_resp.json()["refresh_token"]
     resp = await client.post(

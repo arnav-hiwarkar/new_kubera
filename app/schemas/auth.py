@@ -2,6 +2,8 @@ import uuid
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
+from app.services.user_security import Password
+
 
 # === Company ===
 
@@ -59,7 +61,7 @@ class ActivationRequest(BaseModel):
     """Admin claims their account with the one-shot key and sets a password."""
     email: EmailStr
     activation_key: str
-    password: str = Field(min_length=8, max_length=128)
+    password: Password
     full_name: str = Field(min_length=1, max_length=255)
 
 
@@ -87,8 +89,8 @@ class CompanyDeleteRequest(BaseModel):
 
 class AuditorRegister(BaseModel):
     email: EmailStr
-    password: str
-    name: str
+    password: Password
+    name: str = Field(min_length=1, max_length=255)
 
 
 class AuditorOut(BaseModel):

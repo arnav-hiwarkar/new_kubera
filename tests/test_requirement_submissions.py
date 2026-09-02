@@ -22,10 +22,10 @@ async def _make_engagement(client: AsyncClient, headers: dict, label: str = "FY2
 
 @pytest.mark.asyncio
 async def test_multi_file_uploads_in_one_round(client: AsyncClient, db: AsyncSession):
-    await create_test_company(client, email="mfiles@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='mfiles@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="mfiles@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='mfiles@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="mfiles@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='mfiles@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="mfiles@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='mfiles@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "mfiles@aud.com"}, headers=co_headers)
@@ -67,10 +67,10 @@ async def test_multi_file_uploads_in_one_round(client: AsyncClient, db: AsyncSes
 
 @pytest.mark.asyncio
 async def test_mixed_submission_types_and_empty_validation(client: AsyncClient):
-    await create_test_company(client, email="mixed@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='mixed@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="mixed@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='mixed@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="mixed@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='mixed@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="mixed@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='mixed@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "mixed@aud.com"}, headers=co_headers)
@@ -145,10 +145,10 @@ async def test_mixed_submission_types_and_empty_validation(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_round_number_increment(client: AsyncClient):
-    await create_test_company(client, email="rounds@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='rounds@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="rounds@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='rounds@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="rounds@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='rounds@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="rounds@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='rounds@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "rounds@aud.com"}, headers=co_headers)
@@ -177,16 +177,16 @@ async def test_round_number_increment(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_auditor_access_overrides_and_download(client: AsyncClient, db: AsyncSession):
-    await create_test_company(client, email="overrides@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='overrides@co.com', password='pass1234')}"}
+    await create_test_company(client, email="overrides@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='overrides@co.com', password='Valid1!Pass')}"}
     
     # Auditor 1 with requirements + documents area
-    await create_test_auditor(client, email="aud_req@aud.com", password="pass1234")
-    aud1_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_req@aud.com', password='pass1234')}"}
+    await create_test_auditor(client, email="aud_req@aud.com", password="Valid1!Pass")
+    aud1_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_req@aud.com', password='Valid1!Pass')}"}
 
     # Auditor 2 with only queries area
-    await create_test_auditor(client, email="aud_queries@aud.com", password="pass1234")
-    aud2_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_queries@aud.com', password='pass1234')}"}
+    await create_test_auditor(client, email="aud_queries@aud.com", password="Valid1!Pass")
+    aud2_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_queries@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers)
 
@@ -232,10 +232,10 @@ async def test_auditor_access_overrides_and_download(client: AsyncClient, db: As
 
 @pytest.mark.asyncio
 async def test_document_title_convention_and_tags(client: AsyncClient, db: AsyncSession):
-    await create_test_company(client, email="tags@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='tags@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="tags@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='tags@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="tags@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='tags@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="tags@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='tags@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "tags@aud.com"}, headers=co_headers)
@@ -281,10 +281,10 @@ async def test_document_title_convention_and_tags(client: AsyncClient, db: Async
 
 @pytest.mark.asyncio
 async def test_deleted_document_preserves_join_row(client: AsyncClient, db: AsyncSession):
-    await create_test_company(client, email="del@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="del@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='del@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="del@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="del@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='del@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "del@aud.com"}, headers=co_headers)
@@ -328,10 +328,10 @@ async def test_deleted_document_preserves_join_row(client: AsyncClient, db: Asyn
 @pytest.mark.asyncio
 async def test_cross_tenant_document_security_and_atomic_rollback(client: AsyncClient, db: AsyncSession):
     # Company A
-    await create_test_company(client, email="tenanta@co.com", password="pass1234")
-    co_a_headers = {"Authorization": f"Bearer {await get_company_token(client, email='tenanta@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="aud_a@aud.com", password="pass1234")
-    aud_a_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_a@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="tenanta@co.com", password="Valid1!Pass")
+    co_a_headers = {"Authorization": f"Bearer {await get_company_token(client, email='tenanta@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="aud_a@aud.com", password="Valid1!Pass")
+    aud_a_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_a@aud.com', password='Valid1!Pass')}"}
 
     eng_a_id = await _make_engagement(client, co_a_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_a_id}/auditors/invite", json={"email": "aud_a@aud.com"}, headers=co_a_headers)
@@ -345,8 +345,8 @@ async def test_cross_tenant_document_security_and_atomic_rollback(client: AsyncC
     req_a_id = resp.json()["id"]
 
     # Company B creates a doc in DocVault
-    await create_test_company(client, email="tenantb@co.com", password="pass1234")
-    co_b_headers = {"Authorization": f"Bearer {await get_company_token(client, email='tenantb@co.com', password='pass1234')}"}
+    await create_test_company(client, email="tenantb@co.com", password="Valid1!Pass")
+    co_b_headers = {"Authorization": f"Bearer {await get_company_token(client, email='tenantb@co.com', password='Valid1!Pass')}"}
     dv_b_resp = await client.post(
         "/api/v1/docvault/documents",
         data={"title": "Tenant B Secret Doc"},
@@ -395,8 +395,8 @@ async def test_cross_tenant_document_security_and_atomic_rollback(client: AsyncC
     assert b_on_a_resp.status_code == 404
 
     # 4. Auditor without grant attempts to close requirement -> 403
-    await create_test_auditor(client, email="uninvited_aud@aud.com", password="pass1234")
-    uninvited_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='uninvited_aud@aud.com', password='pass1234')}"}
+    await create_test_auditor(client, email="uninvited_aud@aud.com", password="Valid1!Pass")
+    uninvited_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='uninvited_aud@aud.com', password='Valid1!Pass')}"}
     unauth_resp = await client.post(
         f"/api/v1/auditor/engagements/{eng_a_id}/requirement-requests/{req_a_id}/close",
         headers=uninvited_headers,
@@ -407,20 +407,20 @@ async def test_cross_tenant_document_security_and_atomic_rollback(client: AsyncC
 @pytest.mark.asyncio
 async def test_company_member_role_file_upload_and_download(client: AsyncClient, db: AsyncSession):
     """Ensure non-admin company users (role='employee') can upload files to requirements and download them."""
-    await create_test_company(client, email="admin_mem@co.com", password="pass1234")
-    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='admin_mem@co.com', password='pass1234')}"}
+    await create_test_company(client, email="admin_mem@co.com", password="Valid1!Pass")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='admin_mem@co.com', password='Valid1!Pass')}"}
     
     # Create employee user
     u_resp = await client.post(
         "/api/v1/users",
-        json={"email": "employee@co.com", "password": "emppass123", "full_name": "Team Employee", "role": "employee", "accessible_modules": ["auditease", "docvault"]},
+        json={"email": "employee@co.com", "password": "Valid1!Pass", "full_name": "Team Employee", "role": "employee", "accessible_modules": ["auditease", "docvault"]},
         headers=admin_headers,
     )
     assert u_resp.status_code == 201, u_resp.text
-    emp_headers = {"Authorization": f"Bearer {await get_company_token(client, email='employee@co.com', password='emppass123')}"}
+    emp_headers = {"Authorization": f"Bearer {await get_company_token(client, email='employee@co.com', password='Valid1!Pass')}"}
 
-    await create_test_auditor(client, email="aud_mem@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_mem@aud.com', password='pass1234')}"}
+    await create_test_auditor(client, email="aud_mem@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_mem@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, admin_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud_mem@aud.com"}, headers=admin_headers)
@@ -456,10 +456,10 @@ async def test_company_member_role_file_upload_and_download(client: AsyncClient,
 @pytest.mark.asyncio
 async def test_auditor_initiate_query_linked_to_requirement(client: AsyncClient, db: AsyncSession):
     """Ensure auditor can initiate a query linked to a specific requirement."""
-    await create_test_company(client, email="query_req@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='query_req@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="aud_query_req@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_query_req@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="query_req@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='query_req@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="aud_query_req@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_query_req@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers)
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud_query_req@aud.com"}, headers=co_headers)
@@ -501,10 +501,10 @@ async def test_auditor_initiate_query_linked_to_requirement(client: AsyncClient,
 @pytest.mark.asyncio
 async def test_per_engagement_dedicated_buckets(client: AsyncClient, db: AsyncSession):
     """Verify every engagement gets its own dedicated DocVault bucket named 'Audit - <period_label>'."""
-    await create_test_company(client, email="multi_buckets@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='multi_buckets@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="aud_mb@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_mb@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="multi_buckets@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='multi_buckets@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="aud_mb@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_mb@aud.com', password='Valid1!Pass')}"}
 
     # Engagement 1: FY23-24
     eng1_id = await _make_engagement(client, co_headers, label="FY23-24")
@@ -552,12 +552,12 @@ async def test_per_engagement_dedicated_buckets(client: AsyncClient, db: AsyncSe
 @pytest.mark.asyncio
 async def test_external_docvault_document_attachment_and_auditor_download(client: AsyncClient, db: AsyncSession):
     """Verify external DocVault documents attached by company can be downloaded by auditors holding requirements permission."""
-    await create_test_company(client, email="ext_doc@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='ext_doc@co.com', password='pass1234')}"}
+    await create_test_company(client, email="ext_doc@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='ext_doc@co.com', password='Valid1!Pass')}"}
     
     # Auditor with requirements: True, documents: False (testing that requirements permission alone grants access to attached external docs)
-    await create_test_auditor(client, email="aud_ext@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_ext@aud.com', password='pass1234')}"}
+    await create_test_auditor(client, email="aud_ext@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_ext@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers)
     inv = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud_ext@aud.com"}, headers=co_headers)
@@ -609,8 +609,8 @@ async def test_external_docvault_document_attachment_and_auditor_download(client
     assert meta_resp.json()["title"] == "External Balance Sheet 2024"
 
     # 6. Unassigned auditor cannot download
-    await create_test_auditor(client, email="unassigned_aud@aud.com", password="pass1234")
-    unassigned_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='unassigned_aud@aud.com', password='pass1234')}"}
+    await create_test_auditor(client, email="unassigned_aud@aud.com", password="Valid1!Pass")
+    unassigned_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='unassigned_aud@aud.com', password='Valid1!Pass')}"}
     bad_dl = await client.get(f"/api/v1/auditor/documents/{ext_doc_id}/download", headers=unassigned_headers)
     assert bad_dl.status_code == 404
 
@@ -621,10 +621,10 @@ async def test_multiple_submissions_and_query_file_uploads_stored_in_engagement_
 ):
     """Verify company can upload multiple direct files across multiple rounds and queries,
     and all attachments are stored in the dedicated engagement DocVault bucket and downloadable by the auditor."""
-    await create_test_company(client, email="multi_subs@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='multi_subs@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="aud_ms@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_ms@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="multi_subs@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='multi_subs@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="aud_ms@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='aud_ms@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers, label="FY2024")
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "aud_ms@aud.com"}, headers=co_headers)
@@ -721,10 +721,10 @@ async def test_multiple_submissions_and_query_file_uploads_stored_in_engagement_
 @pytest.mark.asyncio
 async def test_auditor_cannot_access_unsubmitted_company_documents(client: AsyncClient, db: AsyncSession):
     """Verify that an auditor cannot download or read metadata for company documents that were not submitted in any requirement or query."""
-    await create_test_company(client, email="unsub_co@co.com", password="pass1234")
-    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='unsub_co@co.com', password='pass1234')}"}
-    await create_test_auditor(client, email="unsub_aud@aud.com", password="pass1234")
-    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='unsub_aud@aud.com', password='pass1234')}"}
+    await create_test_company(client, email="unsub_co@co.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='unsub_co@co.com', password='Valid1!Pass')}"}
+    await create_test_auditor(client, email="unsub_aud@aud.com", password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email='unsub_aud@aud.com', password='Valid1!Pass')}"}
 
     eng_id = await _make_engagement(client, co_headers, label="FY2025")
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "unsub_aud@aud.com"}, headers=co_headers)
@@ -783,15 +783,15 @@ async def test_auditor_cannot_access_unsubmitted_company_documents(client: Async
 @pytest.mark.asyncio
 async def test_employee_user_picker_bucket_scoping(client: AsyncClient, db: AsyncSession):
     """Verify that non-admin company users (e.g. employee role) only see buckets and documents they have access to in DocVault."""
-    await create_test_company(client, email="scope_admin@co.com", password="pass1234")
-    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='scope_admin@co.com', password='pass1234')}"}
+    await create_test_company(client, email="scope_admin@co.com", password="Valid1!Pass")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='scope_admin@co.com', password='Valid1!Pass')}"}
 
     # Create employee user
     u_resp = await client.post(
         "/api/v1/users",
         json={
             "email": "scope_emp@co.com",
-            "password": "pass1234password",
+            "password": "Valid1!Passpassword",
             "full_name": "Scope Employee",
             "role": "employee",
             "accessible_modules": ["auditease", "docvault"],
@@ -799,7 +799,7 @@ async def test_employee_user_picker_bucket_scoping(client: AsyncClient, db: Asyn
         headers=admin_headers,
     )
     assert u_resp.status_code == 201, u_resp.text
-    emp_headers = {"Authorization": f"Bearer {await get_company_token(client, email='scope_emp@co.com', password='pass1234password')}"}
+    emp_headers = {"Authorization": f"Bearer {await get_company_token(client, email='scope_emp@co.com', password='Valid1!Passpassword')}"}
 
     # Admin creates a public bucket (visibility=everyone)
     b_pub_resp = await client.post("/api/v1/docvault/buckets", json={"name": "Public General Bucket"}, headers=admin_headers)

@@ -5,12 +5,12 @@ from tests.conftest import create_test_company, get_company_token, INTERNAL_API_
 
 
 async def _admin(client, email="kadmin@a.com"):
-    await create_test_company(client, email=email, password="pass1234")
-    return {"Authorization": f"Bearer {await get_company_token(client, email=email, password='pass1234')}"}
+    await create_test_company(client, email=email, password="Valid1!Pass")
+    return {"Authorization": f"Bearer {await get_company_token(client, email=email, password='Valid1!Pass')}"}
 
 
 async def _make_user(client, admin_headers, email, role, manager_id=None):
-    body = {"email": email, "password": "pass1234", "full_name": email.split("@")[0], "role": role, "accessible_modules": ["kra"]}
+    body = {"email": email, "password": "Valid1!Pass", "full_name": email.split("@")[0], "role": role, "accessible_modules": ["kra"]}
     if manager_id:
         body["manager_id"] = manager_id
     resp = await client.post("/api/v1/users", json=body, headers=admin_headers)
@@ -19,7 +19,7 @@ async def _make_user(client, admin_headers, email, role, manager_id=None):
 
 
 async def _headers(client, email):
-    tok = await get_company_token(client, email=email, password="pass1234")
+    tok = await get_company_token(client, email=email, password="Valid1!Pass")
     return {"Authorization": f"Bearer {tok}"}
 
 

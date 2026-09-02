@@ -123,8 +123,8 @@ async def test_password_change_complexity_enforcement(client: AsyncClient):
         json={"old_password": "Password123!", "new_password": "password123!", "confirm_password": "password123!"},
         headers=headers,
     )
-    assert r1.status_code == 400
-    assert "uppercase" in r1.json()["detail"]
+    assert r1.status_code == 422
+    assert "uppercase" in str(r1.json()["detail"])
 
     # Missing lowercase
     r2 = await client.post(
@@ -132,8 +132,8 @@ async def test_password_change_complexity_enforcement(client: AsyncClient):
         json={"old_password": "Password123!", "new_password": "PASSWORD123!", "confirm_password": "PASSWORD123!"},
         headers=headers,
     )
-    assert r2.status_code == 400
-    assert "lowercase" in r2.json()["detail"]
+    assert r2.status_code == 422
+    assert "lowercase" in str(r2.json()["detail"])
 
     # Missing number
     r3 = await client.post(
@@ -141,8 +141,8 @@ async def test_password_change_complexity_enforcement(client: AsyncClient):
         json={"old_password": "Password123!", "new_password": "PasswordSpecial!", "confirm_password": "PasswordSpecial!"},
         headers=headers,
     )
-    assert r3.status_code == 400
-    assert "number" in r3.json()["detail"]
+    assert r3.status_code == 422
+    assert "number" in str(r3.json()["detail"])
 
     # Missing special character
     r4 = await client.post(
@@ -150,8 +150,8 @@ async def test_password_change_complexity_enforcement(client: AsyncClient):
         json={"old_password": "Password123!", "new_password": "Password1234", "confirm_password": "Password1234"},
         headers=headers,
     )
-    assert r4.status_code == 400
-    assert "special character" in r4.json()["detail"]
+    assert r4.status_code == 422
+    assert "special character" in str(r4.json()["detail"])
 
     # Too short (< 8 chars)
     r5 = await client.post(
@@ -159,7 +159,8 @@ async def test_password_change_complexity_enforcement(client: AsyncClient):
         json={"old_password": "Password123!", "new_password": "Pass1!", "confirm_password": "Pass1!"},
         headers=headers,
     )
-    assert r5.status_code in (400, 422)
+    assert r5.status_code == 422
+    assert "at least" in str(r5.json()["detail"]) or "least 8" in str(r5.json()["detail"])
 
 
 

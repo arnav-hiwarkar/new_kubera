@@ -7,6 +7,7 @@ import { ApiError } from '@/api/http'
 import { rateLimitMessage } from '@/api/rateLimit'
 import { Button, Field, Input, useToast } from '@/components/ui'
 import { AuthLayout } from '@/pages/company/CompanyLogin'
+import { passwordRules } from '@/utils/passwordValidation'
 
 interface FormValues {
   name: string
@@ -67,7 +68,7 @@ export function AuditorRegister() {
             type="password"
             autoComplete="new-password"
             error={!!errors.password}
-            {...register('password', { required: 'Password is required', minLength: { value: 8, message: 'Min 8 characters' } })}
+            {...register('password', passwordRules)}
           />
         </Field>
         <Button type="submit" loading={isSubmitting} className="mt-2 w-full bg-auditor hover:bg-auditor-hover">

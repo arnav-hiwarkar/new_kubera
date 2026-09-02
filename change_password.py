@@ -60,8 +60,11 @@ async def run(email: str) -> None:
               f"{target['email']} (name={target['name']!r}).")
         password = prompt_password()
 
-        await account_admin.set_password(db, target["principal_type"], target["id"], password)
-        await db.commit()
+        try:
+            await account_admin.set_password(db, target["principal_type"], target["id"], password)
+            await db.commit()
+        except ValueError as err:
+            sys.exit(f"error: {err}")
         print(f"\n✓ Password updated for {target['email']}.")
 
 

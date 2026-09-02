@@ -25,8 +25,8 @@ describe('CompanyActivate Rate Limit', () => {
     await user.type(screen.getByLabelText(/Registered email/i), 'test@test.com')
     await user.type(screen.getByLabelText(/Product key/i), '12345')
     await user.type(screen.getByLabelText(/Your name/i), 'Ada Admin')
-    await user.type(screen.getAllByLabelText(/Password/i)[0], 'password123')
-    await user.type(screen.getByLabelText(/Confirm password/i), 'password123')
+    await user.type(screen.getAllByLabelText(/Password/i)[0], 'Valid1!Pass')
+    await user.type(screen.getByLabelText(/Confirm password/i), 'Valid1!Pass')
     await user.click(screen.getByRole('button', { name: /Activate & set password/i }))
 
     expect(await screen.findByText('Too many attempts. Please try again in 15 minutes.')).toBeInTheDocument()
@@ -39,8 +39,8 @@ describe('CompanyActivate Rate Limit', () => {
     await user.type(screen.getByLabelText(/Registered email/i), 'test@test.com')
     await user.type(screen.getByLabelText(/Product key/i), '12345')
     await user.type(screen.getByLabelText(/Your name/i), 'Ada Admin')
-    await user.type(screen.getAllByLabelText(/Password/i)[0], 'password123')
-    await user.type(screen.getByLabelText(/Confirm password/i), 'password123')
+    await user.type(screen.getAllByLabelText(/Password/i)[0], 'Valid1!Pass')
+    await user.type(screen.getByLabelText(/Confirm password/i), 'Valid1!Pass')
     await user.click(screen.getByRole('button', { name: /Activate & set password/i }))
 
     expect(await screen.findByText('Too many attempts. Please try again later.')).toBeInTheDocument()
@@ -64,8 +64,8 @@ describe('CompanyActivate Rate Limit', () => {
     await user.type(screen.getByLabelText(/Registered email/i), 'test@test.com')
     await user.type(screen.getByLabelText(/Product key/i), '12345')
     await user.type(screen.getByLabelText(/Your name/i), 'Ada Admin')
-    await user.type(screen.getAllByLabelText(/Password/i)[0], 'password123')
-    await user.type(screen.getByLabelText(/Confirm password/i), 'password123')
+    await user.type(screen.getAllByLabelText(/Password/i)[0], 'Valid1!Pass')
+    await user.type(screen.getByLabelText(/Confirm password/i), 'Valid1!Pass')
     await user.click(screen.getByRole('button', { name: /Activate & set password/i }))
 
     expect(await screen.findByText('Invalid key')).toBeInTheDocument()

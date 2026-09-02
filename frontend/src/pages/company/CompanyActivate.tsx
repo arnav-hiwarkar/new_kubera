@@ -7,6 +7,7 @@ import { ApiError } from '@/api/http'
 import { rateLimitMessage } from '@/api/rateLimit'
 import { Button, Field, Input } from '@/components/ui'
 import { AuthLayout } from '@/pages/company/CompanyLogin'
+import { passwordRules, confirmPasswordRules } from '@/utils/passwordValidation'
 
 interface FormValues {
   email: string
@@ -110,10 +111,7 @@ export function CompanyActivate() {
             autoComplete="new-password"
             placeholder="At least 8 characters"
             error={!!errors.password}
-            {...register('password', {
-              required: 'Password is required',
-              minLength: { value: 8, message: 'Password must be at least 8 characters' },
-            })}
+            {...register('password', passwordRules)}
           />
         </Field>
         <Field label="Confirm password" htmlFor="confirmPassword" required error={errors.confirmPassword?.message}>
@@ -123,10 +121,7 @@ export function CompanyActivate() {
             autoComplete="new-password"
             placeholder="Re-enter your password"
             error={!!errors.confirmPassword}
-            {...register('confirmPassword', {
-              required: 'Please confirm your password',
-              validate: (v) => v === watch('password') || 'Passwords do not match',
-            })}
+            {...register('confirmPassword', confirmPasswordRules(watch('password')))}
           />
         </Field>
         <Button type="submit" size="lg" loading={isSubmitting} className="mt-2 w-full">

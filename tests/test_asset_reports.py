@@ -747,7 +747,7 @@ async def test_asset_reports_require_the_assets_module(client: AsyncClient):
         "/api/v1/users",
         json={
             "email": "mod_denied@testco.com",
-            "password": "pass1234",
+            "password": "Valid1!Pass",
             "full_name": "No Assets Module",
             "role": "employee",
             "accessible_modules": [],  # deliberately not granted 'assets'

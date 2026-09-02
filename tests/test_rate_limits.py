@@ -308,13 +308,13 @@ async def test_auditor_registration_is_capped_per_ip(client: AsyncClient):
     for _ in range(settings.REGISTER_RATE_LIMIT):
         resp = await client.post(
             "/api/v1/auth/auditor/register",
-            json={"email": _email(), "password": "pass1234!", "name": "Auditor"},
+            json={"email": _email(), "password": "Valid1!Pass!", "name": "Auditor"},
         )
         assert resp.status_code == 201, resp.text
 
     resp = await client.post(
         "/api/v1/auth/auditor/register",
-        json={"email": _email(), "password": "pass1234!", "name": "Auditor"},
+        json={"email": _email(), "password": "Valid1!Pass!", "name": "Auditor"},
     )
     assert resp.status_code == 429
 

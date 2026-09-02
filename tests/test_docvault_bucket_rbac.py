@@ -7,7 +7,7 @@ async def _create_user(
     client: AsyncClient,
     admin_headers: dict,
     email: str,
-    password: str = "pass1234",
+    password: str = "Valid1!Pass",
     role: str = "employee",
     modules: list[str] | None = None,
 ) -> str:
@@ -29,8 +29,8 @@ async def _create_user(
 @pytest.mark.asyncio
 async def test_non_admin_cannot_create_or_delete_bucket(client: AsyncClient):
     # Setup company with admin
-    await create_test_company(client, email="admin@docrbac.com", password="adminpass123")
-    admin_token = await get_company_token(client, email="admin@docrbac.com", password="adminpass123")
+    await create_test_company(client, email="admin@docrbac.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@docrbac.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
     # Admin creates a bucket
@@ -39,8 +39,8 @@ async def test_non_admin_cannot_create_or_delete_bucket(client: AsyncClient):
     bucket_id = create_res.json()["id"]
 
     # Create employee user with docvault access
-    await _create_user(client, admin_headers, email="emp@docrbac.com", password="emppass123", role="employee", modules=["docvault"])
-    emp_token = await get_company_token(client, email="emp@docrbac.com", password="emppass123")
+    await _create_user(client, admin_headers, email="emp@docrbac.com", password="Valid1!Pass", role="employee", modules=["docvault"])
+    emp_token = await get_company_token(client, email="emp@docrbac.com", password="Valid1!Pass")
     emp_headers = {"Authorization": f"Bearer {emp_token}"}
 
     # Non-admin attempts to create a bucket

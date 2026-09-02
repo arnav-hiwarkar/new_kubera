@@ -1,9 +1,10 @@
 """Security utilities for user passwords, complexity checks, and image magic bytes."""
 import re
-from typing import Literal
+from typing import Literal, Annotated
+from pydantic import Field, AfterValidator
 
 PASSWORD_MIN_LENGTH = 8
-PASSWORD_MAX_LENGTH = 128
+PASSWORD_MAX_LENGTH = 72
 
 # Special character set allowed and checked
 SPECIAL_CHARS_RE = re.compile(r'[-!@#$%^&*(),.?":{}|<>_=+`~/\\\[\];]')
@@ -18,11 +19,16 @@ def validate_password_complexity(password: str) -> None:
     - At least 1 lowercase ASCII letter (a-z)
     - At least 1 numeric digit (0-9)
     - At least 1 special character
+    - Only printable ASCII characters allowed
     """
     if not password or len(password) < PASSWORD_MIN_LENGTH:
         raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters long.")
-    if len(password) > PASSWORD_MAX_LENGTH:
+    if len(password) > PASSWORD_MAX_LENGTH or len(password.encode("utf-8")) > PASSWORD_MAX_LENGTH:
         raise ValueError(f"Password must be no more than {PASSWORD_MAX_LENGTH} characters long.")
+    if "\x00" in password:
+        raise ValueError("Password cannot contain null bytes.")
+    if not password.isascii() or not password.isprintable():
+        raise ValueError("Password must contain only printable ASCII characters.")
     if not re.search(r"[A-Z]", password):
         raise ValueError("Password must contain at least one uppercase letter (A-Z).")
     if not re.search(r"[a-z]", password):
@@ -31,6 +37,18 @@ def validate_password_complexity(password: str) -> None:
         raise ValueError("Password must contain at least one number (0-9).")
     if not SPECIAL_CHARS_RE.search(password):
         raise ValueError("Password must contain at least one special character.")
+
+
+def _check_password(password: str) -> str:
+    validate_password_complexity(password)
+    return password
+
+
+Password = Annotated[
+    str,
+    Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH),
+    AfterValidator(_check_password),
+]
 
 
 def detect_image_format(data: bytes) -> Literal["jpg", "png", "webp"] | None:

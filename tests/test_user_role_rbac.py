@@ -12,8 +12,8 @@ async def test_user_role_enum_values():
 
 @pytest.mark.asyncio
 async def test_create_user_manager_role_rejected(client: AsyncClient):
-    await create_test_company(client, email="admin@rbac.com", password="adminpass123")
-    token = await get_company_token(client, email="admin@rbac.com", password="adminpass123")
+    await create_test_company(client, email="admin@rbac.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="admin@rbac.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
 
     payload = {

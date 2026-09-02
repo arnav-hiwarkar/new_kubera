@@ -39,8 +39,8 @@ async def set_company_gstin(email: str, gstin: str) -> None:
 
 async def admin_headers(client: AsyncClient, email: str) -> dict:
     """Create + activate a company and return that admin's auth headers."""
-    await create_test_company(client, email=email, password="pass1234")
-    token = await get_company_token(client, email=email, password="pass1234")
+    await create_test_company(client, email=email, password="Valid1!Pass")
+    token = await get_company_token(client, email=email, password="Valid1!Pass")
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -49,7 +49,7 @@ async def make_user(client: AsyncClient, admin_h: dict, email: str, role: str = 
         "/api/v1/users",
         json={
             "email": email,
-            "password": "pass1234",
+            "password": "Valid1!Pass",
             "full_name": email.split("@")[0],
             "role": role,
             # Asset endpoints check module access server-side, so grant it.
@@ -62,5 +62,5 @@ async def make_user(client: AsyncClient, admin_h: dict, email: str, role: str = 
 
 
 async def user_headers(client: AsyncClient, email: str) -> dict:
-    token = await get_company_token(client, email=email, password="pass1234")
+    token = await get_company_token(client, email=email, password="Valid1!Pass")
     return {"Authorization": f"Bearer {token}"}

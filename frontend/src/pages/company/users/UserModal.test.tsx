@@ -30,7 +30,7 @@ describe('UserModal module access', () => {
     await user.type(inputs[1], 'new.employee@example.com')
     const password = dialog.querySelector<HTMLInputElement>('input[type="password"]')
     expect(password).not.toBeNull()
-    await user.type(password!, 'pass1234')
+    await user.type(password!, 'Valid1!Pass')
     await user.click(screen.getByRole('checkbox', { name: label }))
     await user.click(screen.getByRole('button', { name: 'Create User' }))
 
