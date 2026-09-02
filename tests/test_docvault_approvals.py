@@ -572,7 +572,7 @@ async def test_unrelated_user_cannot_edit_document_metadata(client: AsyncClient)
 
 
 @pytest.mark.asyncio
-async def test_only_creator_or_admin_can_unlock(client: AsyncClient):
+async def test_only_admin_can_unlock(client: AsyncClient):
     await create_test_company(client, name="EditCo2", email="admin@editco2.com", password="Valid1!Pass")
     admin_token = await get_company_token(client, email="admin@editco2.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
@@ -588,14 +588,19 @@ async def test_only_creator_or_admin_can_unlock(client: AsyncClient):
     resp = await client.post("/api/v1/docvault/documents", data={"title": "Doc", "is_editable": "false"}, files=files, headers=h1)
     doc_id = resp.json()["id"]
 
-    # u2 (not creator, not admin) tries to unlock
+    # u2 (not admin) tries to unlock -> 403
     resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"is_editable": True}, headers=h2)
     assert resp.status_code == 403
 
-    # u1 (creator) tries to unlock -> allowed
+    # u1 (creator employee, not admin) tries to unlock -> 403 Forbidden
     resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"is_editable": True}, headers=h1)
-    assert resp.status_code == 200
-    assert resp.json()["is_editable"] is True
+    assert resp.status_code == 403
+    assert "Only administrators can unlock a finalized document" in resp.json()["detail"]
+
+    # Admin tries to unlock -> allowed
+    admin_resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"is_editable": True}, headers=admin_headers)
+    assert admin_resp.status_code == 200
+    assert admin_resp.json()["is_editable"] is True
 
 
 @pytest.mark.asyncio
@@ -913,4 +918,96 @@ async def test_cannot_review_non_pending_document(client: AsyncClient):
     )
     assert rev_resp.status_code == 409
     assert "Document is not pending approval" in rev_resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_admin_can_restore_archived_document(client: AsyncClient):
+    email = "admin_restore@testco.com"
+    await create_test_company(client, name="Restore Co", email=email)
+    admin_token = await get_company_token(client, email=email)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # Upload document
+    files = {"file": ("test.pdf", b"%PDF-1.4 test content", "application/pdf")}
+    upload_res = await client.post("/api/v1/docvault/documents", files=files, data={"title": "Doc to Archive"}, headers=admin_headers)
+    assert upload_res.status_code == 201
+    doc_id = upload_res.json()["id"]
+
+    # Archive document via DELETE
+    del_res = await client.delete(f"/api/v1/docvault/documents/{doc_id}", headers=admin_headers)
+    assert del_res.status_code == 204
+
+    # Verify status is archived
+    get_res = await client.get(f"/api/v1/docvault/documents/{doc_id}", headers=admin_headers)
+    assert get_res.json()["status"] == "archived"
+    assert get_res.json()["is_editable"] is False
+
+    # Admin calls restore
+    restore_res = await client.post(f"/api/v1/docvault/documents/{doc_id}/restore", headers=admin_headers)
+    assert restore_res.status_code == 200
+    data = restore_res.json()
+    assert data["status"] == "uploaded"
+    assert data["is_editable"] is True
+    assert data["approved_by"] is None
+    assert data["approved_at"] is None
+
+    # Verify activity log
+    log_res = await client.get("/api/v1/activity-log", params={"entity_type": "document", "entity_id": doc_id}, headers=admin_headers)
+    assert log_res.status_code == 200
+    logs = log_res.json()
+    restore_log = next((l for l in logs if l["action"] == "document.restored"), None)
+    assert restore_log is not None
+
+
+@pytest.mark.asyncio
+async def test_employee_cannot_restore_archived_document(client: AsyncClient):
+    email = "admin_emp_restore@testco.com"
+    emp_email = "emp_restore@testco.com"
+    await create_test_company(client, name="Emp Restore Co", email=email)
+    admin_token = await get_company_token(client, email=email)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    create_emp_res = await client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "email": emp_email,
+            "password": "Valid1!Pass",
+            "full_name": "Doc Employee",
+            "role": "employee",
+            "accessible_modules": ["docvault"],
+        },
+    )
+    assert create_emp_res.status_code == 201
+    emp_token = await get_company_token(client, email=emp_email, password="Valid1!Pass")
+    emp_headers = {"Authorization": f"Bearer {emp_token}"}
+
+    # Employee uploads document
+    files = {"file": ("emp.pdf", b"%PDF-1.4 employee doc", "application/pdf")}
+    upload_res = await client.post("/api/v1/docvault/documents", files=files, data={"title": "Emp Doc"}, headers=emp_headers)
+    assert upload_res.status_code == 201
+    doc_id = upload_res.json()["id"]
+
+    # Archive document
+    await client.delete(f"/api/v1/docvault/documents/{doc_id}", headers=emp_headers)
+
+    # Employee attempts restore -> 403
+    restore_res = await client.post(f"/api/v1/docvault/documents/{doc_id}/restore", headers=emp_headers)
+    assert restore_res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_restore_non_archived_document_returns_409(client: AsyncClient):
+    email = "admin_non_archived@testco.com"
+    await create_test_company(client, name="Non Archived Co", email=email)
+    admin_token = await get_company_token(client, email=email)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    files = {"file": ("test.pdf", b"%PDF-1.4 active doc", "application/pdf")}
+    upload_res = await client.post("/api/v1/docvault/documents", files=files, data={"title": "Active Doc"}, headers=admin_headers)
+    doc_id = upload_res.json()["id"]
+
+    # Call restore on active doc -> 409 Conflict
+    restore_res = await client.post(f"/api/v1/docvault/documents/{doc_id}/restore", headers=admin_headers)
+    assert restore_res.status_code == 409
 

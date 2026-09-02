@@ -697,8 +697,12 @@ async def update_document(
             detail="Only the assigned approver or an admin can modify, edit, or review this document while approval is pending",
         )
 
-    if update_data.get("is_editable") is True and not (is_company_admin(current_user) or doc.created_by == current_user.id):
-        raise HTTPException(status_code=403, detail="Only creator or admin can unlock a document")
+    if doc.is_editable is False and update_data.get("is_editable") is True:
+        if not is_company_admin(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can unlock a finalized document",
+            )
 
     # A locked (non-editable) document freezes its content/metadata — title, tags
     # and bucket. Status changes (incl. archive) and toggling is_editable back on
@@ -933,4 +937,44 @@ async def delete_document(
     await log_activity(db, current_user.company_id, current_user.id, "document.archived", "document", doc.id)
     await db.commit()
     return None
+
+
+@router.post("/documents/{document_id}/restore", response_model=DocumentResponse)
+async def restore_document(
+    document_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(Document)
+        .options(selectinload(Document.versions))
+        .where(and_(Document.id == document_id, Document.company_id == current_user.company_id))
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not await can_access_bucket(db, current_user, doc.bucket_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.status != DocumentStatus.archived:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot restore document in '{doc.status.value}' status. Only archived documents can be restored.",
+        )
+
+    doc.status = DocumentStatus.uploaded
+    doc.is_editable = True
+    doc.approver_id = None
+    doc.approved_by = None
+    doc.approved_at = None
+    doc.approval_requested_at = None
+    doc.approval_notes = None
+
+    await log_activity(db, current_user.company_id, current_user.id, "document.restored", "document", doc.id)
+    await db.commit()
+
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id)
+    )
+    return (await _attach_uploader_names(db, [result.scalar_one()]))[0]
 
