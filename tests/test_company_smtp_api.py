@@ -146,3 +146,37 @@ async def test_cross_tenant_isolation(client: AsyncClient):
     # Company B's GET should NOT see Company A's host
     res_b = await client.get("/api/v1/company/smtp", headers={"Authorization": f"Bearer {token_b}"})
     assert res_b.json()["configured"] is False
+
+@pytest.mark.asyncio
+async def test_smtp_verify_refuses_internal_targets_and_masks_error(client: AsyncClient):
+    await create_test_company(client, name="Co Verify SSRF", email="admin@ssrf.com")
+    token = await get_company_token(client, email="admin@ssrf.com")
+    
+    payload = {
+        "host": "127.0.0.1",
+        "port": 587,
+        "user": "audit@conf.com",
+        "password": "Password123!",
+        "from_email": "audit@conf.com",
+        "from_name": "Conf Compliance",
+    }
+    r = await client.post("/api/v1/company/smtp/verify", json=payload, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 400
+    assert "Could not connect to that mail server" in r.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_smtp_verify_refuses_invalid_port_schema(client: AsyncClient):
+    await create_test_company(client, name="Co Verify Schema", email="admin@schema.com")
+    token = await get_company_token(client, email="admin@schema.com")
+    
+    payload = {
+        "host": "smtp.example.com",
+        "port": 99999, # invalid port
+        "user": "audit@conf.com",
+        "password": "Password123!",
+        "from_email": "audit@conf.com",
+        "from_name": "Conf Compliance",
+    }
+    r = await client.post("/api/v1/company/smtp/verify", json=payload, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 422 # Pydantic validation error
+

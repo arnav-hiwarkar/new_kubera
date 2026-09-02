@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 import asyncio
+import logging
+logger = logging.getLogger(__name__)
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, desc
@@ -163,7 +165,11 @@ async def verify_smtp_config(
             message=f"Successfully connected and authenticated with {res['host']}:{res['port']}",
         )
     except EmailDeliveryError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning("SMTP verify failed for company %s: %s", user.company_id, e)
+        raise HTTPException(
+            status_code=400,
+            detail="Could not connect to that mail server. Check the host, port and credentials.",
+        )
 
 
 @router.delete("", response_model=CompanySmtpConfigOut)

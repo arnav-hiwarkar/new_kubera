@@ -207,5 +207,4 @@ class EmailService:
             "use_tls": self.config.use_tls,
             "use_ssl": self.config.use_ssl,
             "latency_ms": round(latency_ms, 2),
-            "response": resp.decode("utf-8", errors="ignore") if isinstance(resp, bytes) else str(resp),
         }
