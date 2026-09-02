@@ -3,7 +3,7 @@ export const passwordRules = {
   minLength: { value: 8, message: 'Min 8 characters' },
   maxLength: { value: 72, message: 'Max 72 characters' },
   pattern: {
-    value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[-!@#$%^&*(),.?":{}|<>_=+`~/\\\[\];]).+$/,
+    value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[-!@#$%^&*(),.?":{}|<>_=+`~/\\[\];]).+$/,
     message: 'Must contain uppercase, lowercase, number, and special character'
   }
 }

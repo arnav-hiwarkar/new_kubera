@@ -3,6 +3,7 @@ import { Card, Button, Field, Input } from '@/components/ui'
 import { useCompanyAuth } from '@/auth/company'
 import { useChangePassword, useUploadAvatar, useUserAvatar } from '@/api/hooks/users'
 import { AvatarCropperModal } from '@/components/users/AvatarCropperModal'
+import { passwordRules } from '@/utils/passwordValidation'
 import {
   User,
   Shield,
@@ -18,7 +19,7 @@ import {
   Mail,
 } from 'lucide-react'
 
-const SPECIAL_CHARS_REGEX = /[-!@#$%^&*(),.?":{}|<>_=+`~/\\\[\];]/
+const SPECIAL_CHARS_REGEX = /[-!@#$%^&*(),.?":{}|<>_=+`~/\\[\];]/
 
 export function UserSettingsPage() {
   const { profile } = useCompanyAuth()
@@ -96,7 +97,8 @@ export function UserSettingsPage() {
   // Real-time password criteria
   const passwordCriteria = useMemo(() => {
     return {
-      hasMinLength: newPassword.length >= 8,
+      hasMinLength: newPassword.length >= passwordRules.minLength.value,
+      hasMaxLength: newPassword.length <= passwordRules.maxLength.value,
       hasUppercase: /[A-Z]/.test(newPassword),
       hasLowercase: /[a-z]/.test(newPassword),
       hasNumber: /[0-9]/.test(newPassword),
@@ -108,6 +110,7 @@ export function UserSettingsPage() {
 
   const isPasswordValid =
     passwordCriteria.hasMinLength &&
+    passwordCriteria.hasMaxLength &&
     passwordCriteria.hasUppercase &&
     passwordCriteria.hasLowercase &&
     passwordCriteria.hasNumber &&
@@ -447,13 +450,13 @@ export function UserSettingsPage() {
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
                 <div className="flex items-center gap-1.5">
-                  {passwordCriteria.hasMinLength ? (
+                  {passwordCriteria.hasMinLength && passwordCriteria.hasMaxLength ? (
                     <CheckCircle2 className="h-3.5 w-3.5 text-status-good shrink-0" />
                   ) : (
                     <XCircle className="h-3.5 w-3.5 text-text-muted shrink-0" />
                   )}
-                  <span className={passwordCriteria.hasMinLength ? 'text-status-good font-medium' : 'text-text-muted'}>
-                    At least 8 characters
+                  <span className={passwordCriteria.hasMinLength && passwordCriteria.hasMaxLength ? 'text-status-good font-medium' : 'text-text-muted'}>
+                    8 to 72 characters
                   </span>
                 </div>
 

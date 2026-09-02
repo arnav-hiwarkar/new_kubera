@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Modal, Button, Field, Input, Select, Switch } from '@/components/ui'
 import { MODULE_DEFINITIONS, type ModuleId } from '@/auth/company/modules'
 import type { UserCreate, UserUpdate, UserResponse } from '@/api/types'
+import { passwordRules } from '@/utils/passwordValidation'
 
 interface UserModalProps {
   isOpen: boolean
@@ -67,6 +68,25 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
     e.preventDefault()
     setIsSubmitting(true)
     setError(null)
+
+    if (!initialData) {
+      if (password.length < passwordRules.minLength.value) {
+        setError(passwordRules.minLength.message)
+        setIsSubmitting(false)
+        return
+      }
+      if (password.length > passwordRules.maxLength.value) {
+        setError(passwordRules.maxLength.message)
+        setIsSubmitting(false)
+        return
+      }
+      if (!passwordRules.pattern.value.test(password)) {
+        setError(passwordRules.pattern.message)
+        setIsSubmitting(false)
+        return
+      }
+    }
+
     try {
       if (initialData) {
         const update: UserUpdate = {
