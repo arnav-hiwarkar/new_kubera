@@ -20,6 +20,7 @@ from app.services.email.schemas import (
     EmailDeliveryResult,
     EmailMessage,
 )
+from app.services.email.net_guard import resolve_public_smtp_target, BlockedSmtpTarget
 from app.services.email.templates import extract_plain_text, render_email_template
 
 logger = logging.getLogger(__name__)
@@ -48,14 +49,27 @@ class EmailService:
         if not self.config.host:
             raise EmailDeliveryError("SMTP_HOST is not configured.")
 
+        # Resolve host and ensure it's a public IP to prevent SSRF
+        try:
+            safe_ip = resolve_public_smtp_target(self.config.host, self.config.port)
+        except BlockedSmtpTarget as exc:
+            raise EmailDeliveryError(str(exc)) from exc
+
         timeout = self.config.timeout
         if self.config.use_ssl:
             context = ssl.create_default_context()
-            server = smtplib.SMTP_SSL(self.config.host, self.config.port, timeout=timeout, context=context)
+            server = smtplib.SMTP_SSL(timeout=timeout, context=context)
         else:
-            server = smtplib.SMTP(self.config.host, self.config.port, timeout=timeout)
+            server = smtplib.SMTP(timeout=timeout)
 
         try:
+            server._host = self.config.host  # SNI pinning for starttls / SSL
+            res = server.connect(safe_ip, self.config.port)
+            if isinstance(res, tuple) and len(res) >= 2:
+                code, msg = res[0], res[1]
+                if code != 220:
+                    raise smtplib.SMTPConnectError(code, msg)
+
             if not self.config.use_ssl and self.config.use_tls:
                 context = ssl.create_default_context()
                 server.starttls(context=context)
@@ -196,5 +210,4 @@ class EmailService:
             "use_tls": self.config.use_tls,
             "use_ssl": self.config.use_ssl,
             "latency_ms": round(latency_ms, 2),
-            "response": resp.decode("utf-8", errors="ignore") if isinstance(resp, bytes) else str(resp),
         }

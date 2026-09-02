@@ -11,6 +11,13 @@ from app.services.email.schemas import (
 )
 
 
+@pytest.fixture(autouse=True)
+def mock_resolve_public_smtp_target():
+    with patch("app.services.email.client.resolve_public_smtp_target") as mock_resolve:
+        mock_resolve.return_value = "8.8.8.8"
+        yield mock_resolve
+
+
 @pytest.fixture
 def mock_config():
     return EmailConfig(
@@ -179,3 +186,111 @@ def test_html_entity_unescaping():
     assert "&amp;" not in text
     assert "&lt;" not in text
     assert '& <100> for "items"' in text
+
+
+def test_get_connection_uses_net_guard_and_pins_ip():
+    from app.services.email.net_guard import BlockedSmtpTarget
+    config = EmailConfig(host="smtp.example.com", port=587, user="u", password="p", use_tls=True)
+    service = EmailService(config=config)
+    
+    with patch("app.services.email.client.resolve_public_smtp_target") as mock_resolve:
+        mock_resolve.return_value = "8.8.8.8"
+        with patch("app.services.email.client.smtplib.SMTP") as mock_smtp_class:
+            mock_smtp_instance = MagicMock()
+            mock_smtp_class.return_value = mock_smtp_instance
+            
+            # Use a dummy context for TLS
+            with patch("app.services.email.client.ssl.create_default_context"):
+                # We expect _get_connection to succeed if mocked properly
+                server = service._get_connection()
+                
+                # Check that resolve was called
+                mock_resolve.assert_called_once_with("smtp.example.com", 587)
+                
+                # Check that we connected to the IP, not the hostname
+                mock_smtp_instance.connect.assert_called_once_with("8.8.8.8", 587)
+                
+                # Check that SNI hostname was preserved
+                assert mock_smtp_instance._host == "smtp.example.com"
+
+def test_get_connection_blocks_internal():
+    from app.services.email.net_guard import BlockedSmtpTarget
+    config = EmailConfig(host="127.0.0.1", port=587, user="u", password="p")
+    service = EmailService(config=config)
+    
+    with patch("app.services.email.client.resolve_public_smtp_target") as mock_resolve:
+        mock_resolve.side_effect = BlockedSmtpTarget("Blocked")
+        with pytest.raises(EmailDeliveryError, match="Blocked"):
+            service._get_connection()
+
+
+def test_get_connection_ssl_pins_ip_and_sni():
+    """Verify that SMTP_SSL (port 465) also pins the public IP and sets SNI."""
+    config = EmailConfig(host="smtp.example.com", port=465, user="u", password="p", use_ssl=True, use_tls=False)
+    service = EmailService(config=config)
+
+    with patch("app.services.email.client.resolve_public_smtp_target") as mock_resolve:
+        mock_resolve.return_value = "8.8.8.8"
+        with patch("app.services.email.client.smtplib.SMTP_SSL") as mock_ssl_class:
+            mock_ssl_instance = MagicMock()
+            mock_ssl_instance.connect.return_value = (220, b"Ready")
+            mock_ssl_class.return_value = mock_ssl_instance
+
+            with patch("app.services.email.client.ssl.create_default_context"):
+                server = service._get_connection()
+
+                mock_resolve.assert_called_once_with("smtp.example.com", 465)
+                mock_ssl_instance.connect.assert_called_once_with("8.8.8.8", 465)
+                assert mock_ssl_instance._host == "smtp.example.com"
+
+
+def test_get_connection_rejects_non_220_greeting():
+    """Verify that a server greeting other than 220 raises SMTPConnectError and closes socket."""
+    config = EmailConfig(host="smtp.example.com", port=587, user="u", password="p")
+    service = EmailService(config=config)
+
+    with patch("app.services.email.client.resolve_public_smtp_target", return_value="8.8.8.8"):
+        with patch("app.services.email.client.smtplib.SMTP") as mock_smtp_class:
+            mock_smtp_instance = MagicMock()
+            mock_smtp_instance.connect.return_value = (421, b"Service not available")
+            mock_smtp_class.return_value = mock_smtp_instance
+
+            with pytest.raises(smtplib.SMTPConnectError):
+                service._get_connection()
+
+            mock_smtp_instance.close.assert_called_once()
+
+
+def test_get_connection_closes_socket_on_connect_error():
+    """Verify that if connect() raises an exception, server.close() is called."""
+    config = EmailConfig(host="smtp.example.com", port=587, user="u", password="p")
+    service = EmailService(config=config)
+
+    with patch("app.services.email.client.resolve_public_smtp_target", return_value="8.8.8.8"):
+        with patch("app.services.email.client.smtplib.SMTP") as mock_smtp_class:
+            mock_smtp_instance = MagicMock()
+            mock_smtp_instance.connect.side_effect = OSError("Connection refused")
+            mock_smtp_class.return_value = mock_smtp_instance
+
+            with pytest.raises(OSError, match="Connection refused"):
+                service._get_connection()
+
+            mock_smtp_instance.close.assert_called_once()
+
+
+def test_verify_connection_payload_omits_raw_response(mock_config):
+    """Ensure that verify_connection() return payload never contains raw server response banner."""
+    with patch("smtplib.SMTP") as mock_smtp_class:
+        mock_smtp_instance = MagicMock()
+        mock_smtp_instance.__enter__.return_value = mock_smtp_instance
+        mock_smtp_instance.connect.return_value = (220, b"220 mail.example.com ESMTP Postfix")
+        mock_smtp_instance.noop.return_value = (250, b"2.0.0 Ok")
+        mock_smtp_class.return_value = mock_smtp_instance
+
+        service = EmailService(config=mock_config)
+        res = service.verify_connection()
+
+        assert "response" not in res
+        assert res["status"] == "ok"
+        assert res["host"] == mock_config.host
+        assert res["port"] == mock_config.port

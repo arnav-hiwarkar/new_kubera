@@ -30,8 +30,8 @@ class CompanySmtpConfigUpdate(BaseModel):
 
 
 class CompanySmtpVerifyRequest(BaseModel):
-    host: Optional[str] = None
-    port: Optional[int] = None
+    host: Optional[str] = Field(None, min_length=1, max_length=255)
+    port: Optional[int] = Field(None, ge=1, le=65535)
     user: Optional[str] = None
     password: Optional[str] = None
     use_tls: Optional[bool] = None
