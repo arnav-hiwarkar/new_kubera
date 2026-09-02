@@ -6,12 +6,16 @@ from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.auth import get_current_company_user, require_admin, get_visible_user_ids, require_manager_or_admin
+from app.auth import get_current_company_user, require_admin, get_visible_user_ids, require_manager_or_admin, require_module
 from app.models.company import CompanyUser, UserRole
 from app.models.kra import KRAItem, KRAStatus
 from app.schemas.kra import KRACreate, KRAUpdate, KRAResponse
 
-router = APIRouter(prefix="/api/v1/kra", tags=["kra"])
+router = APIRouter(
+    prefix="/api/v1/kra",
+    tags=["kra"],
+    dependencies=[Depends(require_module("kra"))]
+)
 
 @router.get("", response_model=List[KRAResponse])
 async def list_kras(

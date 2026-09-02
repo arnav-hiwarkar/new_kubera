@@ -20,7 +20,7 @@ async def _create_member(
             "password": password,
             "full_name": full_name,
             "role": role,
-            "accessible_modules": modules if modules is not None else ["docvault"],
+            "accessible_modules": modules if modules is not None else ["docvault", "notifications"],
         },
         headers=admin_headers,
     )
@@ -46,7 +46,7 @@ async def test_upload_with_approval_request_and_notification(client: AsyncClient
     admin_id = me_resp.json()["id"]
 
     # Create member
-    member_id = await _create_member(client, admin_headers, "member@approve.com", "pass1234", "Alice Smith", "employee", ["docvault"])
+    member_id = await _create_member(client, admin_headers, "member@approve.com", "pass1234", "Alice Smith", "employee", ["docvault", "notifications"])
     member_token = await get_company_token(client, email="member@approve.com", password="pass1234")
     member_headers = {"Authorization": f"Bearer {member_token}"}
 
@@ -117,8 +117,8 @@ async def test_restricted_bucket_approver_validation(client: AsyncClient):
     admin_token = await get_company_token(client, email="admin@bg.com", password="pass1234")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    user1_id = await _create_member(client, admin_headers, "u1@bg.com", "pass1234", "User One", "employee", ["docvault"])
-    user2_id = await _create_member(client, admin_headers, "u2@bg.com", "pass1234", "User Two", "employee", ["docvault"])
+    user1_id = await _create_member(client, admin_headers, "u1@bg.com", "pass1234", "User One", "employee", ["docvault", "notifications"])
+    user2_id = await _create_member(client, admin_headers, "u2@bg.com", "pass1234", "User Two", "employee", ["docvault", "notifications"])
 
     # Create restricted bucket with access only to user1
     b_resp = await client.post("/api/v1/docvault/buckets", json={"name": "Restricted Secret"}, headers=admin_headers)
@@ -147,9 +147,9 @@ async def test_non_approver_authorization_guardrails(client: AsyncClient):
     admin_token = await get_company_token(client, email="admin@gc.com", password="pass1234")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    u1_id = await _create_member(client, admin_headers, "u1@gc.com", "pass1234", "Uploader", "employee", ["docvault"])
-    u2_id = await _create_member(client, admin_headers, "u2@gc.com", "pass1234", "Approver", "employee", ["docvault"])
-    u3_id = await _create_member(client, admin_headers, "u3@gc.com", "pass1234", "Stranger", "employee", ["docvault"])
+    u1_id = await _create_member(client, admin_headers, "u1@gc.com", "pass1234", "Uploader", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@gc.com", "pass1234", "Approver", "employee", ["docvault", "notifications"])
+    u3_id = await _create_member(client, admin_headers, "u3@gc.com", "pass1234", "Stranger", "employee", ["docvault", "notifications"])
 
     t1 = await get_company_token(client, email="u1@gc.com", password="pass1234")
     t2 = await get_company_token(client, email="u2@gc.com", password="pass1234")
@@ -205,8 +205,8 @@ async def test_admin_override_and_request_changes(client: AsyncClient):
     admin_token = await get_company_token(client, email="admin@ov.com", password="pass1234")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    u1_id = await _create_member(client, admin_headers, "u1@ov.com", "pass1234", "Uploader", "employee", ["docvault"])
-    u2_id = await _create_member(client, admin_headers, "u2@ov.com", "pass1234", "Approver", "employee", ["docvault"])
+    u1_id = await _create_member(client, admin_headers, "u1@ov.com", "pass1234", "Uploader", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@ov.com", "pass1234", "Approver", "employee", ["docvault", "notifications"])
     h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@ov.com', 'pass1234')}"}
 
     files = {"file": ("proposal.pdf", b"proposal data", "application/pdf")}
@@ -270,8 +270,8 @@ async def test_list_pending_my_approval_filter(client: AsyncClient):
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
-    u1_id = await _create_member(client, admin_headers, "u1@ft.com", "pass1234", "U1", "employee", ["docvault"])
-    u2_id = await _create_member(client, admin_headers, "u2@ft.com", "pass1234", "U2", "employee", ["docvault"])
+    u1_id = await _create_member(client, admin_headers, "u1@ft.com", "pass1234", "U1", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@ft.com", "pass1234", "U2", "employee", ["docvault", "notifications"])
     h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@ft.com', 'pass1234')}"}
 
     # U1 uploads doc 1 assigned to admin
@@ -297,8 +297,8 @@ async def test_list_approvers_success_and_self_exclusion(client: AsyncClient):
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
-    e1_id = await _create_member(client, admin_headers, "e1@applist.com", "pass1234", "Employee One", "employee", ["docvault"])
-    e2_id = await _create_member(client, admin_headers, "e2@applist.com", "pass1234", "Employee Two", "employee", ["docvault"])
+    e1_id = await _create_member(client, admin_headers, "e1@applist.com", "pass1234", "Employee One", "employee", ["docvault", "notifications"])
+    e2_id = await _create_member(client, admin_headers, "e2@applist.com", "pass1234", "Employee Two", "employee", ["docvault", "notifications"])
     # Employee without docvault module
     nodoc_id = await _create_member(client, admin_headers, "nodoc@applist.com", "pass1234", "No Doc User", "employee", ["assets"])
 
@@ -329,9 +329,9 @@ async def test_list_approvers_filters_inactive_and_restricted_bucket(client: Asy
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
-    u1_id = await _create_member(client, admin_headers, "u1@bapp.com", "pass1234", "User One", "employee", ["docvault"])
-    u2_id = await _create_member(client, admin_headers, "u2@bapp.com", "pass1234", "User Two", "employee", ["docvault"])
-    deact_id = await _create_member(client, admin_headers, "deact@bapp.com", "pass1234", "Deact User", "employee", ["docvault"])
+    u1_id = await _create_member(client, admin_headers, "u1@bapp.com", "pass1234", "User One", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@bapp.com", "pass1234", "User Two", "employee", ["docvault", "notifications"])
+    deact_id = await _create_member(client, admin_headers, "deact@bapp.com", "pass1234", "Deact User", "employee", ["docvault", "notifications"])
 
     # Deactivate deact_id
     await client.patch(f"/api/v1/users/{deact_id}/deactivate", headers=admin_headers)
@@ -372,7 +372,7 @@ async def test_list_approvers_success_for_employee_caller(client: AsyncClient):
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
     # Employee with docvault module
-    doc_id = await _create_member(client, admin_headers, "docmember@empcall.com", "pass1234", "Doc Member", "employee", ["docvault"])
+    doc_id = await _create_member(client, admin_headers, "docmember@empcall.com", "pass1234", "Doc Member", "employee", ["docvault", "notifications"])
     doc_token = await get_company_token(client, email="docmember@empcall.com", password="pass1234")
     doc_headers = {"Authorization": f"Bearer {doc_token}"}
 
@@ -395,9 +395,9 @@ async def test_pending_approval_creator_and_peer_cannot_modify_or_delete(client:
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
     # Creator (Alice) and Peer (Charlie) and Approver (Bob)
-    alice_id = await _create_member(client, admin_headers, "alice@immut.com", "pass1234", "Alice Creator", "employee", ["docvault"])
-    bob_id = await _create_member(client, admin_headers, "bob@immut.com", "pass1234", "Bob Approver", "employee", ["docvault"])
-    charlie_id = await _create_member(client, admin_headers, "charlie@immut.com", "pass1234", "Charlie Peer", "employee", ["docvault"])
+    alice_id = await _create_member(client, admin_headers, "alice@immut.com", "pass1234", "Alice Creator", "employee", ["docvault", "notifications"])
+    bob_id = await _create_member(client, admin_headers, "bob@immut.com", "pass1234", "Bob Approver", "employee", ["docvault", "notifications"])
+    charlie_id = await _create_member(client, admin_headers, "charlie@immut.com", "pass1234", "Charlie Peer", "employee", ["docvault", "notifications"])
 
     alice_headers = {"Authorization": f"Bearer {await get_company_token(client, 'alice@immut.com', 'pass1234')}"}
     bob_headers = {"Authorization": f"Bearer {await get_company_token(client, 'bob@immut.com', 'pass1234')}"}

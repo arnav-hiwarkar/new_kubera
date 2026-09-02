@@ -4,13 +4,17 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_company_user
+from app.auth import get_current_company_user, require_module
 from app.database import get_db
 from app.models.company import CompanyUser
 from app.models.activity_log import ActivityLog
 from app.schemas.activity import ActivityLogOut
 
-router = APIRouter(prefix="/api/v1/activity-log", tags=["activity-log"])
+router = APIRouter(
+    prefix="/api/v1/activity-log",
+    tags=["activity-log"],
+    dependencies=[Depends(require_module("activity"))]
+)
 
 
 @router.get("", response_model=list[ActivityLogOut])

@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict, Field, computed_field
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, computed_field, field_validator
 from app.models.company import UserRole
+from app.access_modules import validate_accessible_modules
 
 class UserChangePasswordRequest(BaseModel):
     old_password: str = Field(..., min_length=1)
@@ -19,6 +20,11 @@ class UserCreate(BaseModel):
     accessible_modules: list[str] = Field(default_factory=list)
     can_change_password: bool = True
 
+    @field_validator('accessible_modules')
+    @classmethod
+    def validate_modules(cls, v: list[str]) -> list[str]:
+        return validate_accessible_modules(v)
+
 class UserUpdate(BaseModel):
     full_name: str | None = None
     role: UserRole | None = None
@@ -28,6 +34,13 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
     accessible_modules: list[str] | None = None
     can_change_password: bool | None = None
+
+    @field_validator('accessible_modules')
+    @classmethod
+    def validate_modules(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        return validate_accessible_modules(v)
 
 class UserResponse(BaseModel):
     id: uuid.UUID

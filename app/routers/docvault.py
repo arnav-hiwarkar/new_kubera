@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database import get_db
-from app.auth import get_current_company_user, require_admin
+from app.auth import get_current_company_user, require_admin, require_module
 from app.models.company import CompanyUser, CompanyKey, UserRole
 from app.models.docvault import (
     Bucket, BucketAccessGrant, BucketVisibility, Document, DocumentVersion, DocumentStatus
@@ -24,7 +24,11 @@ from app.encryption import (
     generate_dek, encrypt_dek, decrypt_dek, encrypt_file_data, decrypt_file_data, decrypt_company_kek
 )
 
-router = APIRouter(prefix="/api/v1/docvault", tags=["docvault"])
+router = APIRouter(
+    prefix="/api/v1/docvault",
+    tags=["docvault"],
+    dependencies=[Depends(require_module("docvault"))]
+)
 
 
 async def log_activity(db: AsyncSession, company_id: uuid.UUID, actor_id: uuid.UUID, action: str, entity_type: str, entity_id: uuid.UUID, metadata_: dict = None):
