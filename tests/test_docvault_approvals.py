@@ -548,3 +548,76 @@ async def test_uploader_cannot_approve_own_document(client: AsyncClient):
     # u1 (uploader) tries to review
     resp = await client.post(f"/api/v1/docvault/documents/{doc_id}/review", json={"decision": "verified"}, headers=h1)
     assert resp.status_code == 403
+
+@pytest.mark.asyncio
+async def test_unrelated_user_cannot_edit_document_metadata(client: AsyncClient):
+    await create_test_company(client, name="EditCo1", email="admin@editco1.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@editco1.com", password="Valid1!Pass")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    u1_id = await _create_member(client, admin_headers, "u1@editco1.com", "Valid1!Pass", "Creator", "employee", ["docvault"])
+    u2_id = await _create_member(client, admin_headers, "u2@editco1.com", "Valid1!Pass", "Other", "employee", ["docvault"])
+    
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@editco1.com', 'Valid1!Pass')}"}
+    h2 = {"Authorization": f"Bearer {await get_company_token(client, 'u2@editco1.com', 'Valid1!Pass')}"}
+
+    # u1 uploads document
+    files = {"file": ("doc.txt", b"content", "text/plain")}
+    resp = await client.post("/api/v1/docvault/documents", data={"title": "Doc"}, files=files, headers=h1)
+    doc_id = resp.json()["id"]
+
+    # u2 tries to edit title
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"title": "Hacked"}, headers=h2)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_only_creator_or_admin_can_unlock(client: AsyncClient):
+    await create_test_company(client, name="EditCo2", email="admin@editco2.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@editco2.com", password="Valid1!Pass")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    u1_id = await _create_member(client, admin_headers, "u1@editco2.com", "Valid1!Pass", "Creator", "employee", ["docvault"])
+    u2_id = await _create_member(client, admin_headers, "u2@editco2.com", "Valid1!Pass", "Other", "employee", ["docvault"])
+    
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@editco2.com', 'Valid1!Pass')}"}
+    h2 = {"Authorization": f"Bearer {await get_company_token(client, 'u2@editco2.com', 'Valid1!Pass')}"}
+
+    # u1 uploads document, locked
+    files = {"file": ("doc.txt", b"content", "text/plain")}
+    resp = await client.post("/api/v1/docvault/documents", data={"title": "Doc", "is_editable": "false"}, files=files, headers=h1)
+    doc_id = resp.json()["id"]
+
+    # u2 (not creator, not admin) tries to unlock
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"is_editable": True}, headers=h2)
+    assert resp.status_code == 403
+
+    # u1 (creator) tries to unlock -> allowed
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"is_editable": True}, headers=h1)
+    assert resp.status_code == 200
+    assert resp.json()["is_editable"] is True
+
+
+@pytest.mark.asyncio
+async def test_employee_cannot_self_verify_via_patch(client: AsyncClient):
+    await create_test_company(client, name="EditCo3", email="admin@editco3.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@editco3.com", password="Valid1!Pass")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    u1_id = await _create_member(client, admin_headers, "u1@editco3.com", "Valid1!Pass", "Creator", "employee", ["docvault"])
+    u2_id = await _create_member(client, admin_headers, "u2@editco3.com", "Valid1!Pass", "Approver", "employee", ["docvault"])
+    
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@editco3.com', 'Valid1!Pass')}"}
+
+    # u1 uploads document with approval request
+    files = {"file": ("doc.txt", b"content", "text/plain")}
+    resp = await client.post("/api/v1/docvault/documents", data={"title": "Doc", "needs_approval": "true", "approver_id": u2_id}, files=files, headers=h1)
+    doc_id = resp.json()["id"]
+
+    # u1 tries to patch status
+    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"status": "verified"}, headers=h1)
+    # Depending on pydantic config, might be 200 (extra ignored), 422 (extra forbidden). 
+    # Or 403 (guarded by logic if we didn't remove it, but we removed it).
+    
+    resp2 = await client.get(f"/api/v1/docvault/documents/{doc_id}", headers=h1)
+    assert resp2.json()["status"] == "pending_approval"

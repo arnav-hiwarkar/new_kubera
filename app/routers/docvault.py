@@ -166,6 +166,10 @@ def is_company_admin(user: CompanyUser) -> bool:
     return role_str == "admin" or user.role == UserRole.admin
 
 
+def _may_edit_document(user: CompanyUser, doc: Document) -> bool:
+    return is_company_admin(user) or doc.created_by == user.id or doc.approver_id == user.id
+
+
 def user_has_docvault_access(user: CompanyUser) -> bool:
     if is_company_admin(user):
         return True
@@ -671,6 +675,9 @@ async def update_document(
     if not update_data:
         return (await _attach_uploader_names(db, [doc]))[0]
 
+    if not _may_edit_document(current_user, doc):
+        raise HTTPException(status_code=403, detail="Not authorized to modify this document")
+
     # Approval permission guardrails: If document is pending approval, ONLY approver or admin can modify ANY property or review
     is_approver_or_admin = (current_user.id == doc.approver_id or is_company_admin(current_user))
     if doc.status == DocumentStatus.pending_approval and not is_approver_or_admin:
@@ -678,6 +685,9 @@ async def update_document(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the assigned approver or an admin can modify, edit, or review this document while approval is pending",
         )
+
+    if update_data.get("is_editable") is True and not (is_company_admin(current_user) or doc.created_by == current_user.id):
+        raise HTTPException(status_code=403, detail="Only creator or admin can unlock a document")
 
     # A locked (non-editable) document freezes its content/metadata — title, tags
     # and bucket. Status changes (incl. archive) and toggling is_editable back on
@@ -713,26 +723,6 @@ async def update_document(
         target_bucket = updates.bucket_id or doc.bucket_id
         if target_bucket and not await can_access_bucket(db, approver, target_bucket):
             raise HTTPException(status_code=400, detail="Selected approver does not have access to this bucket")
-
-    # If transitioning away from pending_approval, record resolution timestamp and notify creator
-    if doc.status == DocumentStatus.pending_approval and updates.status and updates.status != DocumentStatus.pending_approval:
-        doc.approved_at = datetime.now(timezone.utc)
-        if doc.created_by and doc.created_by != current_user.id:
-            db.add(
-                Notification(
-                    recipient_type=RecipientType.company_user,
-                    recipient_id=doc.created_by,
-                    type="docvault.approval_resolved",
-                    payload={
-                        "document_id": str(doc.id),
-                        "title": doc.title,
-                        "status": updates.status.value,
-                        "approver_name": current_user.full_name,
-                        "notes": updates.approval_notes,
-                        "message": f"{current_user.full_name} updated status of '{doc.title}' to {updates.status.value}",
-                    },
-                )
-            )
 
     for key, value in update_data.items():
         setattr(doc, key, value)
