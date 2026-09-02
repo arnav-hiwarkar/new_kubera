@@ -59,14 +59,17 @@ class EmailService:
         if self.config.use_ssl:
             context = ssl.create_default_context()
             server = smtplib.SMTP_SSL(timeout=timeout, context=context)
-            server._host = self.config.host  # SNI pinning
-            server.connect(safe_ip, self.config.port)
         else:
             server = smtplib.SMTP(timeout=timeout)
-            server._host = self.config.host  # SNI pinning for starttls
-            server.connect(safe_ip, self.config.port)
 
         try:
+            server._host = self.config.host  # SNI pinning for starttls / SSL
+            res = server.connect(safe_ip, self.config.port)
+            if isinstance(res, tuple) and len(res) >= 2:
+                code, msg = res[0], res[1]
+                if code != 220:
+                    raise smtplib.SMTPConnectError(code, msg)
+
             if not self.config.use_ssl and self.config.use_tls:
                 context = ssl.create_default_context()
                 server.starttls(context=context)

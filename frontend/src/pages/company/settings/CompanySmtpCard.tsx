@@ -55,10 +55,25 @@ export function CompanySmtpCard({ canEdit }: { canEdit: boolean }) {
 
   async function handleTestConnection() {
     setVerifyResult(null)
+
+    const isNewHostOrUser = isConfigured && (
+      (form.host.trim() && form.host.trim() !== smtpConfig?.host) ||
+      (form.user.trim() && form.user.trim() !== smtpConfig?.user)
+    )
+    if (isNewHostOrUser && !form.password) {
+      toast.error('Password is required when testing a different SMTP host or user.')
+      return
+    }
+
+    if (!isConfigured && !form.password) {
+      toast.error('Password is required to test SMTP connection.')
+      return
+    }
+
     try {
       const payload = {
         host: form.host.trim() || undefined,
-        port: Number(form.port) || undefined,
+        port: Number(form.port) || 587,
         user: form.user.trim() || undefined,
         password: form.password || undefined,
         from_email: form.from_email.trim() || undefined,
@@ -204,7 +219,7 @@ export function CompanySmtpCard({ canEdit }: { canEdit: boolean }) {
               <Input
                 type="number"
                 value={form.port}
-                onChange={(e) => setForm((prev) => ({ ...prev, port: parseInt(e.target.value) || 587 }))}
+                onChange={(e) => setForm((prev) => ({ ...prev, port: e.target.value === '' ? ('' as any) : parseInt(e.target.value) || 0 }))}
                 disabled={!canEdit}
                 required
               />

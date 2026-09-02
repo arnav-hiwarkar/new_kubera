@@ -130,6 +130,14 @@ async def verify_smtp_config(
     user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    saved_row = (
+        await db.execute(
+            select(CompanySmtpConfig).where(CompanySmtpConfig.company_id == user.company_id)
+        )
+    ).scalar_one_or_none()
+
+    tested_saved_config = False
+
     if body.host and body.user and body.password:
         config = EmailConfig(
             host=body.host,
@@ -141,18 +149,47 @@ async def verify_smtp_config(
             from_email=str(body.from_email or body.user),
             from_name=body.from_name or "Test",
         )
+        if (
+            saved_row
+            and saved_row.host == body.host
+            and saved_row.port == (body.port or 587)
+            and saved_row.user == body.user
+        ):
+            tested_saved_config = True
+    elif body.host:
+        # Caller specified a host but omitted credentials
+        if (
+            saved_row
+            and saved_row.host == body.host
+            and (not body.user or saved_row.user == body.user)
+        ):
+            config = await get_email_config_for_company(db, user.company_id)
+            if not config:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No SMTP configuration found to verify. Please provide credentials.",
+                )
+            tested_saved_config = True
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Password is required when verifying a new SMTP host.",
+            )
     else:
         config = await get_email_config_for_company(db, user.company_id)
         if not config:
-            raise HTTPException(status_code=400, detail="No SMTP configuration found to verify. Please provide credentials.")
+            raise HTTPException(
+                status_code=400,
+                detail="No SMTP configuration found to verify. Please provide credentials.",
+            )
+        tested_saved_config = True
 
     service = EmailService(config=config)
     try:
         # Run synchronous SMTP handshake in a thread to avoid blocking the event loop
         res = await asyncio.to_thread(service.verify_connection)
-        # Update last_tested_at on saved row if exists
-        saved_row = (await db.execute(select(CompanySmtpConfig).where(CompanySmtpConfig.company_id == user.company_id))).scalar_one_or_none()
-        if saved_row:
+        # Only update last_tested_at on saved row if the tested config was the saved config
+        if saved_row and tested_saved_config:
             saved_row.last_tested_at = datetime.now(timezone.utc)
             await db.commit()
 
