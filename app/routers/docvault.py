@@ -18,7 +18,7 @@ from app.models.docvault import (
 from app.models.notification import Notification, RecipientType
 from app.models.activity_log import ActivityLog, ActorType
 from app.schemas.docvault import (
-    BucketCreate, BucketResponse, BucketUpdate, BucketAccessUpdate, DocumentResponse, DocumentVersionResponse, DocumentUpdate, DocVaultApproverResponse
+    BucketCreate, BucketResponse, BucketUpdate, BucketAccessUpdate, DocumentResponse, DocumentVersionResponse, DocumentUpdate, DocVaultApproverResponse, DocumentReviewRequest
 )
 from app.encryption import (
     generate_dek, encrypt_dek, decrypt_dek, encrypt_file_data, decrypt_file_data, decrypt_company_kek
@@ -741,6 +741,72 @@ async def update_document(
     await db.commit()
 
     # Reload with versions (db.refresh does not reliably reload the collection).
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id)
+    )
+    return (await _attach_uploader_names(db, [result.scalar_one()]))[0]
+
+
+
+@router.post("/documents/{document_id}/review", response_model=DocumentResponse)
+async def review_document(
+    document_id: uuid.UUID,
+    body: DocumentReviewRequest,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    result = await db.execute(
+        select(Document)
+        .options(selectinload(Document.versions))
+        .where(and_(Document.id == document_id, Document.company_id == current_user.company_id))
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not await can_access_bucket(db, current_user, doc.bucket_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.status != DocumentStatus.pending_approval:
+        raise HTTPException(status_code=409, detail="Document is not pending approval")
+
+    is_admin = is_company_admin(current_user)
+    if current_user.id != doc.approver_id and not is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to review")
+
+    if current_user.id == doc.created_by and not is_admin:
+        raise HTTPException(status_code=403, detail="Uploader cannot review their own document")
+
+    old_status = doc.status.value if doc.status else None
+    
+    doc.status = DocumentStatus(body.decision)
+    doc.approval_notes = body.approval_notes
+    doc.approved_by = current_user.id
+    doc.approved_at = datetime.now(timezone.utc)
+
+    if doc.created_by and doc.created_by != current_user.id:
+        db.add(
+            Notification(
+                recipient_type=RecipientType.company_user,
+                recipient_id=doc.created_by,
+                type="docvault.approval_resolved",
+                payload={
+                    "document_id": str(doc.id),
+                    "title": doc.title,
+                    "status": doc.status.value,
+                    "approver_name": current_user.full_name,
+                    "notes": doc.approval_notes,
+                    "message": f"{current_user.full_name} updated status of '{doc.title}' to {doc.status.value}",
+                },
+            )
+        )
+
+    await log_activity(
+        db, current_user.company_id, current_user.id, "document.reviewed", "document", doc.id,
+        {"from": old_status, "to": doc.status.value, "notes": doc.approval_notes}
+    )
+    
+    await db.commit()
+
     result = await db.execute(
         select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id)
     )

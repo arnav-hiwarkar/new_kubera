@@ -73,6 +73,14 @@ async def test_upload_with_approval_request_and_notification(client: AsyncClient
     notifs = notif_resp.json()
     assert any(n["type"] == "docvault.approval_requested" and n["payload"]["document_id"] == doc_id for n in notifs)
 
+    # Admin reviews and approves using POST /review
+    resp = await client.post(f"/api/v1/docvault/documents/{doc_id}/review", json={"decision": "verified", "approval_notes": "Looks good"}, headers=admin_headers)
+    assert resp.status_code == 200
+    doc = resp.json()
+    assert doc["status"] == "verified"
+    assert doc["approved_at"] is not None
+    assert doc["approval_notes"] == "Looks good"
+
 
 @pytest.mark.asyncio
 async def test_ineligible_approver_rejected(client: AsyncClient):
@@ -170,7 +178,7 @@ async def test_non_approver_authorization_guardrails(client: AsyncClient):
     doc_id = resp.json()["id"]
 
     # 1. Stranger U3 attempts to approve -> 403 Forbidden
-    resp = await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"status": "verified"}, headers=h3)
+    resp = await client.post(f"/api/v1/docvault/documents/{doc_id}/review", json={"decision": "verified"}, headers=h3)
     assert resp.status_code == 403
 
     # 2. Stranger U3 attempts to edit title during pending approval -> 403 Forbidden
@@ -183,9 +191,9 @@ async def test_non_approver_authorization_guardrails(client: AsyncClient):
     assert resp.status_code == 403
 
     # 4. Assigned approver U2 approves document with notes -> 200 OK
-    resp = await client.patch(
-        f"/api/v1/docvault/documents/{doc_id}",
-        json={"status": "verified", "approval_notes": "Approved after technical review"},
+    resp = await client.post(
+        f"/api/v1/docvault/documents/{doc_id}/review",
+        json={"decision": "verified", "approval_notes": "Approved after technical review"},
         headers=h2,
     )
     assert resp.status_code == 200
@@ -219,9 +227,9 @@ async def test_admin_override_and_request_changes(client: AsyncClient):
     doc_id = resp.json()["id"]
 
     # Admin overrides and requests changes (status: action_required)
-    resp = await client.patch(
-        f"/api/v1/docvault/documents/{doc_id}",
-        json={"status": "action_required", "approval_notes": "Please include tax breakdown table"},
+    resp = await client.post(
+        f"/api/v1/docvault/documents/{doc_id}/review",
+        json={"decision": "action_required", "approval_notes": "Please include tax breakdown table"},
         headers=admin_headers,
     )
     assert resp.status_code == 200
@@ -447,9 +455,9 @@ async def test_pending_approval_creator_and_peer_cannot_modify_or_delete(client:
     assert resp.status_code == 403
 
     # 8. Bob (approver) can review and approve -> 200
-    resp = await client.patch(
-        f"/api/v1/docvault/documents/{doc_id}",
-        json={"status": "verified", "approval_notes": "Looks solid, approved."},
+    resp = await client.post(
+        f"/api/v1/docvault/documents/{doc_id}/review",
+        json={"decision": "verified", "approval_notes": "Looks solid, approved."},
         headers=bob_headers,
     )
     assert resp.status_code == 200
@@ -479,3 +487,64 @@ def test_document_review_request_schema():
     with pytest.raises(ValidationError):
         DocumentReviewRequest(decision="invalid_status")
 
+
+@pytest.mark.asyncio
+async def test_review_requires_pending_state(client: AsyncClient):
+    await create_test_company(client, name="ReviewCo1", email="admin@reviewco1.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@reviewco1.com", password="Valid1!Pass")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    u1_id = await _create_member(client, admin_headers, "u1@reviewco1.com", "Valid1!Pass", "Uploader", "employee", ["docvault", "notifications"])
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@reviewco1.com', 'Valid1!Pass')}"}
+
+    # Upload doc without approval
+    files = {"file": ("doc.txt", b"content", "text/plain")}
+    resp = await client.post("/api/v1/docvault/documents", data={"title": "Doc"}, files=files, headers=h1)
+    doc_id = resp.json()["id"]
+
+    # Try to review
+    resp = await client.post(f"/api/v1/docvault/documents/{doc_id}/review", json={"decision": "verified"}, headers=admin_headers)
+    assert resp.status_code == 409
+    assert "pending approval" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_review_rejects_non_approver(client: AsyncClient):
+    await create_test_company(client, name="ReviewCo2", email="admin@reviewco2.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@reviewco2.com", password="Valid1!Pass")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    u1_id = await _create_member(client, admin_headers, "u1@reviewco2.com", "Valid1!Pass", "Uploader", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@reviewco2.com", "Valid1!Pass", "Approver", "employee", ["docvault", "notifications"])
+    u3_id = await _create_member(client, admin_headers, "u3@reviewco2.com", "Valid1!Pass", "Other", "employee", ["docvault", "notifications"])
+    
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@reviewco2.com', 'Valid1!Pass')}"}
+    h3 = {"Authorization": f"Bearer {await get_company_token(client, 'u3@reviewco2.com', 'Valid1!Pass')}"}
+
+    files = {"file": ("doc.txt", b"content", "text/plain")}
+    resp = await client.post("/api/v1/docvault/documents", data={"title": "Doc", "needs_approval": "true", "approver_id": u2_id}, files=files, headers=h1)
+    doc_id = resp.json()["id"]
+
+    # u3 tries to review
+    resp = await client.post(f"/api/v1/docvault/documents/{doc_id}/review", json={"decision": "verified"}, headers=h3)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_uploader_cannot_approve_own_document(client: AsyncClient):
+    await create_test_company(client, name="ReviewCo3", email="admin@reviewco3.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@reviewco3.com", password="Valid1!Pass")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    u1_id = await _create_member(client, admin_headers, "u1@reviewco3.com", "Valid1!Pass", "Uploader", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@reviewco3.com", "Valid1!Pass", "Approver", "employee", ["docvault", "notifications"])
+    
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@reviewco3.com', 'Valid1!Pass')}"}
+
+    files = {"file": ("doc.txt", b"content", "text/plain")}
+    resp = await client.post("/api/v1/docvault/documents", data={"title": "Doc", "needs_approval": "true", "approver_id": u2_id}, files=files, headers=h1)
+    doc_id = resp.json()["id"]
+
+    # u1 (uploader) tries to review
+    resp = await client.post(f"/api/v1/docvault/documents/{doc_id}/review", json={"decision": "verified"}, headers=h1)
+    assert resp.status_code == 403
