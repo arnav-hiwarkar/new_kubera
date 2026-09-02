@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 logger = logging.getLogger(__name__)
 
 from app.database import get_db
-from app.auth import get_current_company_user, require_admin, require_manager_or_admin
+from app.auth import get_current_company_user, require_admin, require_manager_or_admin, require_module
 from app.models.company import CompanyUser
 from app.models.auditor import Auditor
 from app.models.activity_log import ActorType, ActivityLog
@@ -49,7 +49,11 @@ from app.services import tb_reimport
 from app.services import trial_balance as tb
 from app.services import trial_balance_query as tbq
 
-router = APIRouter(prefix="/api/v1/auditease", tags=["auditease-company"])
+router = APIRouter(
+    prefix="/api/v1/auditease",
+    tags=["auditease-company"],
+    dependencies=[Depends(require_module("auditease"))]
+)
 
 
 async def _get_owned_engagement(db: AsyncSession, company_id: uuid.UUID, engagement_id: uuid.UUID) -> AuditEngagement:

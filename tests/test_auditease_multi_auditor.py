@@ -15,6 +15,7 @@ async def _make_user(client: AsyncClient, admin_headers: dict, email: str, role:
     resp = await client.post("/api/v1/users", json={
         "email": email, "password": "pass1234",
         "full_name": email.split("@")[0], "role": role,
+        "accessible_modules": ["auditease"]
     }, headers=admin_headers)
     assert resp.status_code == 201, resp.text
     return resp.json()

@@ -10,7 +10,7 @@ async def _admin(client, email="kadmin@a.com"):
 
 
 async def _make_user(client, admin_headers, email, role, manager_id=None):
-    body = {"email": email, "password": "pass1234", "full_name": email.split("@")[0], "role": role}
+    body = {"email": email, "password": "pass1234", "full_name": email.split("@")[0], "role": role, "accessible_modules": ["kra"]}
     if manager_id:
         body["manager_id"] = manager_id
     resp = await client.post("/api/v1/users", json=body, headers=admin_headers)

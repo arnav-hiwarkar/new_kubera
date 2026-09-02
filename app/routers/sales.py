@@ -8,7 +8,7 @@ from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.auth import get_current_company_user, require_admin, get_visible_user_ids
+from app.auth import get_current_company_user, require_admin, get_visible_user_ids, require_module
 from app.models.company import CompanyUser
 from app.models.sales import SalesRecord, SalesStatus
 from app.schemas.sales import (
@@ -19,7 +19,11 @@ from app.services.custom_field_validator import validate_custom_fields
 from app.services.import_service import parse_and_import, ColumnMapping, ImportResult, inspect_spreadsheet
 from app.services.export_service import generate_xlsx, ExportColumn
 
-router = APIRouter(prefix="/api/v1/sales", tags=["sales"])
+router = APIRouter(
+    prefix="/api/v1/sales",
+    tags=["sales"],
+    dependencies=[Depends(require_module("sales"))]
+)
 
 @router.get("", response_model=List[SalesRecordResponse])
 async def list_sales(

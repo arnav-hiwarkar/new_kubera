@@ -1,9 +1,23 @@
 """Canonical company-user module access identifiers."""
 
-LEGACY_COMPLIANCE_MODULE = "compliance"
+DASHBOARD_MODULE = "dashboard"
+DOCVAULT_MODULE = "docvault"
+SALES_MODULE = "sales"
+ASSETS_MODULE = "assets"
+KRA_MODULE = "kra"
+AUDITEASE_MODULE = "auditease"
 ROC_MODULE = "roc"
 SECRETARIAL_MODULE = "secretarial"
+NOTIFICATIONS_MODULE = "notifications"
+ACTIVITY_MODULE = "activity"
 
+LEGACY_COMPLIANCE_MODULE = "compliance"
+
+ALL_MODULES = frozenset({
+    DASHBOARD_MODULE, DOCVAULT_MODULE, SALES_MODULE, ASSETS_MODULE, KRA_MODULE,
+    AUDITEASE_MODULE, ROC_MODULE, SECRETARIAL_MODULE, NOTIFICATIONS_MODULE,
+    ACTIVITY_MODULE,
+})
 
 def normalize_accessible_modules(modules: list[str]) -> list[str]:
     """Return de-duplicated canonical module IDs, preserving input order.
@@ -26,4 +40,12 @@ def normalize_accessible_modules(modules: list[str]) -> list[str]:
                 normalized.append(replacement)
                 seen.add(replacement)
 
+    return normalized
+
+
+def validate_accessible_modules(modules: list[str]) -> list[str]:
+    normalized = normalize_accessible_modules(modules)
+    unknown = sorted(set(normalized) - ALL_MODULES)
+    if unknown:
+        raise ValueError(f"Unknown module ids: {', '.join(unknown)}")
     return normalized
