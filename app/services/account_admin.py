@@ -76,8 +76,8 @@ async def find_accounts(db: AsyncSession, email: str) -> list[dict]:
 
 async def set_password(db: AsyncSession, principal_type: str, account_id: uuid.UUID, new_password: str) -> None:
     """Overwrite an account's password hash. Raises ValueError if not found."""
-    if not new_password:
-        raise ValueError("password cannot be empty")
+    from app.services.user_security import validate_password_complexity
+    validate_password_complexity(new_password)
 
     if principal_type == COMPANY_USER:
         model = CompanyUser

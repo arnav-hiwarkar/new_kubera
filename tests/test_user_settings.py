@@ -120,7 +120,7 @@ async def test_password_change_complexity_enforcement(client: AsyncClient):
     # Missing uppercase
     r1 = await client.post(
         "/api/v1/users/me/change-password",
-        json={"old_password": "Password123!", "new_password": "password123!", "confirm_password": "password123!"},
+        json={"old_password": "Password123!", "new_password": "Valid1!Pass!", "confirm_password": "Valid1!Pass!"},
         headers=headers,
     )
     assert r1.status_code == 400

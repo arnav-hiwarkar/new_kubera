@@ -18,16 +18,16 @@ def _headers(token: str) -> dict[str, str]:
 
 @pytest.mark.asyncio
 async def test_user_writes_canonicalize_legacy_compliance_access(client: AsyncClient):
-    await create_test_company(client, email="access-admin@a.com", password="pass1234")
+    await create_test_company(client, email="access-admin@a.com", password="Valid1!Pass")
     admin_headers = _headers(
-        await get_company_token(client, email="access-admin@a.com", password="pass1234")
+        await get_company_token(client, email="access-admin@a.com", password="Valid1!Pass")
     )
 
     created = await client.post(
         "/api/v1/users",
         json={
             "email": "legacy-access@a.com",
-            "password": "pass1234",
+            "password": "Valid1!Pass",
             "full_name": "Legacy Access",
             "role": "employee",
             "accessible_modules": [
@@ -72,9 +72,9 @@ async def test_user_writes_canonicalize_legacy_compliance_access(client: AsyncCl
 async def test_split_compliance_access_migration_round_trip(
     client: AsyncClient, db: AsyncSession
 ):
-    await create_test_company(client, email="migration-admin@a.com", password="pass1234")
+    await create_test_company(client, email="migration-admin@a.com", password="Valid1!Pass")
     admin_headers = _headers(
-        await get_company_token(client, email="migration-admin@a.com", password="pass1234")
+        await get_company_token(client, email="migration-admin@a.com", password="Valid1!Pass")
     )
 
     cases = {
@@ -90,7 +90,7 @@ async def test_split_compliance_access_migration_round_trip(
             "/api/v1/users",
             json={
                 "email": email,
-                "password": "pass1234",
+                "password": "Valid1!Pass",
                 "full_name": email,
                 "role": "employee",
                 # Write directly below so legacy and duplicate arrays reach the migration.

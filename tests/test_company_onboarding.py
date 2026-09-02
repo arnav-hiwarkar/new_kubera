@@ -26,7 +26,7 @@ PNG_BYTES = base64.b64decode(
 async def _make_employee(client, admin_headers, email="emp@testco.com"):
     resp = await client.post(
         "/api/v1/users",
-        json={"email": email, "password": "emppass123", "full_name": "Emp", "role": "employee"},
+        json={"email": email, "password": "Valid1!Pass", "full_name": "Emp", "role": "employee"},
         headers=admin_headers,
     )
     assert resp.status_code == 201, resp.text
@@ -215,7 +215,7 @@ async def test_delete_removes_company_and_blocks_login(client: AsyncClient):
     # Its users are gone too, so nobody can log in.
     login = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "doom@co.com", "password": "testpass123"},
+        json={"email": "doom@co.com", "password": "Valid1!Pass"},
     )
     assert login.status_code == 401
 
@@ -332,7 +332,7 @@ async def test_employee_can_view_but_not_edit_profile(client: AsyncClient):
     await _make_employee(client, {"Authorization": f"Bearer {admin_token}"})
     emp_login = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "emp@testco.com", "password": "emppass123"},
+        json={"email": "emp@testco.com", "password": "Valid1!Pass"},
     )
     emp_token = emp_login.json()["access_token"]
     emp_headers = {"Authorization": f"Bearer {emp_token}"}
@@ -394,7 +394,7 @@ async def test_logo_employee_forbidden(client: AsyncClient):
     await _make_employee(client, {"Authorization": f"Bearer {admin_token}"})
     emp_login = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "emp@testco.com", "password": "emppass123"},
+        json={"email": "emp@testco.com", "password": "Valid1!Pass"},
     )
     emp_headers = {"Authorization": f"Bearer {emp_login.json()['access_token']}"}
     resp = await client.post(

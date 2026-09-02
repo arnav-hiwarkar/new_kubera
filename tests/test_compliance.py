@@ -10,7 +10,7 @@ async def _create_employee(client: AsyncClient, admin_headers: dict, email: str,
         "/api/v1/users",
         json={
             "email": email,
-            "password": "pass1234",
+            "password": "Valid1!Pass",
             "full_name": email.split("@")[0],
             "role": "employee",
             "accessible_modules": modules,
@@ -18,13 +18,13 @@ async def _create_employee(client: AsyncClient, admin_headers: dict, email: str,
         headers=admin_headers,
     )
     assert response.status_code == 201, response.text
-    token = await get_company_token(client, email=email, password="pass1234")
+    token = await get_company_token(client, email=email, password="Valid1!Pass")
     return {"Authorization": f"Bearer {token}"}
 
 @pytest.mark.asyncio
 async def test_secretarial_flow(client: AsyncClient):
-    await create_test_company(client, email="sec@a.com", password="pass1234")
-    token = await get_company_token(client, email="sec@a.com", password="pass1234")
+    await create_test_company(client, email="sec@a.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="sec@a.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create document type
@@ -58,8 +58,8 @@ async def test_secretarial_flow(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_roc_flow(client: AsyncClient):
-    await create_test_company(client, email="roc@a.com", password="pass1234")
-    token = await get_company_token(client, email="roc@a.com", password="pass1234")
+    await create_test_company(client, email="roc@a.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="roc@a.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create document type
@@ -89,12 +89,12 @@ async def test_roc_flow(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_cross_tenant_compliance(client: AsyncClient):
-    await create_test_company(client, email="c1@a.com", password="pass1234")
-    token1 = await get_company_token(client, email="c1@a.com", password="pass1234")
+    await create_test_company(client, email="c1@a.com", password="Valid1!Pass")
+    token1 = await get_company_token(client, email="c1@a.com", password="Valid1!Pass")
     h1 = {"Authorization": f"Bearer {token1}"}
     
-    await create_test_company(client, email="c2@a.com", password="pass1234")
-    token2 = await get_company_token(client, email="c2@a.com", password="pass1234")
+    await create_test_company(client, email="c2@a.com", password="Valid1!Pass")
+    token2 = await get_company_token(client, email="c2@a.com", password="Valid1!Pass")
     h2 = {"Authorization": f"Bearer {token2}"}
 
     # C1 creates dt
@@ -112,8 +112,8 @@ async def test_cross_tenant_compliance(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_record_date_roundtrip(client: AsyncClient):
-    await create_test_company(client, email="rd@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='rd@a.com', password='pass1234')}"}
+    await create_test_company(client, email="rd@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='rd@a.com', password='Valid1!Pass')}"}
 
     dt_id = (await client.post("/api/v1/roc/document-types", json={"name": "Monthly Return"}, headers=headers)).json()["id"]
     resp = await client.post(
@@ -130,8 +130,8 @@ async def test_record_date_roundtrip(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_delete_type_guarded_by_records(client: AsyncClient):
-    await create_test_company(client, email="del@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@a.com', password='pass1234')}"}
+    await create_test_company(client, email="del@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@a.com', password='Valid1!Pass')}"}
 
     # Type with a record cannot be deleted
     used = (await client.post("/api/v1/secretarial/document-types", json={"name": "Used"}, headers=headers)).json()["id"]
@@ -147,8 +147,8 @@ async def test_delete_type_guarded_by_records(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_record_rejects_wrong_domain_type(client: AsyncClient):
-    await create_test_company(client, email="dom@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='dom@a.com', password='pass1234')}"}
+    await create_test_company(client, email="dom@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='dom@a.com', password='Valid1!Pass')}"}
     roc_dt = (await client.post("/api/v1/roc/document-types", json={"name": "ROC only"}, headers=headers)).json()["id"]
     # Using a ROC type under the secretarial domain must be rejected.
     resp = await client.post("/api/v1/secretarial/meeting-records", json={"doc_type_id": roc_dt}, headers=headers)
@@ -172,8 +172,8 @@ async def _upload_to_domain_bucket(
 
 @pytest.mark.asyncio
 async def test_record_can_be_created_untyped_and_classified_later(client: AsyncClient):
-    await create_test_company(client, email="untyped@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='untyped@a.com', password='pass1234')}"}
+    await create_test_company(client, email="untyped@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='untyped@a.com', password='Valid1!Pass')}"}
 
     # A record may be staged with nothing but a title.
     resp = await client.post(
@@ -209,8 +209,8 @@ async def test_record_can_be_created_untyped_and_classified_later(client: AsyncC
 
 @pytest.mark.asyncio
 async def test_docvault_sync_imports_bucket_documents_once(client: AsyncClient):
-    await create_test_company(client, email="sync@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='sync@a.com', password='pass1234')}"}
+    await create_test_company(client, email="sync@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='sync@a.com', password='Valid1!Pass')}"}
 
     # Nothing in the bucket yet.
     assert (await client.get("/api/v1/roc/meeting-records/unsynced", headers=headers)).json() == []
@@ -238,8 +238,8 @@ async def test_docvault_sync_imports_bucket_documents_once(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_sync_is_isolated_per_domain(client: AsyncClient):
-    await create_test_company(client, email="syncdom@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='syncdom@a.com', password='pass1234')}"}
+    await create_test_company(client, email="syncdom@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='syncdom@a.com', password='Valid1!Pass')}"}
 
     await _upload_to_domain_bucket(client, headers, "roc", "ROC only doc")
 
@@ -258,10 +258,10 @@ async def test_sync_is_isolated_per_domain(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_patch_rejects_foreign_and_wrong_domain_types(client: AsyncClient):
-    await create_test_company(client, email="patch1@a.com", password="pass1234")
-    h1 = {"Authorization": f"Bearer {await get_company_token(client, email='patch1@a.com', password='pass1234')}"}
-    await create_test_company(client, email="patch2@a.com", password="pass1234")
-    h2 = {"Authorization": f"Bearer {await get_company_token(client, email='patch2@a.com', password='pass1234')}"}
+    await create_test_company(client, email="patch1@a.com", password="Valid1!Pass")
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, email='patch1@a.com', password='Valid1!Pass')}"}
+    await create_test_company(client, email="patch2@a.com", password="Valid1!Pass")
+    h2 = {"Authorization": f"Bearer {await get_company_token(client, email='patch2@a.com', password='Valid1!Pass')}"}
 
     record_id = (await client.post("/api/v1/secretarial/meeting-records", json={"title": "Mine"}, headers=h1)).json()["id"]
 
@@ -282,8 +282,8 @@ async def test_patch_rejects_foreign_and_wrong_domain_types(client: AsyncClient)
 
 @pytest.mark.asyncio
 async def test_archiving_a_record_archives_its_docvault_document(client: AsyncClient):
-    await create_test_company(client, email="arch@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='arch@a.com', password='pass1234')}"}
+    await create_test_company(client, email="arch@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='arch@a.com', password='Valid1!Pass')}"}
 
     doc_id = await _upload_to_domain_bucket(client, headers, "roc", "MGT-7")
     record_id = (await client.post("/api/v1/roc/meeting-records/sync", headers=headers)).json()["records"][0]["id"]
@@ -328,8 +328,8 @@ async def test_archiving_a_record_archives_its_docvault_document(client: AsyncCl
 
 @pytest.mark.asyncio
 async def test_archive_record_without_a_file(client: AsyncClient):
-    await create_test_company(client, email="archnofile@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='archnofile@a.com', password='pass1234')}"}
+    await create_test_company(client, email="archnofile@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='archnofile@a.com', password='Valid1!Pass')}"}
 
     record_id = (await client.post(
         "/api/v1/secretarial/meeting-records", json={"title": "No file"}, headers=headers
@@ -344,8 +344,8 @@ async def test_archive_record_without_a_file(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_archived_records_still_claim_their_document(client: AsyncClient):
     """Archiving must not make a document look importable again."""
-    await create_test_company(client, email="archsync@a.com", password="pass1234")
-    headers = {"Authorization": f"Bearer {await get_company_token(client, email='archsync@a.com', password='pass1234')}"}
+    await create_test_company(client, email="archsync@a.com", password="Valid1!Pass")
+    headers = {"Authorization": f"Bearer {await get_company_token(client, email='archsync@a.com', password='Valid1!Pass')}"}
 
     await _upload_to_domain_bucket(client, headers, "roc", "Reimport me")
     record_id = (await client.post("/api/v1/roc/meeting-records/sync", headers=headers)).json()["records"][0]["id"]
@@ -357,10 +357,10 @@ async def test_archived_records_still_claim_their_document(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_archive_is_scoped_to_company_and_domain(client: AsyncClient):
-    await create_test_company(client, email="archscope1@a.com", password="pass1234")
-    h1 = {"Authorization": f"Bearer {await get_company_token(client, email='archscope1@a.com', password='pass1234')}"}
-    await create_test_company(client, email="archscope2@a.com", password="pass1234")
-    h2 = {"Authorization": f"Bearer {await get_company_token(client, email='archscope2@a.com', password='pass1234')}"}
+    await create_test_company(client, email="archscope1@a.com", password="Valid1!Pass")
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, email='archscope1@a.com', password='Valid1!Pass')}"}
+    await create_test_company(client, email="archscope2@a.com", password="Valid1!Pass")
+    h2 = {"Authorization": f"Bearer {await get_company_token(client, email='archscope2@a.com', password='Valid1!Pass')}"}
 
     record_id = (await client.post("/api/v1/roc/meeting-records", json={"title": "Mine"}, headers=h1)).json()["id"]
 
@@ -373,12 +373,12 @@ async def test_archive_is_scoped_to_company_and_domain(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_compliance_module_access_is_independent_and_server_enforced(client: AsyncClient):
-    await create_test_company(client, email="permissions-admin@a.com", password="pass1234")
+    await create_test_company(client, email="permissions-admin@a.com", password="Valid1!Pass")
     admin_headers = {
         "Authorization": (
             "Bearer "
             + await get_company_token(
-                client, email="permissions-admin@a.com", password="pass1234"
+                client, email="permissions-admin@a.com", password="Valid1!Pass"
             )
         )
     }

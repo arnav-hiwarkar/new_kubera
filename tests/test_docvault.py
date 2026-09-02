@@ -38,8 +38,8 @@ async def test_uploaded_document_is_actually_encrypted_at_rest(client: AsyncClie
     catches a regression as basic as `encrypt_file_data` being skipped, or the
     storage path being wrong, that a pure API round-trip test would miss because
     the same process both writes and reads the file."""
-    await create_test_company(client, name="CryptoCo", email="crypto@co.com", password="pass1234")
-    token = await get_company_token(client, email="crypto@co.com", password="pass1234")
+    await create_test_company(client, name="CryptoCo", email="crypto@co.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="crypto@co.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
 
     secret = b"THIS EXACT STRING MUST NEVER APPEAR UNENCRYPTED ON DISK - 8f3c2a1"
@@ -73,8 +73,8 @@ async def test_uploaded_document_is_actually_encrypted_at_rest(client: AsyncClie
 @pytest.mark.asyncio
 async def test_bucket_crud(client: AsyncClient):
     # Setup company and get token
-    await create_test_company(client, email="b1@a.com", password="pass1234")
-    token = await get_company_token(client, email="b1@a.com", password="pass1234")
+    await create_test_company(client, email="b1@a.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="b1@a.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create bucket
@@ -100,8 +100,8 @@ async def test_bucket_crud(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_document_upload_and_download(client: AsyncClient):
-    await create_test_company(client, name="DocCo", email="doc@co.com", password="pass1234")
-    token = await get_company_token(client, email="doc@co.com", password="pass1234")
+    await create_test_company(client, name="DocCo", email="doc@co.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="doc@co.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Upload document
@@ -145,13 +145,13 @@ async def test_document_upload_and_download(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_document_cross_tenant_leak(client: AsyncClient):
     # Company A
-    await create_test_company(client, name="CompA", email="a@co.com", password="pass1234")
-    token_a = await get_company_token(client, email="a@co.com", password="pass1234")
+    await create_test_company(client, name="CompA", email="a@co.com", password="Valid1!Pass")
+    token_a = await get_company_token(client, email="a@co.com", password="Valid1!Pass")
     headers_a = {"Authorization": f"Bearer {token_a}"}
 
     # Company B
-    await create_test_company(client, name="CompB", email="b@co.com", password="pass1234")
-    token_b = await get_company_token(client, email="b@co.com", password="pass1234")
+    await create_test_company(client, name="CompB", email="b@co.com", password="Valid1!Pass")
+    token_b = await get_company_token(client, email="b@co.com", password="Valid1!Pass")
     headers_b = {"Authorization": f"Bearer {token_b}"}
 
     # A creates bucket and document
@@ -185,8 +185,8 @@ async def test_document_cross_tenant_leak(client: AsyncClient):
 async def _setup_company_with_members(client: AsyncClient):
     """Admin + two non-admin docvault members (user A and user B). Returns
     (admin_headers, a_headers, b_headers, a_id, b_id)."""
-    await create_test_company(client, name="AccessCo", email="admin@acc.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@acc.com", password="pass1234")
+    await create_test_company(client, name="AccessCo", email="admin@acc.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@acc.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
     a_id = await _create_member(client, admin_headers, "usera@acc.com")
@@ -409,8 +409,8 @@ async def test_rename_bucket(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_rename_document(client: AsyncClient):
-    await create_test_company(client, name="RenameCo", email="r@co.com", password="pass1234")
-    token = await get_company_token(client, email="r@co.com", password="pass1234")
+    await create_test_company(client, name="RenameCo", email="r@co.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="r@co.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
 
     doc = await _upload(client, headers, "Original Title")
@@ -424,8 +424,8 @@ async def test_rename_document(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_uneditable_document_gating(client: AsyncClient):
-    await create_test_company(client, name="LockCo", email="l@co.com", password="pass1234")
-    token = await get_company_token(client, email="l@co.com", password="pass1234")
+    await create_test_company(client, name="LockCo", email="l@co.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="l@co.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
     other_bucket = (await client.post("/api/v1/docvault/buckets", json={"name": "Elsewhere"}, headers=headers)).json()["id"]
 

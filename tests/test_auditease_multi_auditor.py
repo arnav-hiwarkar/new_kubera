@@ -5,15 +5,15 @@ from tests.conftest import create_test_company, get_company_token
 
 
 async def _register_login(client: AsyncClient, email: str) -> dict:
-    await client.post("/api/v1/auth/auditor/register", json={"email": email, "password": "pass1234", "name": email.split("@")[0].title()})
-    resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "pass1234"})
+    await client.post("/api/v1/auth/auditor/register", json={"email": email, "password": "Valid1!Pass", "name": email.split("@")[0].title()})
+    resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "Valid1!Pass"})
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
 async def _make_user(client: AsyncClient, admin_headers: dict, email: str, role: str) -> dict:
     resp = await client.post("/api/v1/users", json={
-        "email": email, "password": "pass1234",
+        "email": email, "password": "Valid1!Pass",
         "full_name": email.split("@")[0], "role": role,
         "accessible_modules": ["auditease"]
     }, headers=admin_headers)
@@ -27,8 +27,8 @@ def _headers(token: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_two_auditors_coexist(client: AsyncClient):
-    await create_test_company(client, email="ma@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="ma@a.com", password="pass1234"))
+    await create_test_company(client, email="ma@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="ma@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     await _register_login(client, "one@a.com")
     await _register_login(client, "two@a.com")
@@ -48,8 +48,8 @@ async def test_two_auditors_coexist(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_invite_with_restricted_areas(client: AsyncClient):
-    await create_test_company(client, email="ra@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="ra@a.com", password="pass1234"))
+    await create_test_company(client, email="ra@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="ra@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     await _register_login(client, "tbonly@a.com")
 
@@ -68,8 +68,8 @@ async def test_invite_with_restricted_areas(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_duplicate_live_and_pending_invites_rejected(client: AsyncClient):
-    await create_test_company(client, email="dup@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="dup@a.com", password="pass1234"))
+    await create_test_company(client, email="dup@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="dup@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     await _register_login(client, "dupaud@a.com")
 
@@ -88,8 +88,8 @@ async def test_duplicate_live_and_pending_invites_rejected(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_remove_then_reinvite_resurrects_same_row(client: AsyncClient):
-    await create_test_company(client, email="rr@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="rr@a.com", password="pass1234"))
+    await create_test_company(client, email="rr@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="rr@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     await _register_login(client, "comeback@a.com")
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "comeback@a.com"}, headers=co)
@@ -116,11 +116,11 @@ async def test_remove_then_reinvite_resurrects_same_row(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_employee_cannot_manage_auditors(client: AsyncClient):
-    await create_test_company(client, email="emp@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="emp@a.com", password="pass1234"))
+    await create_test_company(client, email="emp@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="emp@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     await _make_user(client, co, "staff@a.com", role="employee")
-    emp = _headers(await get_company_token(client, email="staff@a.com", password="pass1234"))
+    emp = _headers(await get_company_token(client, email="staff@a.com", password="Valid1!Pass"))
 
     resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "x@a.com"}, headers=emp)
     assert resp.status_code == 403
@@ -131,8 +131,8 @@ async def test_employee_cannot_manage_auditors(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_invite_on_closed_engagement_409(client: AsyncClient):
-    await create_test_company(client, email="cl@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="cl@a.com", password="pass1234"))
+    await create_test_company(client, email="cl@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="cl@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     await client.patch(f"/api/v1/auditease/engagements/{eng_id}/close", headers=co)
     resp = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "x@a.com"}, headers=co)
@@ -143,8 +143,8 @@ async def test_invite_on_closed_engagement_409(client: AsyncClient):
 async def test_area_enforcement_blocks_disabled_areas(client: AsyncClient):
     import csv, io
 
-    await create_test_company(client, email="ae@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="ae@a.com", password="pass1234"))
+    await create_test_company(client, email="ae@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="ae@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
 
     # Import a minimal TB so trial-balance endpoints have data
@@ -237,8 +237,8 @@ async def test_area_enforcement_blocks_disabled_areas(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_workspace_actions_are_logged(client: AsyncClient):
-    await create_test_company(client, email="lg@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="lg@a.com", password="pass1234"))
+    await create_test_company(client, email="lg@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="lg@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     aud = await _register_login(client, "logger@a.com")
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "logger@a.com"}, headers=co)
@@ -265,8 +265,8 @@ async def test_workspace_actions_are_logged(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_per_auditor_activity_feed_filters_and_paginates(client: AsyncClient):
-    await create_test_company(client, email="pf@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="pf@a.com", password="pass1234"))
+    await create_test_company(client, email="pf@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="pf@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     aud_a = await _register_login(client, "alfa@a.com")
     await _register_login(client, "bravo@a.com")
@@ -299,8 +299,8 @@ async def test_per_auditor_activity_feed_filters_and_paginates(client: AsyncClie
 
 @pytest.mark.asyncio
 async def test_close_revokes_everyone_and_logs_event(client: AsyncClient):
-    await create_test_company(client, email="cz@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="cz@a.com", password="pass1234"))
+    await create_test_company(client, email="cz@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="cz@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     aud = await _register_login(client, "closethis@a.com")
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "closethis@a.com"}, headers=co)
@@ -318,8 +318,8 @@ async def test_close_revokes_everyone_and_logs_event(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_patch_unknown_auditor_404(client: AsyncClient):
     import uuid as _u
-    await create_test_company(client, email="nf@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="nf@a.com", password="pass1234"))
+    await create_test_company(client, email="nf@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="nf@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     resp = await client.patch(
         f"/api/v1/auditease/engagements/{eng_id}/auditors/{_u.uuid4()}",
@@ -333,10 +333,10 @@ async def test_patch_unknown_auditor_404(client: AsyncClient):
 async def test_auditor_endpoints_cross_tenant_isolated(client: AsyncClient):
     import uuid as _u
 
-    await create_test_company(client, email="ten1@a.com", password="pass1234")
-    await create_test_company(client, email="ten2@a.com", password="pass1234")
-    co2 = _headers(await get_company_token(client, email="ten2@a.com", password="pass1234"))
-    co1 = _headers(await get_company_token(client, email="ten1@a.com", password="pass1234"))
+    await create_test_company(client, email="ten1@a.com", password="Valid1!Pass")
+    await create_test_company(client, email="ten2@a.com", password="Valid1!Pass")
+    co2 = _headers(await get_company_token(client, email="ten2@a.com", password="Valid1!Pass"))
+    co1 = _headers(await get_company_token(client, email="ten1@a.com", password="Valid1!Pass"))
     eng1 = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co1)).json()["id"]
 
     base = f"/api/v1/auditease/engagements/{eng1}/auditors"
@@ -347,8 +347,8 @@ async def test_auditor_endpoints_cross_tenant_isolated(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_activity_report_exports_xlsx_and_pdf(client: AsyncClient):
-    await create_test_company(client, email="rp@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="rp@a.com", password="pass1234"))
+    await create_test_company(client, email="rp@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="rp@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     aud = await _register_login(client, "reporter@a.com")
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "reporter@a.com"}, headers=co)
@@ -368,8 +368,8 @@ async def test_activity_report_exports_xlsx_and_pdf(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_creator_names_in_shared_workspace(client: AsyncClient):
-    await create_test_company(client, email="nm@a.com", password="pass1234")
-    co = _headers(await get_company_token(client, email="nm@a.com", password="pass1234"))
+    await create_test_company(client, email="nm@a.com", password="Valid1!Pass")
+    co = _headers(await get_company_token(client, email="nm@a.com", password="Valid1!Pass"))
     eng_id = (await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co)).json()["id"]
     aud = await _register_login(client, "named@a.com")
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "named@a.com"}, headers=co)

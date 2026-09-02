@@ -37,8 +37,8 @@ def test_document_model_has_approval_fields():
 
 @pytest.mark.asyncio
 async def test_upload_with_approval_request_and_notification(client: AsyncClient):
-    await create_test_company(client, name="ApproveCo", email="admin@approve.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@approve.com", password="pass1234")
+    await create_test_company(client, name="ApproveCo", email="admin@approve.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@approve.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
     # Get admin user id
@@ -46,8 +46,8 @@ async def test_upload_with_approval_request_and_notification(client: AsyncClient
     admin_id = me_resp.json()["id"]
 
     # Create member
-    member_id = await _create_member(client, admin_headers, "member@approve.com", "pass1234", "Alice Smith", "employee", ["docvault", "notifications"])
-    member_token = await get_company_token(client, email="member@approve.com", password="pass1234")
+    member_id = await _create_member(client, admin_headers, "member@approve.com", "Valid1!Pass", "Alice Smith", "employee", ["docvault", "notifications"])
+    member_token = await get_company_token(client, email="member@approve.com", password="Valid1!Pass")
     member_headers = {"Authorization": f"Bearer {member_token}"}
 
     # Member uploads document with approval request assigned to admin
@@ -76,17 +76,17 @@ async def test_upload_with_approval_request_and_notification(client: AsyncClient
 
 @pytest.mark.asyncio
 async def test_ineligible_approver_rejected(client: AsyncClient):
-    await create_test_company(client, name="CompanyA", email="adminA@test.com", password="pass1234")
-    token_a = await get_company_token(client, email="adminA@test.com", password="pass1234")
+    await create_test_company(client, name="CompanyA", email="adminA@test.com", password="Valid1!Pass")
+    token_a = await get_company_token(client, email="adminA@test.com", password="Valid1!Pass")
     headers_a = {"Authorization": f"Bearer {token_a}"}
 
-    await create_test_company(client, name="CompanyB", email="adminB@test.com", password="pass1234")
-    token_b = await get_company_token(client, email="adminB@test.com", password="pass1234")
+    await create_test_company(client, name="CompanyB", email="adminB@test.com", password="Valid1!Pass")
+    token_b = await get_company_token(client, email="adminB@test.com", password="Valid1!Pass")
     headers_b = {"Authorization": f"Bearer {token_b}"}
     me_b = (await client.get("/api/v1/users/me", headers=headers_b)).json()["id"]
 
     # Member in Company A without docvault access
-    no_vault_id = await _create_member(client, headers_a, "novault@test.com", "pass1234", "No Vault", "employee", ["assets"])
+    no_vault_id = await _create_member(client, headers_a, "novault@test.com", "Valid1!Pass", "No Vault", "employee", ["assets"])
 
     # 1. Attacker attempts to assign approver from Company B
     files = {"file": ("doc.txt", b"content", "text/plain")}
@@ -113,12 +113,12 @@ async def test_ineligible_approver_rejected(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_restricted_bucket_approver_validation(client: AsyncClient):
-    await create_test_company(client, name="BucketGuardCo", email="admin@bg.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@bg.com", password="pass1234")
+    await create_test_company(client, name="BucketGuardCo", email="admin@bg.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@bg.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    user1_id = await _create_member(client, admin_headers, "u1@bg.com", "pass1234", "User One", "employee", ["docvault", "notifications"])
-    user2_id = await _create_member(client, admin_headers, "u2@bg.com", "pass1234", "User Two", "employee", ["docvault", "notifications"])
+    user1_id = await _create_member(client, admin_headers, "u1@bg.com", "Valid1!Pass", "User One", "employee", ["docvault", "notifications"])
+    user2_id = await _create_member(client, admin_headers, "u2@bg.com", "Valid1!Pass", "User Two", "employee", ["docvault", "notifications"])
 
     # Create restricted bucket with access only to user1
     b_resp = await client.post("/api/v1/docvault/buckets", json={"name": "Restricted Secret"}, headers=admin_headers)
@@ -143,17 +143,17 @@ async def test_restricted_bucket_approver_validation(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_non_approver_authorization_guardrails(client: AsyncClient):
-    await create_test_company(client, name="GuardCo", email="admin@gc.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@gc.com", password="pass1234")
+    await create_test_company(client, name="GuardCo", email="admin@gc.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@gc.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    u1_id = await _create_member(client, admin_headers, "u1@gc.com", "pass1234", "Uploader", "employee", ["docvault", "notifications"])
-    u2_id = await _create_member(client, admin_headers, "u2@gc.com", "pass1234", "Approver", "employee", ["docvault", "notifications"])
-    u3_id = await _create_member(client, admin_headers, "u3@gc.com", "pass1234", "Stranger", "employee", ["docvault", "notifications"])
+    u1_id = await _create_member(client, admin_headers, "u1@gc.com", "Valid1!Pass", "Uploader", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@gc.com", "Valid1!Pass", "Approver", "employee", ["docvault", "notifications"])
+    u3_id = await _create_member(client, admin_headers, "u3@gc.com", "Valid1!Pass", "Stranger", "employee", ["docvault", "notifications"])
 
-    t1 = await get_company_token(client, email="u1@gc.com", password="pass1234")
-    t2 = await get_company_token(client, email="u2@gc.com", password="pass1234")
-    t3 = await get_company_token(client, email="u3@gc.com", password="pass1234")
+    t1 = await get_company_token(client, email="u1@gc.com", password="Valid1!Pass")
+    t2 = await get_company_token(client, email="u2@gc.com", password="Valid1!Pass")
+    t3 = await get_company_token(client, email="u3@gc.com", password="Valid1!Pass")
     h1 = {"Authorization": f"Bearer {t1}"}
     h2 = {"Authorization": f"Bearer {t2}"}
     h3 = {"Authorization": f"Bearer {t3}"}
@@ -201,13 +201,13 @@ async def test_non_approver_authorization_guardrails(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_admin_override_and_request_changes(client: AsyncClient):
-    await create_test_company(client, name="OverrideCo", email="admin@ov.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@ov.com", password="pass1234")
+    await create_test_company(client, name="OverrideCo", email="admin@ov.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@ov.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    u1_id = await _create_member(client, admin_headers, "u1@ov.com", "pass1234", "Uploader", "employee", ["docvault", "notifications"])
-    u2_id = await _create_member(client, admin_headers, "u2@ov.com", "pass1234", "Approver", "employee", ["docvault", "notifications"])
-    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@ov.com', 'pass1234')}"}
+    u1_id = await _create_member(client, admin_headers, "u1@ov.com", "Valid1!Pass", "Uploader", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@ov.com", "Valid1!Pass", "Approver", "employee", ["docvault", "notifications"])
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@ov.com', 'Valid1!Pass')}"}
 
     files = {"file": ("proposal.pdf", b"proposal data", "application/pdf")}
     resp = await client.post(
@@ -236,8 +236,8 @@ async def test_admin_override_and_request_changes(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_final_document_lock_behavior(client: AsyncClient):
-    await create_test_company(client, name="FinalCo", email="admin@final.com", password="pass1234")
-    token = await get_company_token(client, email="admin@final.com", password="pass1234")
+    await create_test_company(client, name="FinalCo", email="admin@final.com", password="Valid1!Pass")
+    token = await get_company_token(client, email="admin@final.com", password="Valid1!Pass")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Upload with is_editable=False ("Final")
@@ -265,14 +265,14 @@ async def test_final_document_lock_behavior(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_pending_my_approval_filter(client: AsyncClient):
-    await create_test_company(client, name="FilterCo", email="admin@ft.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@ft.com", password="pass1234")
+    await create_test_company(client, name="FilterCo", email="admin@ft.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@ft.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
-    u1_id = await _create_member(client, admin_headers, "u1@ft.com", "pass1234", "U1", "employee", ["docvault", "notifications"])
-    u2_id = await _create_member(client, admin_headers, "u2@ft.com", "pass1234", "U2", "employee", ["docvault", "notifications"])
-    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@ft.com', 'pass1234')}"}
+    u1_id = await _create_member(client, admin_headers, "u1@ft.com", "Valid1!Pass", "U1", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@ft.com", "Valid1!Pass", "U2", "employee", ["docvault", "notifications"])
+    h1 = {"Authorization": f"Bearer {await get_company_token(client, 'u1@ft.com', 'Valid1!Pass')}"}
 
     # U1 uploads doc 1 assigned to admin
     f1 = {"file": ("d1.txt", b"d1", "text/plain")}
@@ -292,18 +292,18 @@ async def test_list_pending_my_approval_filter(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_approvers_success_and_self_exclusion(client: AsyncClient):
-    await create_test_company(client, name="ApproverListCo", email="admin@applist.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@applist.com", password="pass1234")
+    await create_test_company(client, name="ApproverListCo", email="admin@applist.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@applist.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
-    e1_id = await _create_member(client, admin_headers, "e1@applist.com", "pass1234", "Employee One", "employee", ["docvault", "notifications"])
-    e2_id = await _create_member(client, admin_headers, "e2@applist.com", "pass1234", "Employee Two", "employee", ["docvault", "notifications"])
+    e1_id = await _create_member(client, admin_headers, "e1@applist.com", "Valid1!Pass", "Employee One", "employee", ["docvault", "notifications"])
+    e2_id = await _create_member(client, admin_headers, "e2@applist.com", "Valid1!Pass", "Employee Two", "employee", ["docvault", "notifications"])
     # Employee without docvault module
-    nodoc_id = await _create_member(client, admin_headers, "nodoc@applist.com", "pass1234", "No Doc User", "employee", ["assets"])
+    nodoc_id = await _create_member(client, admin_headers, "nodoc@applist.com", "Valid1!Pass", "No Doc User", "employee", ["assets"])
 
     # E1 calls /api/v1/docvault/approvers
-    e1_token = await get_company_token(client, email="e1@applist.com", password="pass1234")
+    e1_token = await get_company_token(client, email="e1@applist.com", password="Valid1!Pass")
     e1_headers = {"Authorization": f"Bearer {e1_token}"}
 
     resp = await client.get("/api/v1/docvault/approvers", headers=e1_headers)
@@ -324,14 +324,14 @@ async def test_list_approvers_success_and_self_exclusion(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_approvers_filters_inactive_and_restricted_bucket(client: AsyncClient):
-    await create_test_company(client, name="BucketAppCo", email="admin@bapp.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@bapp.com", password="pass1234")
+    await create_test_company(client, name="BucketAppCo", email="admin@bapp.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@bapp.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
-    u1_id = await _create_member(client, admin_headers, "u1@bapp.com", "pass1234", "User One", "employee", ["docvault", "notifications"])
-    u2_id = await _create_member(client, admin_headers, "u2@bapp.com", "pass1234", "User Two", "employee", ["docvault", "notifications"])
-    deact_id = await _create_member(client, admin_headers, "deact@bapp.com", "pass1234", "Deact User", "employee", ["docvault", "notifications"])
+    u1_id = await _create_member(client, admin_headers, "u1@bapp.com", "Valid1!Pass", "User One", "employee", ["docvault", "notifications"])
+    u2_id = await _create_member(client, admin_headers, "u2@bapp.com", "Valid1!Pass", "User Two", "employee", ["docvault", "notifications"])
+    deact_id = await _create_member(client, admin_headers, "deact@bapp.com", "Valid1!Pass", "Deact User", "employee", ["docvault", "notifications"])
 
     # Deactivate deact_id
     await client.patch(f"/api/v1/users/{deact_id}/deactivate", headers=admin_headers)
@@ -354,7 +354,7 @@ async def test_list_approvers_filters_inactive_and_restricted_bucket(client: Asy
     assert u2_id in all_ids
 
     # Querying with restricted bucket_id only returns Admin and u1
-    u1_headers = {"Authorization": f"Bearer {await get_company_token(client, 'u1@bapp.com', 'pass1234')}"}
+    u1_headers = {"Authorization": f"Bearer {await get_company_token(client, 'u1@bapp.com', 'Valid1!Pass')}"}
     resp = await client.get(f"/api/v1/docvault/approvers?bucket_id={bucket_id}", headers=u1_headers)
     assert resp.status_code == 200
     bucket_approvers = resp.json()
@@ -366,18 +366,18 @@ async def test_list_approvers_filters_inactive_and_restricted_bucket(client: Asy
 
 @pytest.mark.asyncio
 async def test_list_approvers_success_for_employee_caller(client: AsyncClient):
-    await create_test_company(client, name="EmployeeCallCo", email="admin@empcall.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@empcall.com", password="pass1234")
+    await create_test_company(client, name="EmployeeCallCo", email="admin@empcall.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@empcall.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
     # Employee with docvault module
-    doc_id = await _create_member(client, admin_headers, "docmember@empcall.com", "pass1234", "Doc Member", "employee", ["docvault", "notifications"])
-    doc_token = await get_company_token(client, email="docmember@empcall.com", password="pass1234")
+    doc_id = await _create_member(client, admin_headers, "docmember@empcall.com", "Valid1!Pass", "Doc Member", "employee", ["docvault", "notifications"])
+    doc_token = await get_company_token(client, email="docmember@empcall.com", password="Valid1!Pass")
     doc_headers = {"Authorization": f"Bearer {doc_token}"}
 
     # Employee without docvault module
-    nodoc_id = await _create_member(client, admin_headers, "nodoc@empcall.com", "pass1234", "No Doc", "employee", ["assets"])
+    nodoc_id = await _create_member(client, admin_headers, "nodoc@empcall.com", "Valid1!Pass", "No Doc", "employee", ["assets"])
 
     resp = await client.get("/api/v1/docvault/approvers", headers=doc_headers)
     assert resp.status_code == 200
@@ -389,19 +389,19 @@ async def test_list_approvers_success_for_employee_caller(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_pending_approval_creator_and_peer_cannot_modify_or_delete(client: AsyncClient):
-    await create_test_company(client, name="ImmutCo", email="admin@immut.com", password="pass1234")
-    admin_token = await get_company_token(client, email="admin@immut.com", password="pass1234")
+    await create_test_company(client, name="ImmutCo", email="admin@immut.com", password="Valid1!Pass")
+    admin_token = await get_company_token(client, email="admin@immut.com", password="Valid1!Pass")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     admin_id = (await client.get("/api/v1/users/me", headers=admin_headers)).json()["id"]
 
     # Creator (Alice) and Peer (Charlie) and Approver (Bob)
-    alice_id = await _create_member(client, admin_headers, "alice@immut.com", "pass1234", "Alice Creator", "employee", ["docvault", "notifications"])
-    bob_id = await _create_member(client, admin_headers, "bob@immut.com", "pass1234", "Bob Approver", "employee", ["docvault", "notifications"])
-    charlie_id = await _create_member(client, admin_headers, "charlie@immut.com", "pass1234", "Charlie Peer", "employee", ["docvault", "notifications"])
+    alice_id = await _create_member(client, admin_headers, "alice@immut.com", "Valid1!Pass", "Alice Creator", "employee", ["docvault", "notifications"])
+    bob_id = await _create_member(client, admin_headers, "bob@immut.com", "Valid1!Pass", "Bob Approver", "employee", ["docvault", "notifications"])
+    charlie_id = await _create_member(client, admin_headers, "charlie@immut.com", "Valid1!Pass", "Charlie Peer", "employee", ["docvault", "notifications"])
 
-    alice_headers = {"Authorization": f"Bearer {await get_company_token(client, 'alice@immut.com', 'pass1234')}"}
-    bob_headers = {"Authorization": f"Bearer {await get_company_token(client, 'bob@immut.com', 'pass1234')}"}
-    charlie_headers = {"Authorization": f"Bearer {await get_company_token(client, 'charlie@immut.com', 'pass1234')}"}
+    alice_headers = {"Authorization": f"Bearer {await get_company_token(client, 'alice@immut.com', 'Valid1!Pass')}"}
+    bob_headers = {"Authorization": f"Bearer {await get_company_token(client, 'bob@immut.com', 'Valid1!Pass')}"}
+    charlie_headers = {"Authorization": f"Bearer {await get_company_token(client, 'charlie@immut.com', 'Valid1!Pass')}"}
 
     # Alice uploads document with approval requested by Bob
     files = {"file": ("budget_proposal.pdf", b"budget data", "application/pdf")}

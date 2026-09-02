@@ -113,8 +113,8 @@ async def test_delete_smtp_config_resets_to_default(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_auditor_token_rejected_with_403_or_401(client: AsyncClient):
-    await create_test_auditor(client, email="auditor@firm.com", password="password123")
-    res = await client.post("/api/v1/auth/auditor/login", json={"email": "auditor@firm.com", "password": "password123"})
+    await create_test_auditor(client, email="auditor@firm.com", password="Valid1!Pass")
+    res = await client.post("/api/v1/auth/auditor/login", json={"email": "auditor@firm.com", "password": "Valid1!Pass"})
     auditor_token = res.json()["access_token"]
 
     get_res = await client.get("/api/v1/company/smtp", headers={"Authorization": f"Bearer {auditor_token}"})

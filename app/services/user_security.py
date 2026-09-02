@@ -1,9 +1,10 @@
 """Security utilities for user passwords, complexity checks, and image magic bytes."""
 import re
-from typing import Literal
+from typing import Literal, Annotated
+from pydantic import Field, AfterValidator
 
 PASSWORD_MIN_LENGTH = 8
-PASSWORD_MAX_LENGTH = 128
+PASSWORD_MAX_LENGTH = 72
 
 # Special character set allowed and checked
 SPECIAL_CHARS_RE = re.compile(r'[-!@#$%^&*(),.?":{}|<>_=+`~/\\\[\];]')
@@ -31,6 +32,18 @@ def validate_password_complexity(password: str) -> None:
         raise ValueError("Password must contain at least one number (0-9).")
     if not SPECIAL_CHARS_RE.search(password):
         raise ValueError("Password must contain at least one special character.")
+
+
+def _check_password(password: str) -> str:
+    validate_password_complexity(password)
+    return password
+
+
+Password = Annotated[
+    str,
+    Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH),
+    AfterValidator(_check_password),
+]
 
 
 def detect_image_format(data: bytes) -> Literal["jpg", "png", "webp"] | None:

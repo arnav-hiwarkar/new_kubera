@@ -54,7 +54,7 @@ async def test_module_gate_behavior(client: AsyncClient):
 
     # 2. Create employee with no modules
     employee_email = "restricted@testco.com"
-    employee_password = "testpass123"
+    employee_password = "Valid1!Pass"
     create_resp = await client.post(
         "/api/v1/users",
         headers=admin_headers,
@@ -110,7 +110,7 @@ async def _make_employee(client: AsyncClient, admin_headers: dict, email: str, m
         headers=admin_headers,
         json={
             "email": email,
-            "password": "testpass123",
+            "password": "Valid1!Pass",
             "full_name": email.split("@")[0],
             "role": "employee",
             "accessible_modules": modules,
@@ -119,7 +119,7 @@ async def _make_employee(client: AsyncClient, admin_headers: dict, email: str, m
     assert resp.status_code == 201, resp.text
     login = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": email, "password": "testpass123"},
+        json={"email": email, "password": "Valid1!Pass"},
     )
     assert login.status_code == 200, login.text
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
@@ -184,7 +184,7 @@ async def test_unknown_module_rejected_on_create_and_update(client: AsyncClient)
         headers=admin_headers,
         json={
             "email": "typo@testco.com",
-            "password": "testpass123",
+            "password": "Valid1!Pass",
             "full_name": "Typo",
             "role": "employee",
             "accessible_modules": ["docvualt"],
@@ -197,7 +197,7 @@ async def test_unknown_module_rejected_on_create_and_update(client: AsyncClient)
         headers=admin_headers,
         json={
             "email": "ok@testco.com",
-            "password": "testpass123",
+            "password": "Valid1!Pass",
             "full_name": "Ok",
             "role": "employee",
             "accessible_modules": ["docvault"],
@@ -230,7 +230,7 @@ async def test_update_without_modules_key_leaves_grants_untouched(client: AsyncC
         headers=admin_headers,
         json={
             "email": "keep@testco.com",
-            "password": "testpass123",
+            "password": "Valid1!Pass",
             "full_name": "Keep",
             "role": "employee",
             "accessible_modules": ["sales", "kra"],
@@ -300,7 +300,7 @@ async def test_non_admin_cannot_create_or_modify_module_grants(client: AsyncClie
         headers=employee_headers,
         json={
             "email": "self-promoted@testco.com",
-            "password": "testpass123",
+            "password": "Valid1!Pass",
             "full_name": "Self Promoted",
             "role": "employee",
             "accessible_modules": ["docvault", "auditease", "sales", "kra", "notifications", "activity"],
@@ -340,7 +340,7 @@ async def test_malformed_module_payloads_are_rejected(client: AsyncClient):
     for i, extra in enumerate(bad_payloads):
         payload = {
             "email": f"malformed{i}@testco.com",
-            "password": "testpass123",
+            "password": "Valid1!Pass",
             "full_name": "Malformed",
             "role": "employee",
             **extra,

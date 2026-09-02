@@ -161,7 +161,7 @@ async def activate_company(
     client: AsyncClient,
     email: str,
     activation_key: str,
-    password: str = "testpass123",
+    password: str = "Valid1!Pass",
     full_name: str = "Test Admin",
 ) -> None:
     """Admin-side: claim the pending account by setting a password."""
@@ -181,7 +181,7 @@ async def create_test_company(
     client: AsyncClient,
     name: str = "TestCo",
     email: str = "admin@testco.com",
-    password: str = "testpass123",
+    password: str = "Valid1!Pass",
     full_name: str = "Test Admin",
 ) -> dict:
     """Init + activate a company so the admin can log in. Returns the init
@@ -194,7 +194,7 @@ async def create_test_company(
     return data
 
 
-async def get_company_token(client: AsyncClient, email: str = "admin@testco.com", password: str = "testpass123") -> str:
+async def get_company_token(client: AsyncClient, email: str = "admin@testco.com", password: str = "Valid1!Pass") -> str:
     """Login as company user, return access token."""
     resp = await client.post(
         "/api/v1/auth/company/login",
@@ -204,7 +204,7 @@ async def get_company_token(client: AsyncClient, email: str = "admin@testco.com"
     return resp.json()["access_token"]
 
 
-async def create_test_auditor(client: AsyncClient, email: str = "auditor@test.com", password: str = "testpass123", name: str = "Test Auditor") -> dict:
+async def create_test_auditor(client: AsyncClient, email: str = "auditor@test.com", password: str = "Valid1!Pass", name: str = "Test Auditor") -> dict:
     """Register an auditor, return response JSON."""
     resp = await client.post(
         "/api/v1/auth/auditor/register",
@@ -214,7 +214,7 @@ async def create_test_auditor(client: AsyncClient, email: str = "auditor@test.co
     return resp.json()
 
 
-async def get_auditor_token(client: AsyncClient, email: str = "auditor@test.com", password: str = "testpass123") -> str:
+async def get_auditor_token(client: AsyncClient, email: str = "auditor@test.com", password: str = "Valid1!Pass") -> str:
     """Login as auditor, return access token."""
     resp = await client.post(
         "/api/v1/auth/auditor/login",
