@@ -95,8 +95,8 @@ export function UserSettingsPage() {
   // Real-time password criteria
   const passwordCriteria = useMemo(() => {
     return {
-      hasMinLength: newPassword.length >= 8,
-      hasMaxLength: newPassword.length <= 72,
+      hasMinLength: newPassword.length >= passwordRules.minLength.value,
+      hasMaxLength: newPassword.length <= passwordRules.maxLength.value,
       hasUppercase: /[A-Z]/.test(newPassword),
       hasLowercase: /[a-z]/.test(newPassword),
       hasNumber: /[0-9]/.test(newPassword),
