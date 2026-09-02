@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, Field
 
 from app.models.docvault import DocumentStatus, BucketVisibility
@@ -75,11 +75,14 @@ class DocumentResponse(BaseModel):
 
 class DocumentUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=255)
-    status: Optional[DocumentStatus] = None
     bucket_id: Optional[uuid.UUID] = None
     tags: Optional[List[str]] = None
     is_editable: Optional[bool] = None
     approver_id: Optional[uuid.UUID] = None
+
+
+class DocumentReviewRequest(BaseModel):
+    decision: Literal["verified", "action_required"]
     approval_notes: Optional[str] = Field(None, max_length=1000)
 
 

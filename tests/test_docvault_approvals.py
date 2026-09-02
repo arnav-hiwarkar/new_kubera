@@ -458,3 +458,24 @@ async def test_pending_approval_creator_and_peer_cannot_modify_or_delete(client:
     assert doc["approval_notes"] == "Looks solid, approved."
     assert doc["approved_at"] is not None
 
+
+def test_document_update_schema_excludes_approval_fields():
+    from app.schemas.docvault import DocumentUpdate
+    
+    assert "status" not in DocumentUpdate.model_fields
+    assert "approval_notes" not in DocumentUpdate.model_fields
+
+
+def test_document_review_request_schema():
+    from app.schemas.docvault import DocumentReviewRequest
+    from pydantic import ValidationError
+
+    # Valid initialization
+    req = DocumentReviewRequest(decision="verified", approval_notes="Looks good")
+    assert req.decision == "verified"
+    assert req.approval_notes == "Looks good"
+
+    # Invalid decision
+    with pytest.raises(ValidationError):
+        DocumentReviewRequest(decision="invalid_status")
+
