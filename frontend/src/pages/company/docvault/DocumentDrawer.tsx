@@ -12,7 +12,6 @@ import {
   ConfirmDialog,
   useToast,
 } from '@/components/ui'
-import { DOCUMENT_STATUS, humanize } from '@/api/enums'
 import { ApiError } from '@/api/http'
 import type { BucketResponse, DocumentResponse } from '@/api/types'
 import { formatBytes, formatDate } from '@/lib/format'
@@ -28,10 +27,6 @@ import {
 import { useCompanyAuth } from '@/auth/company'
 import { CheckCircle2, AlertTriangle, Clock, MessageSquareQuote } from 'lucide-react'
 import { ApproverPicker } from './ApproverPicker'
-
-// The dropdown offers every live status; 'archived' is reached only via the
-// Archive action (which also locks the doc), never as a plain status pick.
-const LIVE_STATUSES = DOCUMENT_STATUS.filter((s) => s !== 'archived')
 
 export interface DocumentDrawerProps {
   document: DocumentResponse | null
