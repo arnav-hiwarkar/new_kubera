@@ -80,7 +80,7 @@ def test_escape_hatch_permits_placeholders(monkeypatch: pytest.MonkeyPatch) -> N
         ),
     ],
 )
-def test_placeholder_and_Valid1!Pass_secrets_are_rejected(
+def test_placeholder_and_weak_secrets_are_rejected(
     field: str, value: str, expected_message: str
 ) -> None:
     with pytest.raises(InsecureConfigurationError) as excinfo:

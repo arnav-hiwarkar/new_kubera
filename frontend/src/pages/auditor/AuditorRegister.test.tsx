@@ -31,7 +31,7 @@ describe('AuditorRegister Rate Limit', () => {
     
     await user.type(screen.getByLabelText(/Name/i), 'Auditor')
     await user.type(screen.getByLabelText(/Email/i), 'auditor@test.test')
-    await user.type(screen.getByLabelText(/Password/i), 'password123')
+    await user.type(screen.getByLabelText(/Password/i), 'Valid1!Pass')
     await user.click(screen.getByRole('button', { name: /Create account/i }))
 
     expect(await screen.findByText('Too many attempts. Please try again in 60 minutes.')).toBeInTheDocument()
@@ -44,7 +44,7 @@ describe('AuditorRegister Rate Limit', () => {
     
     await user.type(screen.getByLabelText(/Name/i), 'Auditor')
     await user.type(screen.getByLabelText(/Email/i), 'auditor@test.test')
-    await user.type(screen.getByLabelText(/Password/i), 'password123')
+    await user.type(screen.getByLabelText(/Password/i), 'Valid1!Pass')
     await user.click(screen.getByRole('button', { name: /Create account/i }))
 
     expect(await screen.findByText('Too many attempts. Please try again later.')).toBeInTheDocument()
@@ -68,7 +68,7 @@ describe('AuditorRegister Rate Limit', () => {
     
     await user.type(screen.getByLabelText(/Name/i), 'Auditor')
     await user.type(screen.getByLabelText(/Email/i), 'auditor@test.test')
-    await user.type(screen.getByLabelText(/Password/i), 'wrongpassword')
+    await user.type(screen.getByLabelText(/Password/i), 'Valid1!Pass')
     await user.click(screen.getByRole('button', { name: /Create account/i }))
 
     expect(await screen.findByText('Invalid data')).toBeInTheDocument()

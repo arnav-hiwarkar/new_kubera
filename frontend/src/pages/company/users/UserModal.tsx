@@ -190,6 +190,7 @@ export function UserModal({ isOpen, onClose, onSave, onDelete, onDeactivate, onR
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 8 characters (uppercase, lowercase, number, special)"
                 required
               />
             </Field>

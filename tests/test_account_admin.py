@@ -131,40 +131,46 @@ async def test_deactivate_then_reactivate_user(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_set_password_company_user(client: AsyncClient, db: AsyncSession):
-    await create_test_company(client, name="PwCo", email="admin@pwco.com", password="Valid1!Pass")
+    await create_test_company(client, name="PwCo", email="admin@pwco.com", password="OldPassword123!")
 
     matches = await account_admin.find_accounts(db, "admin@pwco.com")
     assert len(matches) == 1 and matches[0]["principal_type"] == account_admin.COMPANY_USER
-    await account_admin.set_password(db, matches[0]["principal_type"], matches[0]["id"], "Valid1!Pass")
+    await account_admin.set_password(db, matches[0]["principal_type"], matches[0]["id"], "NewValid1!Pass")
     await db.commit()
 
     # New password works; old one does not.
     ok = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "admin@pwco.com", "password": "Valid1!Pass"},
+        json={"email": "admin@pwco.com", "password": "NewValid1!Pass"},
     )
     assert ok.status_code == 200
     bad = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "admin@pwco.com", "password": "Valid1!Pass"},
+        json={"email": "admin@pwco.com", "password": "OldPassword123!"},
     )
     assert bad.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_set_password_auditor(client: AsyncClient, db: AsyncSession):
-    await create_test_auditor(client, email="aud@x.com", password="Valid1!Pass")
+    await create_test_auditor(client, email="aud@x.com", password="OldPassword123!")
 
     matches = await account_admin.find_accounts(db, "aud@x.com")
     assert len(matches) == 1 and matches[0]["principal_type"] == account_admin.AUDITOR
-    await account_admin.set_password(db, matches[0]["principal_type"], matches[0]["id"], "Valid1!Pass")
+    await account_admin.set_password(db, matches[0]["principal_type"], matches[0]["id"], "NewValid1!Pass")
     await db.commit()
 
     ok = await client.post(
         "/api/v1/auth/auditor/login",
-        json={"email": "aud@x.com", "password": "Valid1!Pass"},
+        json={"email": "aud@x.com", "password": "NewValid1!Pass"},
     )
     assert ok.status_code == 200
+
+    bad = await client.post(
+        "/api/v1/auth/auditor/login",
+        json={"email": "aud@x.com", "password": "OldPassword123!"},
+    )
+    assert bad.status_code == 401
 
 
 # --- Purge company --------------------------------------------------------------

@@ -1,3 +1,5 @@
+export const SPECIAL_CHARS_REGEX = /[-!@#$%^&*(),.?":{}|<>_=+`~/\\[\];]/
+
 export const passwordRules = {
   required: 'Password is required',
   minLength: { value: 8, message: 'Min 8 characters' },
@@ -5,6 +7,9 @@ export const passwordRules = {
   pattern: {
     value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[-!@#$%^&*(),.?":{}|<>_=+`~/\\[\];]).+$/,
     message: 'Must contain uppercase, lowercase, number, and special character'
+  },
+  validate: {
+    isAscii: (val: string) => /^[\x20-\x7E]+$/.test(val) || 'Password must contain only printable ASCII characters'
   }
 }
 

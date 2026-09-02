@@ -19,11 +19,16 @@ def validate_password_complexity(password: str) -> None:
     - At least 1 lowercase ASCII letter (a-z)
     - At least 1 numeric digit (0-9)
     - At least 1 special character
+    - Only printable ASCII characters allowed
     """
     if not password or len(password) < PASSWORD_MIN_LENGTH:
         raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters long.")
-    if len(password) > PASSWORD_MAX_LENGTH:
+    if len(password) > PASSWORD_MAX_LENGTH or len(password.encode("utf-8")) > PASSWORD_MAX_LENGTH:
         raise ValueError(f"Password must be no more than {PASSWORD_MAX_LENGTH} characters long.")
+    if "\x00" in password:
+        raise ValueError("Password cannot contain null bytes.")
+    if not password.isascii() or not password.isprintable():
+        raise ValueError("Password must contain only printable ASCII characters.")
     if not re.search(r"[A-Z]", password):
         raise ValueError("Password must contain at least one uppercase letter (A-Z).")
     if not re.search(r"[a-z]", password):
