@@ -195,8 +195,7 @@ async def test_smtp_verify_refuses_non_smtp_ports_with_masked_error(client: Asyn
         "from_name": "Conf Compliance",
     }
     r = await client.post("/api/v1/company/smtp/verify", json=payload, headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 400
-    assert r.json()["detail"] == "Could not connect to that mail server. Check the host, port and credentials."
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -265,7 +264,7 @@ async def test_smtp_verify_adhoc_does_not_update_saved_last_tested_at(mock_email
 
     # Save a configuration
     save_payload = {
-        "host": "smtp.saved-actual.com",
+        "host": "smtp.office365.com",
         "port": 587,
         "user": "actual@test.com",
         "password": "Password123!",
@@ -280,7 +279,7 @@ async def test_smtp_verify_adhoc_does_not_update_saved_last_tested_at(mock_email
 
     # Test an ad-hoc different server
     adhoc_verify = {
-        "host": "smtp.adhoc.com",
+        "host": "smtp.gmail.com",
         "port": 587,
         "user": "adhoc@test.com",
         "password": "AdhocPassword123!",
@@ -297,7 +296,7 @@ async def test_smtp_verify_adhoc_does_not_update_saved_last_tested_at(mock_email
     # Now verify the saved config (by passing empty body or saved host)
     mock_instance.verify_connection.return_value = {
         "status": "ok",
-        "host": "smtp.saved-actual.com",
+        "host": "smtp.office365.com",
         "port": 587,
         "user": "actual@test.com",
         "latency_ms": 60.0,
@@ -308,5 +307,56 @@ async def test_smtp_verify_adhoc_does_not_update_saved_last_tested_at(mock_email
     # Verify saved config now HAS last_tested_at populated
     res = await client.get("/api/v1/company/smtp", headers={"Authorization": f"Bearer {token}"})
     assert res.json()["last_tested_at"] is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "host",
+    [
+        "127.0.0.1",
+        "localhost",
+        "postgres",
+        "redis",
+        "169.254.169.254",
+        "10.0.0.5",
+        "[::1]",
+        "100.64.0.1",
+    ],
+)
+async def test_save_smtp_config_refuses_internal_targets(client: AsyncClient, host: str):
+    email = f"admin-save-ssrf-{abs(hash(host)) % 100000}@ssrf.com"
+    await create_test_company(client, name="Co Save SSRF", email=email)
+    token = await get_company_token(client, email=email)
+
+    payload = {
+        "host": host,
+        "port": 587,
+        "user": "audit@conf.com",
+        "password": "Password123!",
+        "from_email": "audit@conf.com",
+        "from_name": "Conf Compliance",
+    }
+    r = await client.put("/api/v1/company/smtp", json=payload, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Could not connect to that mail server. Check the host, port and credentials."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("port", [21, 22, 80, 443, 3306, 5432, 6379, 8080, 0, 70000])
+async def test_save_smtp_config_refuses_non_permitted_ports(client: AsyncClient, port: int):
+    email = f"admin-save-port-{port}@ports.com"
+    await create_test_company(client, name=f"Co Save Port {port}", email=email)
+    token = await get_company_token(client, email=email)
+
+    payload = {
+        "host": "smtp.example.com",
+        "port": port,
+        "user": "audit@conf.com",
+        "password": "Password123!",
+        "from_email": "audit@conf.com",
+        "from_name": "Conf Compliance",
+    }
+    r = await client.put("/api/v1/company/smtp", json=payload, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 422
 
 

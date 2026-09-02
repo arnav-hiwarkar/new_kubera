@@ -23,6 +23,7 @@ from app.schemas.company_smtp import (
 from app.services.email.client import EmailService
 from app.services.email.schemas import EmailConfig, EmailDeliveryError
 from app.services.email.resolver import get_company_kek, get_email_config_for_company
+from app.services.email.net_guard import resolve_public_smtp_target, BlockedSmtpTarget
 
 router = APIRouter(prefix="/api/v1/company/smtp", tags=["company-smtp"])
 
@@ -59,6 +60,15 @@ async def update_smtp_config(
     user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    try:
+        resolve_public_smtp_target(body.host, body.port)
+    except BlockedSmtpTarget as e:
+        logger.warning("Rejecting SMTP config save for company %s: %s", user.company_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not connect to that mail server. Check the host, port and credentials.",
+        )
+
     res = await db.execute(
         select(CompanySmtpConfig).where(CompanySmtpConfig.company_id == user.company_id)
     )

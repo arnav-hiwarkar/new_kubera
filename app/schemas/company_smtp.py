@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.services.email.net_guard import ALLOWED_PORTS
 
 
 class CompanySmtpConfigOut(BaseModel):
@@ -19,7 +21,7 @@ class CompanySmtpConfigOut(BaseModel):
 
 class CompanySmtpConfigUpdate(BaseModel):
     host: str = Field(min_length=1, max_length=255)
-    port: int = Field(ge=1, le=65535, default=587)
+    port: int = Field(default=587)
     user: str = Field(min_length=1, max_length=255)
     password: Optional[str] = Field(None, min_length=1)
     use_tls: bool = True
@@ -28,16 +30,30 @@ class CompanySmtpConfigUpdate(BaseModel):
     from_name: str = Field(min_length=1, max_length=255)
     is_active: bool = True
 
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, v: int) -> int:
+        if v not in ALLOWED_PORTS:
+            raise ValueError(f"Port {v} is not a permitted SMTP port ({', '.join(str(p) for p in sorted(ALLOWED_PORTS))})")
+        return v
+
 
 class CompanySmtpVerifyRequest(BaseModel):
     host: Optional[str] = Field(None, min_length=1, max_length=255)
-    port: Optional[int] = Field(None, ge=1, le=65535)
+    port: Optional[int] = None
     user: Optional[str] = None
     password: Optional[str] = None
     use_tls: Optional[bool] = None
     use_ssl: Optional[bool] = None
     from_email: Optional[EmailStr] = None
     from_name: Optional[str] = None
+
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in ALLOWED_PORTS:
+            raise ValueError(f"Port {v} is not a permitted SMTP port ({', '.join(str(p) for p in sorted(ALLOWED_PORTS))})")
+        return v
 
 
 class CompanySmtpVerifyResponse(BaseModel):

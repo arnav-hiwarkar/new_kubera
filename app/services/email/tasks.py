@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from app.services.email.client import EmailService
 from app.services.email.schemas import EmailConfig, EmailDeliveryError, EmailMessage
+from app.services.email.net_guard import BlockedSmtpTarget
 from app.worker import celery_app
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,14 @@ def send_email_async(
     except EmailDeliveryError as e:
         err_str = str(e)
         logger.error(f"Email delivery failed: {err_str}")
+        is_blocked = isinstance(e.__cause__, BlockedSmtpTarget) or any(
+            kw in err_str.lower() for kw in ("not permitted", "non-public address", "blocked")
+        )
+        if is_blocked:
+            if log_id:
+                _update_email_log(log_id, status="failed", error_message="Delivery aborted: mail server destination is not permitted")
+            return {"success": False, "error": "Blocked destination"}
+
         if log_id:
             _update_email_log(log_id, status="failed", error_message=err_str)
 
