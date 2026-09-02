@@ -38,7 +38,7 @@ async def list_financial_years(
 @router.post("", response_model=FinancialYearResponse, status_code=status.HTTP_201_CREATED)
 async def create_financial_year(
     body: FinancialYearCreate,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     if body.start_date >= body.end_date:
@@ -70,6 +70,12 @@ async def create_financial_year(
         status=FinancialYearStatus.open.value,
     )
     db.add(fy)
+    await db.flush()
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "financial_year.created", "financial_year", fy.id,
+        {"label": fy.label, "start_date": str(fy.start_date), "end_date": str(fy.end_date)}
+    )
     await db.commit()
     await db.refresh(fy)
     return fy

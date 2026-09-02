@@ -265,3 +265,73 @@ async def test_financial_year_edge_cases_and_anti_tests(client: AsyncClient):
     )
     assert reopen_ok.status_code == 200
     assert reopen_ok.json()["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_employee_cannot_create_financial_year(client: AsyncClient):
+    email = "admin_fy_create_gate@testco.com"
+    emp_email = "emp_fy_create_gate@testco.com"
+    await create_test_company(client, name="FY Create Gate Co", email=email)
+    admin_token = await get_company_token(client, email=email)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    create_emp_res = await client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "email": emp_email,
+            "password": "Valid1!Pass",
+            "full_name": "Assets Employee",
+            "role": "employee",
+            "accessible_modules": ["assets"],
+        },
+    )
+    assert create_emp_res.status_code == 201
+
+    emp_token = await get_company_token(client, email=emp_email, password="Valid1!Pass")
+    emp_headers = {"Authorization": f"Bearer {emp_token}"}
+
+    # Non-admin employee with assets module attempts to create FY -> 403 Forbidden
+    res = await client.post(
+        "/api/v1/financial-years",
+        json={
+            "label": "2026-27",
+            "start_date": "2026-04-01",
+            "end_date": "2027-03-31",
+        },
+        headers=emp_headers,
+    )
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_create_financial_year_logs_activity(client: AsyncClient):
+    email = "admin_fy_audit@testco.com"
+    await create_test_company(client, name="FY Audit Co", email=email)
+    admin_token = await get_company_token(client, email=email)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    res = await client.post(
+        "/api/v1/financial-years",
+        json={
+            "label": "2027-28",
+            "start_date": "2027-04-01",
+            "end_date": "2028-03-31",
+        },
+        headers=admin_headers,
+    )
+    assert res.status_code == 201
+    fy_id = res.json()["id"]
+
+    log_res = await client.get(
+        "/api/v1/activity-log",
+        params={"entity_type": "financial_year", "entity_id": fy_id},
+        headers=admin_headers,
+    )
+    assert log_res.status_code == 200
+    logs = log_res.json()
+    create_log = next((l for l in logs if l["action"] == "financial_year.created"), None)
+    assert create_log is not None
+    assert create_log["metadata_"]["label"] == "2027-28"
+    assert create_log["metadata_"]["start_date"] == "2027-04-01"
+    assert create_log["metadata_"]["end_date"] == "2028-03-31"
