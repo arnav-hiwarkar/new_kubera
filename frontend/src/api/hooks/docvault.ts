@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { docvaultApi } from '@/api/endpoints/docvault'
-import type { BucketAccessUpdate, BucketUpdate, DocumentUpdate } from '@/api/types'
+import type { BucketAccessUpdate, BucketUpdate, DocumentUpdate, DocumentReviewRequest, DocumentRequestApprovalRequest } from '@/api/types'
 import { saveBlob } from '@/lib/download'
 
 export interface DocumentFilters {
@@ -111,6 +111,24 @@ export function useUpdateDocument() {
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: DocumentUpdate }) =>
       docvaultApi.updateDocument(id, body),
+    onSuccess: invalidate,
+  })
+}
+
+export function useReviewDocument() {
+  const invalidate = useInvalidateDocuments()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: DocumentReviewRequest }) =>
+      docvaultApi.reviewDocument(id, body),
+    onSuccess: invalidate,
+  })
+}
+
+export function useRequestApproval() {
+  const invalidate = useInvalidateDocuments()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: DocumentRequestApprovalRequest }) =>
+      docvaultApi.requestApproval(id, body),
     onSuccess: invalidate,
   })
 }

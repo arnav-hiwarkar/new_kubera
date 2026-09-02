@@ -12,7 +12,7 @@ async def _create_member(
     client: AsyncClient,
     admin_headers: dict,
     email: str,
-    password: str = "member1234",
+    password: str = "Member1234!",
     full_name: str = "Member User",
     role: str = "employee",
     modules: list[str] | None = None,
@@ -191,8 +191,8 @@ async def _setup_company_with_members(client: AsyncClient):
 
     a_id = await _create_member(client, admin_headers, "usera@acc.com")
     b_id = await _create_member(client, admin_headers, "userb@acc.com")
-    a_token = await get_company_token(client, email="usera@acc.com", password="member1234")
-    b_token = await get_company_token(client, email="userb@acc.com", password="member1234")
+    a_token = await get_company_token(client, email="usera@acc.com", password="Member1234!")
+    b_token = await get_company_token(client, email="userb@acc.com", password="Member1234!")
     return (
         admin_headers,
         {"Authorization": f"Bearer {a_token}"},
@@ -448,8 +448,8 @@ async def test_uneditable_document_gating(client: AsyncClient):
     )
     assert resp.status_code == 409
 
-    # Status changes (incl. archive) remain allowed while locked.
-    assert (await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"status": "verified"}, headers=headers)).status_code == 200
+    # Status cannot be mass-assigned via PATCH (KUB-007 fix: returns 422). Archive remains allowed.
+    assert (await client.patch(f"/api/v1/docvault/documents/{doc_id}", json={"status": "verified"}, headers=headers)).status_code == 422
     assert (await client.delete(f"/api/v1/docvault/documents/{doc_id}", headers=headers)).status_code == 204
 
     # Re-enabling editing together with a rename in one request works (doc was

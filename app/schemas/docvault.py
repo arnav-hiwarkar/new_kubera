@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from app.models.docvault import DocumentStatus, BucketVisibility
 
@@ -63,6 +63,8 @@ class DocumentResponse(BaseModel):
     created_by_name: Optional[str] = None
     approver_id: Optional[uuid.UUID] = None
     approver_name: Optional[str] = None
+    approved_by: Optional[uuid.UUID] = None
+    approved_by_name: Optional[str] = None
     approval_requested_at: Optional[datetime] = None
     approved_at: Optional[datetime] = None
     approval_notes: Optional[str] = None
@@ -74,6 +76,8 @@ class DocumentResponse(BaseModel):
 
 
 class DocumentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: Optional[str] = Field(None, max_length=255)
     bucket_id: Optional[uuid.UUID] = None
     tags: Optional[List[str]] = None
@@ -82,8 +86,16 @@ class DocumentUpdate(BaseModel):
 
 
 class DocumentReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     decision: Literal["verified", "action_required"]
     approval_notes: Optional[str] = Field(None, max_length=1000)
+
+
+class DocumentRequestApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approver_id: uuid.UUID
 
 
 class DocVaultApproverResponse(BaseModel):

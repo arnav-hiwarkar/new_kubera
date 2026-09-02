@@ -6,6 +6,8 @@ import type {
   BucketAccessUpdate,
   DocumentResponse,
   DocumentUpdate,
+  DocumentReviewRequest,
+  DocumentRequestApprovalRequest,
   DocumentVersionResponse,
   DocVaultApproverResponse,
 } from '@/api/types'
@@ -44,6 +46,10 @@ export const docvaultApi = {
     ),
   updateDocument: (id: string, body: DocumentUpdate) =>
     companyClient.patch<DocumentResponse>(`/api/v1/docvault/documents/${id}`, { body }),
+  reviewDocument: (id: string, body: DocumentReviewRequest) =>
+    companyClient.post<DocumentResponse>(`/api/v1/docvault/documents/${id}/review`, { body }),
+  requestApproval: (id: string, body: DocumentRequestApprovalRequest) =>
+    companyClient.post<DocumentResponse>(`/api/v1/docvault/documents/${id}/request-approval`, { body }),
   deleteDocument: (id: string) =>
     companyClient.delete<void>(`/api/v1/docvault/documents/${id}`),
   downloadDocument: (id: string, versionId?: string) =>

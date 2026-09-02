@@ -16,14 +16,18 @@ import { DOCUMENT_STATUS, humanize } from '@/api/enums'
 import { ApiError } from '@/api/http'
 import type { BucketResponse, DocumentResponse } from '@/api/types'
 import { formatBytes, formatDate } from '@/lib/format'
+import { cn } from '@/lib/cn'
 import {
   useUpdateDocument,
+  useReviewDocument,
+  useRequestApproval,
   useArchiveDocument,
   useUploadVersion,
   useDownloadDocument,
 } from '@/api/hooks/docvault'
 import { useCompanyAuth } from '@/auth/company'
 import { CheckCircle2, AlertTriangle, Clock, MessageSquareQuote } from 'lucide-react'
+import { ApproverPicker } from './ApproverPicker'
 
 // The dropdown offers every live status; 'archived' is reached only via the
 // Archive action (which also locks the doc), never as a plain status pick.
@@ -40,6 +44,8 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
   const toast = useToast()
   const { profile } = useCompanyAuth()
   const update = useUpdateDocument()
+  const review = useReviewDocument()
+  const requestApproval = useRequestApproval()
   const archive = useArchiveDocument()
   const uploadVersion = useUploadVersion()
   const download = useDownloadDocument()
@@ -47,12 +53,14 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
   const [tagsInput, setTagsInput] = useState('')
   const [titleInput, setTitleInput] = useState('')
   const [approvalNotesInput, setApprovalNotesInput] = useState('')
+  const [reapproverId, setReapproverId] = useState<string | null>(null)
   const [confirmArchive, setConfirmArchive] = useState(false)
 
   useEffect(() => {
     setTagsInput(document?.tags.join(', ') ?? '')
     setTitleInput(document?.title ?? '')
     setApprovalNotesInput(document?.approval_notes ?? '')
+    setReapproverId(document?.approver_id ?? null)
   }, [document])
 
   if (!document) return null
@@ -61,7 +69,13 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
   const isPendingApproval = document.status === 'pending_approval'
   const isApprover = profile?.id === document.approver_id
   const isAdmin = profile?.role === 'admin'
+  const isCreator = profile?.id === document.created_by
+  const isCreatorOrAdmin = isCreator || isAdmin
   const canReview = isPendingApproval && (isApprover || isAdmin)
+  const canRequestApproval =
+    (document.status === 'uploaded' || document.status === 'action_required') &&
+    isCreatorOrAdmin &&
+    !isArchived
 
   // A locked (non-editable) document freezes its name, tags, bucket and new
   // versions. Status changes (incl. archive) and the editable toggle stay open.
@@ -84,20 +98,11 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
     }
   }
 
-  const changeStatus = (status: string) =>
-    wrap(
-      update.mutateAsync({
-        id: document.id,
-        body: { status: status as never, approval_notes: approvalNotesInput.trim() || undefined },
-      }),
-      'Status updated',
-    )
-
   const handleApprove = () =>
     wrap(
-      update.mutateAsync({
+      review.mutateAsync({
         id: document.id,
-        body: { status: 'verified' as never, approval_notes: approvalNotesInput.trim() || undefined },
+        body: { decision: 'verified', approval_notes: approvalNotesInput.trim() || undefined },
       }),
       'Document approved (Status: Verified)',
     )
@@ -108,11 +113,28 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
       return
     }
     return wrap(
-      update.mutateAsync({
+      review.mutateAsync({
         id: document.id,
-        body: { status: 'action_required' as never, approval_notes: approvalNotesInput.trim() },
+        body: { decision: 'action_required', approval_notes: approvalNotesInput.trim() },
       }),
       'Document flagged for changes (Status: Action Required)',
+    )
+  }
+
+  const handleRequestApproval = () => {
+    const target = reapproverId || document.approver_id
+    if (!target) {
+      toast.error('Please select an approver')
+      return
+    }
+    return wrap(
+      requestApproval.mutateAsync({
+        id: document.id,
+        body: { approver_id: target },
+      }),
+      document.status === 'action_required'
+        ? 'Document resubmitted for approval'
+        : 'Document submitted for approval',
     )
   }
 
@@ -249,7 +271,7 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
                       variant="primary"
                       size="sm"
                       onClick={handleApprove}
-                      loading={update.isPending}
+                      loading={review.isPending}
                       className="bg-emerald-600 hover:bg-emerald-500 text-white"
                     >
                       <CheckCircle2 className="h-4 w-4 mr-1.5" />
@@ -259,7 +281,7 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
                       variant="secondary"
                       size="sm"
                       onClick={handleRequestChanges}
-                      loading={update.isPending}
+                      loading={review.isPending}
                       className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
                     >
                       <AlertTriangle className="h-4 w-4 mr-1.5" />
@@ -271,18 +293,74 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
             </div>
           )}
 
-          {/* Past Review Note display if present and not currently pending */}
-          {!isPendingApproval && document.approved_at && document.approval_notes && (
-            <div className="rounded-card border border-border bg-bg-surface p-3 flex items-start gap-2.5">
-              <MessageSquareQuote className="h-4 w-4 shrink-0 text-accent mt-0.5" />
+          {/* Review Note / Change Request display */}
+          {!isPendingApproval && document.approval_notes && (
+            <div
+              className={cn(
+                'rounded-card border p-3 flex items-start gap-2.5',
+                document.status === 'action_required'
+                  ? 'border-amber-500/40 bg-amber-500/10'
+                  : 'border-border bg-bg-surface',
+              )}
+            >
+              <MessageSquareQuote
+                className={cn(
+                  'h-4 w-4 shrink-0 mt-0.5',
+                  document.status === 'action_required' ? 'text-amber-400' : 'text-accent',
+                )}
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">
-                    Review Note · {document.approver_name || 'Approver'}
+                    {document.status === 'action_required' ? 'Requested Changes Note' : 'Review Note'} ·{' '}
+                    {document.approver_name || 'Approver'}
                   </span>
-                  <span className="text-xs text-text-muted">{formatDate(document.approved_at)}</span>
+                  {document.approved_at && (
+                    <span className="text-xs text-text-muted">{formatDate(document.approved_at)}</span>
+                  )}
                 </div>
                 <p className="text-sm text-text-primary mt-1">{document.approval_notes}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Submit / Resubmit for Approval card */}
+          {canRequestApproval && (
+            <div className="rounded-card border border-accent/30 bg-accent/5 p-4 flex flex-col gap-3">
+              <div className="flex items-start gap-2.5">
+                <Clock className="h-5 w-5 shrink-0 text-accent mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-sm font-semibold text-text-primary">
+                    {document.status === 'action_required' ? 'Resubmit for Review' : 'Submit for Review'}
+                  </h4>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    {document.status === 'action_required'
+                      ? 'Once revisions are complete, resubmit this document for approval.'
+                      : 'Request an approver to review and verify this document.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2 border-t border-accent/20">
+                <Field label="Assign Approver">
+                  <ApproverPicker
+                    value={reapproverId}
+                    onChange={setReapproverId}
+                    bucketId={document.bucket_id}
+                    disabled={requestApproval.isPending}
+                  />
+                </Field>
+                <div className="flex justify-end pt-1">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleRequestApproval}
+                    loading={requestApproval.isPending}
+                    disabled={!reapproverId && !document.approver_id}
+                  >
+                    {document.status === 'action_required' ? 'Resubmit for Approval' : 'Submit for Approval'}
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -325,31 +403,30 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
 
           {/* Status */}
           <Field label="Status">
-            {isArchived ? (
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
-                <StatusBadge status="archived" />
-                <span className="text-sm text-text-muted">Archived documents are locked.</span>
+                <StatusBadge status={document.status} />
+                {document.status === 'verified' && (
+                  <span className="text-xs text-text-muted">
+                    {document.approved_by_name ? `Approved by ${document.approved_by_name}` : 'Approved'}
+                    {document.approved_at ? ` on ${formatDate(document.approved_at)}` : ''}
+                  </span>
+                )}
+                {document.status === 'pending_approval' && (
+                  <span className="text-xs text-text-muted">
+                    Awaiting review by {document.approver_name || 'assigned approver'}
+                  </span>
+                )}
+                {document.status === 'action_required' && (
+                  <span className="text-xs text-amber-400">
+                    Changes requested by approver
+                  </span>
+                )}
+                {document.status === 'archived' && (
+                  <span className="text-xs text-text-muted">Archived documents are locked</span>
+                )}
               </div>
-            ) : isPendingApproval && !canReview ? (
-              <div className="flex items-center gap-2">
-                <StatusBadge status="pending_approval" />
-                <span className="text-sm text-text-muted">
-                  Only {document.approver_name || 'assigned approver'} or admin can update status.
-                </span>
-              </div>
-            ) : (
-              <Select
-                value={document.status}
-                onChange={(e) => changeStatus(e.target.value)}
-                disabled={update.isPending}
-              >
-                {LIVE_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {humanize(s)}
-                  </option>
-                ))}
-              </Select>
-            )}
+            </div>
           </Field>
 
           {/* Bucket */}

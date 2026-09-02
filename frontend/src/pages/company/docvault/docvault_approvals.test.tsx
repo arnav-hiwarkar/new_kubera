@@ -31,6 +31,8 @@ vi.mock('@/api/endpoints/docvault', () => ({
     uploadDocument: vi.fn().mockResolvedValue({}),
     deleteDocument: vi.fn().mockResolvedValue(undefined),
     updateDocument: vi.fn().mockResolvedValue({}),
+    reviewDocument: vi.fn().mockResolvedValue({}),
+    requestApproval: vi.fn().mockResolvedValue({}),
     uploadVersion: vi.fn().mockResolvedValue({}),
     downloadDocument: vi.fn().mockResolvedValue(new Blob()),
     listDocuments: vi.fn().mockResolvedValue([]),
@@ -168,8 +170,8 @@ describe('DocVault Approvals & Final Status', () => {
     await user.click(approveBtn)
 
     await waitFor(() =>
-      expect(docvaultApi.updateDocument).toHaveBeenCalledWith('doc-100', {
-        status: 'verified',
+      expect(docvaultApi.reviewDocument).toHaveBeenCalledWith('doc-100', {
+        decision: 'verified',
         approval_notes: 'All figures match ledger accounts',
       }),
     )
@@ -186,8 +188,8 @@ describe('DocVault Approvals & Final Status', () => {
     await user.click(requestChangesBtn)
 
     await waitFor(() =>
-      expect(docvaultApi.updateDocument).toHaveBeenCalledWith('doc-100', {
-        status: 'action_required',
+      expect(docvaultApi.reviewDocument).toHaveBeenCalledWith('doc-100', {
+        decision: 'action_required',
         approval_notes: 'Please attach appendix B',
       }),
     )
@@ -228,6 +230,30 @@ describe('DocVault Approvals & Final Status', () => {
     // Archive button is disabled
     const archiveBtn = screen.getByRole('button', { name: /Archive/i })
     expect(archiveBtn).toBeDisabled()
+  })
+
+  it('renders Resubmit for Review card and submits for action_required document', async () => {
+    const user = userEvent.setup()
+    const actionRequiredDoc: DocumentResponse = {
+      ...baseDoc,
+      status: 'action_required',
+      created_by: 'u-approver-1',
+      approval_notes: 'Please attach appendix B',
+    }
+
+    wrap(<DocumentDrawer document={actionRequiredDoc} open onClose={() => {}} buckets={[]} />)
+
+    expect(screen.getByText('Resubmit for Review')).toBeInTheDocument()
+    expect(screen.getByText('Please attach appendix B')).toBeInTheDocument()
+
+    const resubmitBtn = screen.getByRole('button', { name: /Resubmit for Approval/i })
+    await user.click(resubmitBtn)
+
+    await waitFor(() =>
+      expect(docvaultApi.requestApproval).toHaveBeenCalledWith('doc-100', {
+        approver_id: 'u-approver-1',
+      }),
+    )
   })
 })
 

@@ -158,13 +158,21 @@ export type BucketVisibility = S['BucketVisibility']
 export type DocumentResponse = S['DocumentResponse'] & {
   approver_id?: string | null
   approver_name?: string | null
+  approved_by?: string | null
+  approved_by_name?: string | null
   approval_requested_at?: string | null
   approved_at?: string | null
   approval_notes?: string | null
 }
 export type DocumentUpdate = S['DocumentUpdate'] & {
   approver_id?: string | null
+}
+export interface DocumentReviewRequest {
+  decision: 'verified' | 'action_required'
   approval_notes?: string | null
+}
+export interface DocumentRequestApprovalRequest {
+  approver_id: string
 }
 export type DocumentVersionResponse = S['DocumentVersionResponse']
 export interface DocVaultApproverResponse {
