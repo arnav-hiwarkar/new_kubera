@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { auditorAuth } from '@/api/endpoints/auth'
 import { useAuditorAuth } from '@/auth/auditor'
 import { ApiError } from '@/api/http'
+import { rateLimitMessage } from '@/api/rateLimit'
 import { Button, Field, Input, useToast } from '@/components/ui'
 import { AuthLayout } from '@/pages/company/CompanyLogin'
 
@@ -33,7 +34,10 @@ export function AuditorRegister() {
       toast.success('Account created')
       navigate('/auditor/app', { replace: true })
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Registration failed.')
+      setFormError(
+        rateLimitMessage(err) ??
+          (err instanceof ApiError ? err.message : 'Registration failed.'),
+      )
     }
   })
 

@@ -7,6 +7,10 @@ Kubera is a comprehensive **multi-tenant** platform featuring DocVault, AuditEas
 - **Packaging:** [`uv`](https://docs.astral.sh/uv/) (`pyproject.toml` + `uv.lock`)
 - **Runtime:** Docker Compose (Postgres, Redis, API, Celery worker + beat, frontend, Caddy)
 
+Deploying, migrating, or rotating a key/password? **[docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)**
+has the exact, sequenced commands for every one of those — including the failure
+modes and footguns of Kubera's own ops scripts — in one place.
+
 ---
 
 ## Table of contents
@@ -310,6 +314,26 @@ docker compose exec api alembic upgrade head
 python3 maintenance.py status
 python3 maintenance.py off
 ```
+
+**If the change also touches anything under `gateway/`** (nginx config, rate
+limits, the gateway `Dockerfile`) — not just `app/` or `frontend/` — add
+`gateway` to the build line above:
+
+```bash
+docker compose up -d --build api gateway frontend worker beat
+```
+
+`gateway` is deliberately left out of the default list because it is what
+*serves the maintenance page itself* — routine app-only deploys leave it
+running throughout. Rebuilding it recreates that container, so expect a few
+seconds where even the maintenance page is briefly unreachable while the new
+one starts (Caddy reconnects automatically once its healthcheck passes; this
+is the same blip described in
+["Upgrading an existing production installation to the maintenance
+gateway"](#upgrading-an-existing-production-installation-to-the-maintenance-gateway)
+above). Confirm the new config took effect with `docker compose exec gateway
+nginx -t`, and check `docker compose logs gateway` for the error lines an
+nginx rate-limit or `real_ip` misconfiguration would produce.
 
 The `off` command refuses to begin its countdown unless both the frontend and
 API dependencies are ready. During the countdown, every open maintenance page
@@ -674,7 +698,7 @@ With the backend running:
 - **A `ufw` rule doesn't block a container port** — it can't. Docker's DNAT runs before the `filter/INPUT` chain `ufw` writes to. Use `ops/kubera-harden-firewall.sh`, which also configures `DOCKER-USER`. See [docs/SECURITY_HARDENING.md §3](docs/SECURITY_HARDENING.md#3-why-a-firewall-alone-does-not-fix-it).
 - **Code changes on a server aren't picked up** — production no longer bind-mounts the source tree, by design; the image contains the code. Rebuild: `docker compose up -d --build api worker beat`.
 - **Every document 404s after upgrading a server** — the vault was not migrated into its volume. `.env` uses a relative `VAULT_STORAGE_PATH`, which used to resolve to the host directory through the old `.:/code` bind-mount; production no longer has that mount. Nothing is deleted — run `ops/kubera-migrate-vault-to-volume.sh` to see the counts, then `--apply`. See [docs/SECURITY_HARDENING.md §5.4](docs/SECURITY_HARDENING.md).
-- **`Permission denied` writing to `/data/vault` or `/data/backups`** — the containers now run as uid 10001, and volumes created by an older root-running deployment are still root-owned. One-time fix: `docker compose run --rm --no-deps --user root api chown -R 10001:10001 /data/vault /data/backups`.
+- **`Permission denied` writing to `/data/vault` or `/data/backups`** — the containers now run as uid 10001, and volumes created by an older root-running deployment are still root-owned. `--user root` alone isn't enough — the image also drops every capability (`cap_drop: [ALL]`), so `chown` fails with "Operation not permitted" unless you add `CHOWN`/`DAC_OVERRIDE` back for this one command: `docker compose run --rm --no-deps --user root --cap-add CHOWN --cap-add DAC_OVERRIDE api chown -R 10001:10001 /data/vault /data/backups`.
 - **`password authentication failed for user "kubera"` and `api` restart-loops** — `POSTGRES_PASSWORD` only applies when the `pgdata` volume is first created; changing it in `.env` does not change an existing database. The logs now print the exact `ALTER USER` command to run.
 - **An ops script exits immediately with no output** — this was `ops/lib.sh` sourcing `.env`, which aborted on any value containing a space (exit 127). Fixed; if you see it again, check you're on the current `ops/lib.sh`.
 - **Uploads fail with `413 Request Entity Too Large`** — the gateway is on an old config. `client_max_body_size 0` is now set in `gateway/nginx.conf`; rebuild with `docker compose up -d --build gateway`.

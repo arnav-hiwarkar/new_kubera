@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AlertCircle, CheckCircle2 } from 'lucide-react'
 import { companyAuth } from '@/api/endpoints/auth'
 import { ApiError } from '@/api/http'
+import { rateLimitMessage } from '@/api/rateLimit'
 import { Button, Field, Input } from '@/components/ui'
 import { AuthLayout } from '@/pages/company/CompanyLogin'
 
@@ -40,7 +41,8 @@ export function CompanyActivate() {
       setTimeout(() => navigate('/login', { replace: true }), 1800)
     } catch (err) {
       setFormError(
-        err instanceof ApiError ? err.message : 'Activation failed. Please try again.',
+        rateLimitMessage(err) ??
+          (err instanceof ApiError ? err.message : 'Activation failed. Please try again.'),
       )
     }
   })

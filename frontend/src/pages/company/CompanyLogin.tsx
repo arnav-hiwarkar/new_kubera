@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { ShieldCheck, Layers, LineChart, AlertCircle } from 'lucide-react'
 import { useCompanyAuth } from '@/auth/company'
 import { ApiError } from '@/api/http'
+import { rateLimitMessage } from '@/api/rateLimit'
 import { Button, Field, Input } from '@/components/ui'
 
 interface FormValues {
@@ -31,7 +32,10 @@ export function CompanyLogin() {
       await signIn(values)
       navigate(from, { replace: true })
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Login failed. Please try again.')
+      setFormError(
+        rateLimitMessage(err) ??
+          (err instanceof ApiError ? err.message : 'Login failed. Please try again.'),
+      )
     }
   })
 

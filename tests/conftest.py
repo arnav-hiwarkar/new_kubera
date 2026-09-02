@@ -94,6 +94,25 @@ async def clean_tables():
     except Exception:
         pass
 
+    # `app.rate_limit` caches one Redis client at module scope, which is correct
+    # for the API process (one event loop for its whole lifetime) and wrong here:
+    # pytest-asyncio gives each test its own loop, so a connection pooled by an
+    # earlier test raises "Event loop is closed" partway through a later one. The
+    # limiter then does exactly what it is designed to do — fails open — and the
+    # throttle a test is asserting on silently stops existing. Drop the client so
+    # every test builds its own in its own loop.
+    try:
+        import app.rate_limit as _rate_limit
+
+        if _rate_limit._client is not None:
+            await _rate_limit._client.aclose()
+    except Exception:
+        pass
+    finally:
+        import app.rate_limit as _rate_limit
+
+        _rate_limit._client = None
+
 
 async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
     async with TestSessionLocal() as session:

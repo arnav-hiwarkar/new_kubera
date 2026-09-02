@@ -57,6 +57,21 @@ class Settings(BaseSettings):
     LOGIN_RATE_WINDOW: int = 300
     ACTIVATE_RATE_LIMIT: int = 10
     ACTIVATE_RATE_WINDOW: int = 900
+    # Coarse per-IP ceiling for the credential endpoints, counted independently
+    # of the submitted email. The limits above are per (ip, email) and so reset
+    # on every rotated address; this one is what actually stops password
+    # spraying. Sized to absorb an office NAT's Monday-morning login burst.
+    LOGIN_IP_RATE_LIMIT: int = 50
+    LOGIN_IP_RATE_WINDOW: int = 300
+    # Auditor self-registration is both an account-spam vector and an account
+    # enumeration oracle, so it is throttled far harder than login.
+    REGISTER_RATE_LIMIT: int = 5
+    REGISTER_RATE_WINDOW: int = 3600
+    # Refresh takes a signed token, not a guessable secret, so this is purely
+    # volumetric. It has to clear the thundering herd of a whole tenant's tabs
+    # rehydrating at once — a 429 here logs the user out.
+    REFRESH_RATE_LIMIT: int = 120
+    REFRESH_RATE_WINDOW: int = 300
 
     # Storage
     VAULT_STORAGE_PATH: str = "/data/vault"
