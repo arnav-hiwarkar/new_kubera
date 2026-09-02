@@ -23,11 +23,14 @@ from app.models.assets import Asset  # noqa
 from app.models.auditease import AuditEngagement  # noqa
 from app.models.company_smtp import CompanySmtpConfig, EmailLog  # noqa
 
+import os
+
 settings = get_settings()
 
 # Use a separate test database (same server, different name)
 _parts = settings.DATABASE_URL.rsplit("/", 1)
-TEST_DB_URL = _parts[0] + "/kubera_test"
+TEST_DB_NAME = os.environ.get("KUBERA_TEST_DB", "kubera_test_fy")
+TEST_DB_URL = _parts[0] + f"/{TEST_DB_NAME}"
 settings.DATABASE_URL = TEST_DB_URL
 
 from sqlalchemy.pool import NullPool
@@ -56,10 +59,10 @@ async def setup_database():
     admin_engine = cae(admin_url, isolation_level="AUTOCOMMIT")
     async with admin_engine.connect() as conn:
         result = await conn.execute(
-            text("SELECT 1 FROM pg_database WHERE datname='kubera_test'")
+            text(f"SELECT 1 FROM pg_database WHERE datname='{TEST_DB_NAME}'")
         )
         if not result.scalar():
-            await conn.execute(text("CREATE DATABASE kubera_test"))
+            await conn.execute(text(f"CREATE DATABASE {TEST_DB_NAME}"))
     await admin_engine.dispose()
 
     # Create tables

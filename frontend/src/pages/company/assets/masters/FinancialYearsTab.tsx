@@ -9,8 +9,12 @@ import {
 } from '@/api/hooks/financialYears'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/cn'
+import { useCompanyAuth } from '@/auth/company'
 
 export function FinancialYearsTab() {
+  const { profile } = useCompanyAuth()
+  const isAdmin = profile?.role === 'admin'
+
   const { data: fys, isLoading } = useFinancialYears()
   const createFY = useCreateFinancialYear()
   const closeFY = useCloseFinancialYear()
@@ -21,6 +25,10 @@ export function FinancialYearsTab() {
   const [label, setLabel] = useState('')
   const [startDate, setStartDate] = useState('2024-04-01')
   const [endDate, setEndDate] = useState('2025-03-31')
+
+  const [reopenModalOpen, setReopenModalOpen] = useState(false)
+  const [selectedFyForReopen, setSelectedFyForReopen] = useState<{ id: string; label: string } | null>(null)
+  const [reopenReason, setReopenReason] = useState('')
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -40,16 +48,44 @@ export function FinancialYearsTab() {
   }
 
   const handleToggleStatus = async (fy: { id: string; label: string; status: 'open' | 'closed' }) => {
-    try {
-      if (fy.status === 'open') {
+    if (!isAdmin) {
+      toast.error('Only administrators can close or reopen financial years')
+      return
+    }
+    if (fy.status === 'open') {
+      try {
         await closeFY.mutateAsync(fy.id)
         toast.success(`Closed financial year ${fy.label}`)
-      } else {
-        await reopenFY.mutateAsync(fy.id)
-        toast.success(`Reopened financial year ${fy.label}`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to close financial year')
       }
+    } else {
+      setSelectedFyForReopen(fy)
+      setReopenReason('')
+      setReopenModalOpen(true)
+    }
+  }
+
+  const handleReopenSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!isAdmin) {
+      toast.error('Only administrators can close or reopen financial years')
+      return
+    }
+    if (!selectedFyForReopen) return
+    const trimmed = reopenReason.trim()
+    if (trimmed.length < 10) {
+      toast.error('Reason must be at least 10 characters long')
+      return
+    }
+    try {
+      await reopenFY.mutateAsync({ id: selectedFyForReopen.id, reason: trimmed })
+      toast.success(`Reopened financial year ${selectedFyForReopen.label}`)
+      setReopenModalOpen(false)
+      setSelectedFyForReopen(null)
+      setReopenReason('')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update financial year')
+      toast.error(err instanceof Error ? err.message : 'Failed to reopen financial year')
     }
   }
 
@@ -62,10 +98,12 @@ export function FinancialYearsTab() {
             Manage accounting periods for Companies Act and Income Tax depreciation schedules.
           </p>
         </div>
-        <Button onClick={() => setModalOpen(true)} size="sm">
-          <Plus className="mr-1.5 h-4 w-4" />
-          Add Financial Year
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => setModalOpen(true)} size="sm">
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add Financial Year
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -83,7 +121,7 @@ export function FinancialYearsTab() {
                 <th className="px-4 py-3">Financial Year</th>
                 <th className="px-4 py-3">Period</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                {isAdmin && <th className="px-4 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -110,26 +148,28 @@ export function FinancialYearsTab() {
                       {fy.status === 'open' ? 'Open' : 'Closed'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleToggleStatus(fy)}
-                      loading={closeFY.isPending || reopenFY.isPending}
-                    >
-                      {fy.status === 'open' ? (
-                        <>
-                          <Lock className="mr-1 h-3.5 w-3.5" />
-                          Close
-                        </>
-                      ) : (
-                        <>
-                          <Unlock className="mr-1 h-3.5 w-3.5" />
-                          Reopen
-                        </>
-                      )}
-                    </Button>
-                  </td>
+                  {isAdmin && (
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleStatus(fy)}
+                        loading={closeFY.isPending || reopenFY.isPending}
+                      >
+                        {fy.status === 'open' ? (
+                          <>
+                            <Lock className="mr-1 h-3.5 w-3.5" />
+                            Close
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="mr-1 h-3.5 w-3.5" />
+                            Reopen
+                          </>
+                        )}
+                      </Button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -172,6 +212,51 @@ export function FinancialYearsTab() {
             </Button>
             <Button type="submit" loading={createFY.isPending}>
               Create
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Reopen FY Modal */}
+      <Modal
+        open={reopenModalOpen}
+        onClose={() => {
+          setReopenModalOpen(false)
+          setSelectedFyForReopen(null)
+          setReopenReason('')
+        }}
+        title={`Reopen Financial Year ${selectedFyForReopen?.label || ''}`}
+      >
+        <form onSubmit={handleReopenSubmit} className="flex flex-col gap-4">
+          <p className="text-xs text-text-muted">
+            Reopening a closed statutory period is a privileged operation. Please provide an audit justification (minimum 10 characters).
+          </p>
+          <Field label="Audit Reason" required>
+            <Input
+              placeholder="e.g. Correcting depreciation schedule per auditor request"
+              value={reopenReason}
+              onChange={(e) => setReopenReason(e.target.value)}
+              required
+            />
+          </Field>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setReopenModalOpen(false)
+                setSelectedFyForReopen(null)
+                setReopenReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              loading={reopenFY.isPending}
+              disabled={reopenReason.trim().length < 10}
+            >
+              Confirm Reopen
             </Button>
           </div>
         </form>

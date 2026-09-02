@@ -137,9 +137,16 @@ export function DepreciationRunCard({
     setDrawerOpen(true)
   }
 
+  const activeFy = fys.find((f) => f.id === activeFyId)
+  const isFyClosed = activeFy?.status === 'closed'
+
   const handleRunDepreciation = async () => {
     if (!activeFyId) {
       toast.error('Please create or select a financial year first')
+      return
+    }
+    if (isFyClosed) {
+      toast.error('This financial year is closed. Reopen it first.')
       return
     }
     try {
@@ -151,6 +158,14 @@ export function DepreciationRunCard({
   }
 
   const handleFinalize = async () => {
+    if (!isAdmin) {
+      toast.error('Only administrators can finalize depreciation runs')
+      return
+    }
+    if (isFyClosed) {
+      toast.error('This financial year is closed. Reopen it first.')
+      return
+    }
     if (!latestRunForFy) return
     try {
       await finalizeRun.mutateAsync(latestRunForFy.id)
@@ -161,9 +176,18 @@ export function DepreciationRunCard({
   }
 
   const handleReopen = async () => {
-    if (!latestRunForFy || reopenReason.trim().length < 3) return
+    if (!isAdmin) {
+      toast.error('Only administrators can reopen depreciation runs')
+      return
+    }
+    if (isFyClosed) {
+      toast.error('This financial year is closed. Reopen it first.')
+      return
+    }
+    const trimmed = reopenReason.trim()
+    if (!latestRunForFy || trimmed.length < 3) return
     try {
-      await reopenRunMutation.mutateAsync({ runId: latestRunForFy.id, reason: reopenReason.trim() })
+      await reopenRunMutation.mutateAsync({ runId: latestRunForFy.id, reason: trimmed })
       toast.success('Run reopened to draft')
       setReopenOpen(false)
       setReopenReason('')
@@ -195,21 +219,29 @@ export function DepreciationRunCard({
               </option>
             ))}
           </select>
+          {isFyClosed && (
+            <span className="rounded bg-status-rejected/10 px-2 py-0.5 text-xs font-semibold text-status-rejected">
+              Closed (Read-only)
+            </span>
+          )}
           <Button
             size="sm"
             onClick={handleRunDepreciation}
             loading={createRun.isPending}
-            disabled={!activeFyId}
+            disabled={!activeFyId || isFyClosed}
+            title={isFyClosed ? 'Financial year is closed' : undefined}
           >
             <Play className="mr-1 h-3.5 w-3.5" />
             Compute
           </Button>
-          {latestRunForFy && latestRunForFy.status === 'draft' && (
+          {isAdmin && latestRunForFy && latestRunForFy.status === 'draft' && (
             <Button
               variant="secondary"
               size="sm"
               onClick={handleFinalize}
               loading={finalizeRun.isPending}
+              disabled={isFyClosed}
+              title={isFyClosed ? 'Financial year is closed' : undefined}
             >
               <CheckCircle className="mr-1 h-3.5 w-3.5" />
               Finalize
@@ -217,7 +249,13 @@ export function DepreciationRunCard({
           )}
           {isAdmin && latestRunForFy && latestRunForFy.status === 'finalized' && (
             <>
-              <Button variant="secondary" size="sm" onClick={() => setReopenOpen(true)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setReopenOpen(true)}
+                disabled={isFyClosed}
+                title={isFyClosed ? 'Financial year is closed. Reopen the financial year first.' : undefined}
+              >
                 <RotateCcw className="mr-1 h-3.5 w-3.5" />
                 Reopen
               </Button>

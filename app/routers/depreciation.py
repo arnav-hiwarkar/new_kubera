@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.auth import get_current_company_user, require_admin
+from app.auth import get_current_company_user, require_admin, require_assets_module
 from app.models.assets import Asset
 from app.models.asset_masters import ItAssetBlock
 from app.models.company import CompanyUser
@@ -19,7 +19,7 @@ from app.models.depreciation import (
     AssetDepreciationLine,
     ItBlockDepreciationLine,
 )
-from app.models.financial_year import FinancialYear
+from app.models.financial_year import FinancialYear, FinancialYearStatus
 from app.schemas.depreciation import (
     CalcTraceSchema,
     DepreciationExplainRequest,
@@ -49,7 +49,11 @@ from app.services.depreciation_query import (
     reopen_depreciation_run,
 )
 
-router = APIRouter(prefix="/api/v1/depreciation", tags=["depreciation"])
+router = APIRouter(
+    prefix="/api/v1/depreciation",
+    tags=["depreciation"],
+    dependencies=[Depends(require_assets_module)],
+)
 
 
 def _populate_run_summary(run: DepreciationRun) -> DepreciationRunResponse:
@@ -295,7 +299,7 @@ async def get_it_block_depreciation_lines(
 @router.post("/runs/{run_id}/finalize", response_model=DepreciationRunResponse)
 async def finalize_run(
     run_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     try:
@@ -316,6 +320,15 @@ async def finalize_run(
             status_code=status.HTTP_404_NOT_FOUND if "not found" in str(e).lower() else status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "depreciation.run.finalized", "depreciation_run", run.id,
+        {"financial_year_id": str(run.financial_year_id),
+         "label": run.financial_year.label if run.financial_year else ""}
+    )
+    await db.commit()
+
 
     stmt = (
         select(DepreciationRun)
@@ -373,13 +386,23 @@ async def delete_depreciation_run(
     current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    run = await db.get(DepreciationRun, run_id)
+    run = await db.get(DepreciationRun, run_id, options=[selectinload(DepreciationRun.financial_year)])
     if not run or run.company_id != current_user.company_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Depreciation run not found")
+
+    fy = run.financial_year or (await db.get(FinancialYear, run.financial_year_id) if run.financial_year_id else None)
+    if fy and fy.status == FinancialYearStatus.closed.value:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This financial year is closed. Reopen it first.")
 
     if run.status == DepreciationRunStatus.finalized.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot delete a finalized depreciation run")
 
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "depreciation.run.deleted", "depreciation_run", run.id,
+        {"financial_year_id": str(run.financial_year_id),
+         "label": fy.label if fy else ""}
+    )
     await db.delete(run)
     await db.commit()
     return None

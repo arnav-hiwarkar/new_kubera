@@ -14,6 +14,8 @@ GATED_ROUTES = {
     "/api/v1/kra": "kra",
     "/api/v1/notifications": "notifications",
     "/api/v1/activity-log": "activity",
+    "/api/v1/depreciation": "assets",
+    "/api/v1/financial-years": "assets",
 }
 
 def test_every_module_router_has_a_server_side_gate():
@@ -84,7 +86,9 @@ async def test_module_gate_behavior(client: AsyncClient):
         "/api/v1/sales",
         "/api/v1/kra",
         "/api/v1/notifications",
-        "/api/v1/activity-log"
+        "/api/v1/activity-log",
+        "/api/v1/depreciation/runs",
+        "/api/v1/financial-years",
     ]
 
     for endpoint in endpoints:

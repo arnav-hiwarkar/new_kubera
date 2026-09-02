@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.assets import Asset, AssetLifecycleStatus
 from app.models.asset_masters import ItAssetBlock, DepreciationMethod
-from app.models.financial_year import FinancialYear
+from app.models.financial_year import FinancialYear, FinancialYearStatus
 from app.models.depreciation import (
     DepreciationBook,
     DepreciationRun,
@@ -301,6 +301,8 @@ async def execute_depreciation_run(
     fy = await db.get(FinancialYear, financial_year_id)
     if not fy or fy.company_id != company_id:
         raise FinancialYearNotFoundError("Financial year not found")
+    if fy.status == FinancialYearStatus.closed.value:
+        raise DepreciationConflictError("This financial year is closed. Reopen it first.")
 
     fy_start: date = fy.start_date
     fy_end: date = fy.end_date
@@ -456,9 +458,13 @@ async def finalize_depreciation_run(
     user_id: uuid.UUID,
 ) -> DepreciationRun:
     """Finalize a depreciation run, locking its calculations for statutory reporting."""
-    run = await db.get(DepreciationRun, run_id)
+    run = await db.get(DepreciationRun, run_id, options=[selectinload(DepreciationRun.financial_year)])
     if not run or run.company_id != company_id:
         raise ValueError("Depreciation run not found")
+        
+    fy = run.financial_year or await db.get(FinancialYear, run.financial_year_id)
+    if fy and fy.status == FinancialYearStatus.closed.value:
+        raise DepreciationConflictError("This financial year is closed. Reopen it first.")
 
     # Check partial uniqueness before finalizing
     existing_finalized = (
@@ -522,18 +528,21 @@ async def reopen_depreciation_run(
     chain — refuse and tell the operator to redo oldest-first. Lines are kept so
     the previous numbers stay inspectable while a corrected run is prepared.
     """
-    run = await db.get(DepreciationRun, run_id)
+    run = await db.get(DepreciationRun, run_id, options=[selectinload(DepreciationRun.financial_year)])
     if not run or run.company_id != company_id:
         raise ValueError("Depreciation run not found")
     if run.status != DepreciationRunStatus.finalized.value:
         raise DepreciationConflictError("Only a finalized run can be reopened")
 
-    fy = run.financial_year
+    fy = run.financial_year or await db.get(FinancialYear, run.financial_year_id)
+    if fy and fy.status == FinancialYearStatus.closed.value:
+        raise DepreciationConflictError("This financial year is closed. Reopen it first.")
+
     blocking = await _blocking_later_label(db, company_id, run)
     if blocking is not None:
         raise DepreciationConflictError(
             f"Financial year {blocking} is already finalized. Redo years "
-            f"oldest-first before reopening {fy.label}."
+            f"oldest-first before reopening {fy.label if fy else ''}."
         )
 
     run.status = DepreciationRunStatus.draft.value

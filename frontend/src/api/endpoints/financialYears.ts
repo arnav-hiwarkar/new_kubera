@@ -7,6 +7,8 @@ export const financialYearsApi = {
     companyClient.post<FinancialYearResponse>('/api/v1/financial-years', { body }),
   close: (id: string) =>
     companyClient.post<FinancialYearResponse>(`/api/v1/financial-years/${id}/close`),
-  reopen: (id: string) =>
-    companyClient.post<FinancialYearResponse>(`/api/v1/financial-years/${id}/reopen`),
+  reopen: (id: string, reason: string) =>
+    companyClient.post<FinancialYearResponse>(`/api/v1/financial-years/${id}/reopen`, {
+      body: { reason },
+    }),
 }

@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class DepreciationRunCreate(BaseModel):
@@ -19,6 +19,14 @@ class DepreciationRunCreate(BaseModel):
 
 class DepreciationRunReopenRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, v: str) -> str:
+        trimmed = v.strip()
+        if len(trimmed) < 3:
+            raise ValueError("Reason must be at least 3 characters long after trimming whitespace")
+        return trimmed
 
 
 class CalcStepSchema(BaseModel):
