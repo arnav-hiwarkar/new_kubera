@@ -18,7 +18,7 @@ from app.models.docvault import (
 from app.models.notification import Notification, RecipientType
 from app.models.activity_log import ActivityLog, ActorType
 from app.schemas.docvault import (
-    BucketCreate, BucketResponse, BucketUpdate, BucketAccessUpdate, DocumentResponse, DocumentVersionResponse, DocumentUpdate, DocVaultApproverResponse
+    BucketCreate, BucketResponse, BucketUpdate, BucketAccessUpdate, DocumentResponse, DocumentVersionResponse, DocumentUpdate, DocVaultApproverResponse, DocumentReviewRequest, DocumentRequestApprovalRequest
 )
 from app.encryption import (
     generate_dek, encrypt_dek, decrypt_dek, encrypt_file_data, decrypt_file_data, decrypt_company_kek
@@ -53,6 +53,7 @@ async def _attach_uploader_names(db: AsyncSession, docs: List[Document]) -> List
     """
     ids = {d.created_by for d in docs if d.created_by}
     ids |= {d.approver_id for d in docs if d.approver_id}
+    ids |= {d.approved_by for d in docs if d.approved_by}
     ids |= {v.uploaded_by for d in docs for v in d.versions if v.uploaded_by}
     names: dict[uuid.UUID, str] = {}
     if ids:
@@ -63,6 +64,7 @@ async def _attach_uploader_names(db: AsyncSession, docs: List[Document]) -> List
     for d in docs:
         d.created_by_name = names.get(d.created_by)
         d.approver_name = names.get(d.approver_id)
+        d.approved_by_name = names.get(d.approved_by)
         for v in d.versions:
             v.uploaded_by_name = names.get(v.uploaded_by)
     return docs
@@ -164,6 +166,10 @@ async def list_buckets(
 def is_company_admin(user: CompanyUser) -> bool:
     role_str = str(getattr(user.role, "value", user.role)).lower()
     return role_str == "admin" or user.role == UserRole.admin
+
+
+def _may_edit_document(user: CompanyUser, doc: Document) -> bool:
+    return is_company_admin(user) or doc.created_by == user.id or doc.approver_id == user.id
 
 
 def user_has_docvault_access(user: CompanyUser) -> bool:
@@ -413,6 +419,8 @@ async def upload_document(
     if needs_approval:
         if not approver_id:
             raise HTTPException(status_code=400, detail="Approver is required when requesting approval")
+        if approver_id == current_user.id and not is_company_admin(current_user):
+            raise HTTPException(status_code=400, detail="Cannot assign yourself as approver")
         approver = (await db.execute(
             select(CompanyUser).where(
                 and_(
@@ -492,6 +500,8 @@ async def upload_document_version(
         raise HTTPException(status_code=404, detail="Document not found")
     if not await can_access_bucket(db, current_user, doc.bucket_id):
         raise HTTPException(status_code=404, detail="Document not found")
+    if not (is_company_admin(current_user) or doc.created_by == current_user.id):
+        raise HTTPException(status_code=403, detail="Only creator or admin can upload new versions")
     if not doc.is_editable:
         raise HTTPException(status_code=409, detail="Document is not editable")
     is_approver_or_admin = (current_user.id == doc.approver_id or is_company_admin(current_user))
@@ -505,6 +515,11 @@ async def upload_document_version(
     next_version = max([v.version_number for v in doc.versions], default=0) + 1
     version = await handle_file_upload(file, doc_id, current_user.company_id, current_user.id, next_version, db)
     doc.current_version_id = version.id
+
+    if doc.status == DocumentStatus.verified:
+        doc.status = DocumentStatus.uploaded
+        doc.approved_by = None
+        doc.approved_at = None
     
     await log_activity(db, current_user.company_id, current_user.id, "document.version_uploaded", "document", doc_id, {"version": next_version})
     await db.commit()
@@ -671,6 +686,9 @@ async def update_document(
     if not update_data:
         return (await _attach_uploader_names(db, [doc]))[0]
 
+    if not _may_edit_document(current_user, doc):
+        raise HTTPException(status_code=403, detail="Not authorized to modify this document")
+
     # Approval permission guardrails: If document is pending approval, ONLY approver or admin can modify ANY property or review
     is_approver_or_admin = (current_user.id == doc.approver_id or is_company_admin(current_user))
     if doc.status == DocumentStatus.pending_approval and not is_approver_or_admin:
@@ -678,6 +696,9 @@ async def update_document(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the assigned approver or an admin can modify, edit, or review this document while approval is pending",
         )
+
+    if update_data.get("is_editable") is True and not (is_company_admin(current_user) or doc.created_by == current_user.id):
+        raise HTTPException(status_code=403, detail="Only creator or admin can unlock a document")
 
     # A locked (non-editable) document freezes its content/metadata — title, tags
     # and bucket. Status changes (incl. archive) and toggling is_editable back on
@@ -696,6 +717,10 @@ async def update_document(
             raise HTTPException(status_code=403, detail="No access to this bucket")
 
     if updates.approver_id:
+        if doc.status in (DocumentStatus.verified, DocumentStatus.archived) and not is_company_admin(current_user):
+            raise HTTPException(status_code=400, detail="Cannot change approver on a resolved or archived document")
+        if updates.approver_id == doc.created_by and not is_company_admin(current_user):
+            raise HTTPException(status_code=400, detail="Cannot assign creator as approver")
         approver = (await db.execute(
             select(CompanyUser).where(
                 and_(
@@ -714,26 +739,6 @@ async def update_document(
         if target_bucket and not await can_access_bucket(db, approver, target_bucket):
             raise HTTPException(status_code=400, detail="Selected approver does not have access to this bucket")
 
-    # If transitioning away from pending_approval, record resolution timestamp and notify creator
-    if doc.status == DocumentStatus.pending_approval and updates.status and updates.status != DocumentStatus.pending_approval:
-        doc.approved_at = datetime.now(timezone.utc)
-        if doc.created_by and doc.created_by != current_user.id:
-            db.add(
-                Notification(
-                    recipient_type=RecipientType.company_user,
-                    recipient_id=doc.created_by,
-                    type="docvault.approval_resolved",
-                    payload={
-                        "document_id": str(doc.id),
-                        "title": doc.title,
-                        "status": updates.status.value,
-                        "approver_name": current_user.full_name,
-                        "notes": updates.approval_notes,
-                        "message": f"{current_user.full_name} updated status of '{doc.title}' to {updates.status.value}",
-                    },
-                )
-            )
-
     for key, value in update_data.items():
         setattr(doc, key, value)
         
@@ -741,6 +746,158 @@ async def update_document(
     await db.commit()
 
     # Reload with versions (db.refresh does not reliably reload the collection).
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id)
+    )
+    return (await _attach_uploader_names(db, [result.scalar_one()]))[0]
+
+
+
+@router.post("/documents/{document_id}/request-approval", response_model=DocumentResponse)
+async def request_document_approval(
+    document_id: uuid.UUID,
+    body: DocumentRequestApprovalRequest,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    result = await db.execute(
+        select(Document)
+        .options(selectinload(Document.versions))
+        .where(and_(Document.id == document_id, Document.company_id == current_user.company_id))
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not await can_access_bucket(db, current_user, doc.bucket_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    is_admin = is_company_admin(current_user)
+    if doc.created_by != current_user.id and not is_admin:
+        raise HTTPException(status_code=403, detail="Only creator or admin can request approval")
+
+    if doc.status not in (DocumentStatus.uploaded, DocumentStatus.action_required):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot request approval for document in '{doc.status.value}' status",
+        )
+
+    if body.approver_id == current_user.id and not is_admin:
+        raise HTTPException(status_code=400, detail="Cannot assign yourself as approver")
+
+    approver = (await db.execute(
+        select(CompanyUser).where(
+            and_(
+                CompanyUser.id == body.approver_id,
+                CompanyUser.company_id == current_user.company_id,
+                CompanyUser.deleted_at.is_(None),
+                CompanyUser.is_active == True,
+            )
+        )
+    )).scalar_one_or_none()
+    if not approver:
+        raise HTTPException(status_code=400, detail="Invalid approver selected")
+    if not user_has_docvault_access(approver):
+        raise HTTPException(status_code=400, detail="Selected approver does not have DocVault access")
+    if doc.bucket_id and not await can_access_bucket(db, approver, doc.bucket_id):
+        raise HTTPException(status_code=400, detail="Selected approver does not have access to this bucket")
+
+    old_status = doc.status.value if doc.status else None
+    doc.status = DocumentStatus.pending_approval
+    doc.approver_id = body.approver_id
+    doc.approval_requested_at = datetime.now(timezone.utc)
+    doc.approved_by = None
+    doc.approved_at = None
+
+    db.add(
+        Notification(
+            recipient_type=RecipientType.company_user,
+            recipient_id=body.approver_id,
+            type="docvault.approval_requested",
+            payload={
+                "document_id": str(doc.id),
+                "title": doc.title,
+                "uploader_name": current_user.full_name,
+                "message": f"{current_user.full_name} requested your approval on '{doc.title}'",
+            },
+        )
+    )
+
+    await log_activity(
+        db, current_user.company_id, current_user.id, "document.approval_requested", "document", doc.id,
+        {"from": old_status, "to": "pending_approval", "approver_id": str(body.approver_id)}
+    )
+    await db.commit()
+
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id)
+    )
+    return (await _attach_uploader_names(db, [result.scalar_one()]))[0]
+
+
+@router.post("/documents/{document_id}/review", response_model=DocumentResponse)
+async def review_document(
+    document_id: uuid.UUID,
+    body: DocumentReviewRequest,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    result = await db.execute(
+        select(Document)
+        .options(selectinload(Document.versions))
+        .where(and_(Document.id == document_id, Document.company_id == current_user.company_id))
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not await can_access_bucket(db, current_user, doc.bucket_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.status != DocumentStatus.pending_approval:
+        raise HTTPException(status_code=409, detail="Document is not pending approval")
+
+    is_admin = is_company_admin(current_user)
+    if current_user.id != doc.approver_id and not is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to review")
+
+    if current_user.id == doc.created_by and not is_admin:
+        raise HTTPException(status_code=403, detail="Uploader cannot review their own document")
+
+    old_status = doc.status.value if doc.status else None
+    decision_status = DocumentStatus(body.decision)
+    doc.status = decision_status
+    doc.approval_notes = body.approval_notes
+
+    if decision_status == DocumentStatus.verified:
+        doc.approved_by = current_user.id
+        doc.approved_at = datetime.now(timezone.utc)
+    else:
+        doc.approved_by = None
+        doc.approved_at = None
+
+    if doc.created_by and doc.created_by != current_user.id:
+        db.add(
+            Notification(
+                recipient_type=RecipientType.company_user,
+                recipient_id=doc.created_by,
+                type="docvault.approval_resolved",
+                payload={
+                    "document_id": str(doc.id),
+                    "title": doc.title,
+                    "status": doc.status.value,
+                    "approver_name": current_user.full_name,
+                    "notes": doc.approval_notes,
+                    "message": f"{current_user.full_name} updated status of '{doc.title}' to {doc.status.value}",
+                },
+            )
+        )
+
+    await log_activity(
+        db, current_user.company_id, current_user.id, "document.reviewed", "document", doc.id,
+        {"from": old_status, "to": doc.status.value, "notes": doc.approval_notes}
+    )
+    
+    await db.commit()
+
     result = await db.execute(
         select(Document).options(selectinload(Document.versions)).where(Document.id == doc.id)
     )
@@ -760,6 +917,9 @@ async def delete_document(
     if not await can_access_bucket(db, current_user, doc.bucket_id):
         raise HTTPException(status_code=404, detail="Document not found")
 
+    if not (is_company_admin(current_user) or doc.created_by == current_user.id):
+        raise HTTPException(status_code=403, detail="Only creator or admin can archive a document")
+
     is_approver_or_admin = (current_user.id == doc.approver_id or is_company_admin(current_user))
     if doc.status == DocumentStatus.pending_approval and not is_approver_or_admin:
         raise HTTPException(
@@ -773,3 +933,4 @@ async def delete_document(
     await log_activity(db, current_user.company_id, current_user.id, "document.archived", "document", doc.id)
     await db.commit()
     return None
+
