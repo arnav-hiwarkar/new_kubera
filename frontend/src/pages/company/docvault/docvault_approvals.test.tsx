@@ -30,6 +30,7 @@ vi.mock('@/api/endpoints/docvault', () => ({
   docvaultApi: {
     uploadDocument: vi.fn().mockResolvedValue({}),
     deleteDocument: vi.fn().mockResolvedValue(undefined),
+    restoreDocument: vi.fn().mockResolvedValue({}),
     updateDocument: vi.fn().mockResolvedValue({}),
     reviewDocument: vi.fn().mockResolvedValue({}),
     requestApproval: vi.fn().mockResolvedValue({}),
@@ -254,6 +255,25 @@ describe('DocVault Approvals & Final Status', () => {
         approver_id: 'u-approver-1',
       }),
     )
+  })
+
+  it('disables restore button and unlock switch for non-admin on archived or locked document', async () => {
+    const archivedDoc: DocumentResponse = {
+      ...baseDoc,
+      id: 'doc-archived',
+      status: 'archived',
+      is_editable: false,
+    }
+
+    wrap(<DocumentDrawer document={archivedDoc} open onClose={() => {}} buckets={[]} />)
+
+    // Current user in mock is role: 'employee'
+    const restoreBtn = screen.getByRole('button', { name: /Restore document/i })
+    expect(restoreBtn).toBeDisabled()
+    expect(restoreBtn).toHaveAttribute('title', 'Only administrators can restore archived documents')
+
+    const editableSwitch = screen.getByRole('checkbox', { name: /Final \(Locked\)/i })
+    expect(editableSwitch).toBeDisabled()
   })
 })
 

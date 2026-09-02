@@ -52,6 +52,8 @@ export const docvaultApi = {
     companyClient.post<DocumentResponse>(`/api/v1/docvault/documents/${id}/request-approval`, { body }),
   deleteDocument: (id: string) =>
     companyClient.delete<void>(`/api/v1/docvault/documents/${id}`),
+  restoreDocument: (id: string) =>
+    companyClient.post<DocumentResponse>(`/api/v1/docvault/documents/${id}/restore`),
   downloadDocument: (id: string, versionId?: string) =>
     companyClient.get<Blob>(`/api/v1/docvault/documents/${id}/download`, {
       responseType: 'blob',

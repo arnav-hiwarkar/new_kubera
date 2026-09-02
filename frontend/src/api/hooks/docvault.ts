@@ -142,6 +142,15 @@ export function useArchiveDocument() {
   })
 }
 
+/** Restore an archived document via the restore endpoint. */
+export function useRestoreDocument() {
+  const invalidate = useInvalidateDocuments()
+  return useMutation({
+    mutationFn: (id: string) => docvaultApi.restoreDocument(id),
+    onSuccess: invalidate,
+  })
+}
+
 export function useDownloadDocument() {
   return useMutation({
     mutationFn: ({ id, versionId, filename }: { id: string; versionId?: string; filename: string }) =>

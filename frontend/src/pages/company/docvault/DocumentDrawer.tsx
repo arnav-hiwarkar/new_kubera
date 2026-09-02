@@ -21,6 +21,7 @@ import {
   useReviewDocument,
   useRequestApproval,
   useArchiveDocument,
+  useRestoreDocument,
   useUploadVersion,
   useDownloadDocument,
 } from '@/api/hooks/docvault'
@@ -42,6 +43,7 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
   const review = useReviewDocument()
   const requestApproval = useRequestApproval()
   const archive = useArchiveDocument()
+  const restoreMutation = useRestoreDocument()
   const uploadVersion = useUploadVersion()
   const download = useDownloadDocument()
 
@@ -158,7 +160,7 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
 
   const restore = () =>
     wrap(
-      update.mutateAsync({ id: document.id, body: { status: 'uploaded' as never, is_editable: true } }),
+      restoreMutation.mutateAsync(document.id),
       'Document restored',
     )
 
@@ -194,7 +196,13 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
         }
         footer={
           isArchived ? (
-            <Button variant="secondary" onClick={restore} loading={update.isPending}>
+            <Button
+              variant="secondary"
+              onClick={restore}
+              loading={restoreMutation.isPending}
+              disabled={!isAdmin}
+              title={!isAdmin ? 'Only administrators can restore archived documents' : undefined}
+            >
               Restore document
             </Button>
           ) : (
@@ -385,13 +393,15 @@ export function DocumentDrawer({ document, open, onClose, buckets }: DocumentDra
             hint={
               isPendingApproval && !canReview
                 ? 'Locked while pending approval. Only the assigned approver or admin can adjust.'
+                : !document.is_editable && !isAdmin
+                ? 'Finalized (Locked). Only an administrator can unlock this document.'
                 : 'When off, the file is Final: no new versions, renaming, tags or bucket changes.'
             }
           >
             <Switch
               checked={document.is_editable}
               onChange={changeEditable}
-              disabled={isArchived || update.isPending || (isPendingApproval && !canReview)}
+              disabled={isArchived || update.isPending || (isPendingApproval && !canReview) || (!document.is_editable && !isAdmin)}
               label={document.is_editable ? 'Editable' : 'Final (Locked)'}
             />
           </Field>

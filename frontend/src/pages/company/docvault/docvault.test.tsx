@@ -26,6 +26,7 @@ vi.mock('@/api/endpoints/docvault', () => ({
   docvaultApi: {
     uploadDocument: vi.fn().mockResolvedValue({}),
     deleteDocument: vi.fn().mockResolvedValue(undefined),
+    restoreDocument: vi.fn().mockResolvedValue({}),
     updateDocument: vi.fn().mockResolvedValue({}),
     uploadVersion: vi.fn().mockResolvedValue({}),
     downloadDocument: vi.fn().mockResolvedValue(new Blob()),
@@ -110,6 +111,18 @@ describe('DocumentDrawer archive flow', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Archive' }))
 
     await waitFor(() => expect(docvaultApi.deleteDocument).toHaveBeenCalledWith('doc-1'))
+  })
+
+  it('restores archived document via dedicated restore endpoint when admin', async () => {
+    const user = userEvent.setup()
+    const archivedDoc: DocumentResponse = { ...doc, status: 'archived', is_editable: false }
+    wrap(<DocumentDrawer document={archivedDoc} open onClose={() => {}} buckets={[]} />)
+
+    const restoreBtn = screen.getByRole('button', { name: 'Restore document' })
+    expect(restoreBtn).not.toBeDisabled()
+    await user.click(restoreBtn)
+
+    await waitFor(() => expect(docvaultApi.restoreDocument).toHaveBeenCalledWith('doc-1'))
   })
 })
 
