@@ -123,3 +123,54 @@ def test_is_ip_blocked_helper():
     assert is_ip_blocked(ipaddress.ip_address("::ffff:127.0.0.1")) is True
     assert is_ip_blocked(ipaddress.ip_address("8.8.8.8")) is False
     assert is_ip_blocked(ipaddress.ip_address("1.1.1.1")) is False
+
+
+def test_email_service_pins_ip_and_avoids_rebind(monkeypatch):
+    """Test that EmailService resolves DNS once and connects strictly to the safe IP literal."""
+    dns_call_count = 0
+    resolved_ip = "93.184.216.34"
+
+    def mock_getaddrinfo(host, port, proto=0):
+        nonlocal dns_call_count
+        dns_call_count += 1
+        return [(socket.AF_INET, socket.SOCK_STREAM, proto, "", (resolved_ip, port))]
+
+    monkeypatch.setattr("socket.getaddrinfo", mock_getaddrinfo)
+
+    connected_ip = None
+    connected_port = None
+
+    class MockSMTP:
+        def __init__(self, timeout=None):
+            self._host = None
+        def connect(self, host, port):
+            nonlocal connected_ip, connected_port
+            connected_ip = host
+            connected_port = port
+            return (220, b"Ready")
+        def starttls(self, context=None):
+            pass
+        def login(self, user, pwd):
+            pass
+        def close(self):
+            pass
+
+    monkeypatch.setattr("smtplib.SMTP", MockSMTP)
+
+    from app.services.email.client import EmailService
+    from app.services.email.schemas import EmailConfig
+
+    config = EmailConfig(
+        host="rebind.attacker.com",
+        port=587,
+        user="test",
+        password="pwd",
+        use_tls=False,
+        use_ssl=False,
+    )
+    service = EmailService(config=config)
+    server = service._get_connection()
+    server.close()
+
+    assert dns_call_count == 1
+    assert connected_ip == "93.184.216.34"
