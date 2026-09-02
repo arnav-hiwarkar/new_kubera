@@ -36,7 +36,8 @@ export function useCloseFinancialYear() {
 export function useReopenFinancialYear() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => financialYearsApi.reopen(id),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      financialYearsApi.reopen(id, reason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: financialYearKeys.all })
     },

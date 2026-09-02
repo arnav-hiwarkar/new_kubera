@@ -119,6 +119,235 @@ async def test_depreciation_run_lines(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_cannot_write_in_closed_financial_year(client: AsyncClient):
+    ctx = await setup_depreciation_environment(client, email="closed_fy@testco.com")
+    headers = ctx["headers"]
+    fy_id = ctx["fy_id"]
+
+    # 1. Close the financial year
+    close_res = await client.post(f"/api/v1/financial-years/{fy_id}/close", headers=headers)
+    assert close_res.status_code == 200
+
+    # 2. Try to create a depreciation run in closed FY -> 409
+    run_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "Should fail"},
+        headers=headers,
+    )
+    assert run_res.status_code == 409
+    assert "closed" in run_res.json()["detail"].lower()
+
+    # 3. Reopen FY to create a run, then close it again to test finalize/delete/reopen
+    await client.post(f"/api/v1/financial-years/{fy_id}/reopen", json={"reason": "reopening for test"}, headers=headers)
+    
+    run_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "Draft run"},
+        headers=headers,
+    )
+    assert run_res.status_code == 201
+    run_id = run_res.json()["id"]
+
+    # Close FY again
+    await client.post(f"/api/v1/financial-years/{fy_id}/close", headers=headers)
+
+    # 4. Try to finalize draft run while FY is closed -> 409
+    fin_res = await client.post(f"/api/v1/depreciation/runs/{run_id}/finalize", headers=headers)
+    assert fin_res.status_code == 409
+    assert "closed" in fin_res.json()["detail"].lower()
+
+    # 5. Try to delete draft run while FY is closed -> 409
+    del_res = await client.delete(f"/api/v1/depreciation/runs/{run_id}", headers=headers)
+    assert del_res.status_code == 409
+    assert "closed" in del_res.json()["detail"].lower()
+
+    # 6. Reopen FY, finalize run, close FY again
+    await client.post(f"/api/v1/financial-years/{fy_id}/reopen", json={"reason": "reopening to finalize"}, headers=headers)
+    fin_ok = await client.post(f"/api/v1/depreciation/runs/{run_id}/finalize", headers=headers)
+    assert fin_ok.status_code == 200
+
+    await client.post(f"/api/v1/financial-years/{fy_id}/close", headers=headers)
+
+    # 7. Try to reopen finalized run while FY is closed -> 409
+    reopen_closed = await client.post(
+        f"/api/v1/depreciation/runs/{run_id}/reopen",
+        json={"reason": "reopening run in closed year"},
+        headers=headers,
+    )
+    assert reopen_closed.status_code == 409
+    assert "closed" in reopen_closed.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_employee_cannot_finalize_depreciation_run(client: AsyncClient):
+    ctx = await setup_depreciation_environment(client, email="dep_finalize_admin@testco.com")
+    admin_headers = ctx["headers"]
+    fy_id = ctx["fy_id"]
+
+    # Create draft run as admin
+    run_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "Draft to finalize"},
+        headers=admin_headers,
+    )
+    assert run_res.status_code == 201
+    run_id = run_res.json()["id"]
+
+    # Create employee with assets module
+    emp_res = await client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "email": "dep_emp_assets@testco.com",
+            "password": "Valid1!Pass",
+            "full_name": "Assets Employee",
+            "role": "employee",
+            "accessible_modules": ["assets"],
+        },
+    )
+    assert emp_res.status_code == 201
+
+    login_res = await client.post(
+        "/api/v1/auth/company/login",
+        json={"email": "dep_emp_assets@testco.com", "password": "Valid1!Pass"},
+    )
+    assert login_res.status_code == 200
+    emp_headers = {"Authorization": f"Bearer {login_res.json()['access_token']}"}
+
+    # Employee can see runs
+    list_res = await client.get("/api/v1/depreciation/runs", headers=emp_headers)
+    assert list_res.status_code == 200
+
+    # Employee cannot finalize run -> 403
+    fin_res = await client.post(f"/api/v1/depreciation/runs/{run_id}/finalize", headers=emp_headers)
+    assert fin_res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_finalize_depreciation_run_creates_audit_log(client: AsyncClient):
+    ctx = await setup_depreciation_environment(client, email="dep_fin_log@testco.com")
+    headers = ctx["headers"]
+    fy_id = ctx["fy_id"]
+
+    run_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "Finalize log test"},
+        headers=headers,
+    )
+    assert run_res.status_code == 201
+    run_id = run_res.json()["id"]
+
+    fin_res = await client.post(f"/api/v1/depreciation/runs/{run_id}/finalize", headers=headers)
+    assert fin_res.status_code == 200
+
+    log_res = await client.get(
+        "/api/v1/activity-log",
+        params={"entity_type": "depreciation_run", "entity_id": run_id},
+        headers=headers,
+    )
+    assert log_res.status_code == 200
+    logs = log_res.json()
+    fin_log = next((l for l in logs if l["action"] == "depreciation.run.finalized"), None)
+    assert fin_log is not None
+    assert fin_log["entity_id"] == run_id
+
+
+@pytest.mark.asyncio
+async def test_employee_without_assets_module_cannot_access_depreciation(client: AsyncClient):
+    ctx = await setup_depreciation_environment(client, email="dep_no_assets_admin@testco.com")
+    admin_headers = ctx["headers"]
+    fy_id = ctx["fy_id"]
+
+    # Create employee with NO assets module
+    emp_res = await client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "email": "dep_no_assets@testco.com",
+            "password": "Valid1!Pass",
+            "full_name": "No Assets User",
+            "role": "employee",
+            "accessible_modules": ["docvault"],
+        },
+    )
+    assert emp_res.status_code == 201
+
+    login_res = await client.post(
+        "/api/v1/auth/company/login",
+        json={"email": "dep_no_assets@testco.com", "password": "Valid1!Pass"},
+    )
+    assert login_res.status_code == 200
+    emp_headers = {"Authorization": f"Bearer {login_res.json()['access_token']}"}
+
+    # Blocked on list runs
+    r1 = await client.get("/api/v1/depreciation/runs", headers=emp_headers)
+    assert r1.status_code == 403
+
+    # Blocked on create run
+    r2 = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "Fail"},
+        headers=emp_headers,
+    )
+    assert r2.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_reopen_depreciation_run_whitespace_reason_rejected(client: AsyncClient):
+    ctx = await setup_depreciation_environment(client, email="dep_reopen_spaces@testco.com")
+    headers = ctx["headers"]
+    fy_id = ctx["fy_id"]
+
+    run_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "Draft to finalize then reopen"},
+        headers=headers,
+    )
+    assert run_res.status_code == 201
+    run_id = run_res.json()["id"]
+
+    fin_res = await client.post(f"/api/v1/depreciation/runs/{run_id}/finalize", headers=headers)
+    assert fin_res.status_code == 200
+
+    # Attempt to reopen with whitespace-only reason -> 422
+    reopen_spaces = await client.post(
+        f"/api/v1/depreciation/runs/{run_id}/reopen",
+        json={"reason": "   "},
+        headers=headers,
+    )
+    assert reopen_spaces.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_delete_depreciation_run_creates_audit_log(client: AsyncClient):
+    ctx = await setup_depreciation_environment(client, email="dep_del_log@testco.com")
+    headers = ctx["headers"]
+    fy_id = ctx["fy_id"]
+
+    run_res = await client.post(
+        "/api/v1/depreciation/runs",
+        json={"financial_year_id": fy_id, "notes": "Draft to delete"},
+        headers=headers,
+    )
+    assert run_res.status_code == 201
+    run_id = run_res.json()["id"]
+
+    del_res = await client.delete(f"/api/v1/depreciation/runs/{run_id}", headers=headers)
+    assert del_res.status_code == 204
+
+    log_res = await client.get(
+        "/api/v1/activity-log",
+        params={"entity_type": "depreciation_run", "entity_id": run_id},
+        headers=headers,
+    )
+    assert log_res.status_code == 200
+    logs = log_res.json()
+    del_log = next((l for l in logs if l["action"] == "depreciation.run.deleted"), None)
+    assert del_log is not None
+    assert del_log["entity_id"] == run_id
+
+
+@pytest.mark.asyncio
 async def test_depreciation_run_it_lines(client: AsyncClient):
     ctx = await setup_depreciation_environment(client, email="dep_itlines@testco.com")
     headers = ctx["headers"]

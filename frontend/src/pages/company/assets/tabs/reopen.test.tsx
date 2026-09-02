@@ -4,15 +4,6 @@ import { DepreciationTab } from './DepreciationTab'
 import { ToastProvider } from '@/components/ui/Toast'
 import type { AssetDetail } from '@/api/hooks/assets'
 
-const fy = {
-  id: 'fy-1',
-  company_id: 'c1',
-  label: '2024-25',
-  start_date: '2024-04-01',
-  end_date: '2025-03-31',
-  status: 'closed' as const,
-}
-
 const run = {
   id: 'r1',
   company_id: 'c1',
@@ -48,8 +39,21 @@ vi.mock('@/api/hooks/assetMasters', () => ({
   useItBlocks: () => ({ data: [] }),
   useAssetCategories: () => ({ data: [] }),
 }))
+const fyState = vi.hoisted(() => ({
+  data: [
+    {
+      id: 'fy-1',
+      company_id: 'c1',
+      label: '2024-25',
+      start_date: '2024-04-01',
+      end_date: '2025-03-31',
+      status: 'open' as 'open' | 'closed',
+    },
+  ],
+}))
+
 vi.mock('@/api/hooks/financialYears', () => ({
-  useFinancialYears: () => ({ data: [fy], isLoading: false }),
+  useFinancialYears: () => ({ data: fyState.data, isLoading: false }),
 }))
 // Module scope so tests can flip roles without re-mocking.
 const authState = vi.hoisted(() => ({
@@ -130,5 +134,28 @@ describe('DepreciationTab — reopen finalized run', () => {
     )
     await screen.findByText('Companies Act — Schedule II')
     expect(screen.queryByRole('button', { name: /reopen/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /finalize/i })).not.toBeInTheDocument()
+  })
+
+  it('disables reopen button when financial year is closed', async () => {
+    authState.profile = { id: 'u1', role: 'admin', full_name: 'Admin' }
+    fyState.data = [
+      {
+        id: 'fy-1',
+        company_id: 'c1',
+        label: '2024-25',
+        start_date: '2024-04-01',
+        end_date: '2025-03-31',
+        status: 'closed' as const,
+      },
+    ]
+    render(
+      <ToastProvider>
+        <DepreciationTab detail={detail} locked={false} />
+      </ToastProvider>,
+    )
+    const btn = await screen.findByRole('button', { name: /reopen/i })
+    expect(btn).toBeDisabled()
+    expect(btn).toHaveAttribute('title', 'Financial year is closed. Reopen the financial year first.')
   })
 })

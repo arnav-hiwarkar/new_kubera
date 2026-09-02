@@ -8,12 +8,17 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.auth import get_current_company_user
+from app.auth import get_current_company_user, require_admin, require_assets_module
 from app.models.company import CompanyUser
 from app.models.financial_year import FinancialYear, FinancialYearStatus
-from app.schemas.financial_years import FinancialYearCreate, FinancialYearResponse
+from app.schemas.financial_years import FinancialYearCreate, FinancialYearResponse, FinancialYearReopenRequest
+from app.services.activity import log_activity
 
-router = APIRouter(prefix="/api/v1/financial-years", tags=["financial-years"])
+router = APIRouter(
+    prefix="/api/v1/financial-years",
+    tags=["financial-years"],
+    dependencies=[Depends(require_assets_module)],
+)
 
 
 @router.get("", response_model=List[FinancialYearResponse])
@@ -73,16 +78,25 @@ async def create_financial_year(
 @router.post("/{fy_id}/close", response_model=FinancialYearResponse)
 async def close_financial_year(
     fy_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     fy = await db.get(FinancialYear, fy_id)
     if not fy or fy.company_id != current_user.company_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Financial year not found")
+    if fy.status == FinancialYearStatus.closed.value:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Financial year is already closed")
 
     fy.status = FinancialYearStatus.closed.value
     fy.closed_at = datetime.now(timezone.utc)
     fy.closed_by = current_user.id
+    
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "financial_year.closed", "financial_year", fy.id,
+        {"label": fy.label}
+    )
+    
     await db.commit()
     await db.refresh(fy)
     return fy
@@ -91,12 +105,23 @@ async def close_financial_year(
 @router.post("/{fy_id}/reopen", response_model=FinancialYearResponse)
 async def reopen_financial_year(
     fy_id: uuid.UUID,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    body: FinancialYearReopenRequest,
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     fy = await db.get(FinancialYear, fy_id)
     if not fy or fy.company_id != current_user.company_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Financial year not found")
+    if fy.status != FinancialYearStatus.closed.value:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Financial year is not closed")
+
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "financial_year.reopened", "financial_year", fy.id,
+        {"reason": body.reason.strip(),
+         "was_closed_at": fy.closed_at.isoformat() if fy.closed_at else None,
+         "was_closed_by": str(fy.closed_by) if fy.closed_by else None}
+    )
 
     fy.status = FinancialYearStatus.open.value
     fy.closed_at = None
