@@ -1151,10 +1151,10 @@ app/services/email/
 | `app.worker.nightly_backup` | `crontab(hour=2, minute=0)` — 02:00 UTC daily |
 
 `nightly_backup` creates `/data/backups`, then:
-1. `pg_dump $DATABASE_URL -f /data/backups/db_backup_{ts}.sql` (silently skipped if `pg_dump` is absent — it is present in the image).
-2. `tar -czf /data/backups/vault_backup_{ts}.tar.gz -C /data vault`.
+1. `pg_dump -Fc -f /data/backups/db_backup_{ts}.dump` — custom format, restored with `pg_restore` (not `psql`). Connection args are built from `DATABASE_URL` by `pg_dump_target()` rather than passed as a URL, because `pg_dump` doesn't understand the `+asyncpg` dialect suffix and silently falls back to a local socket if handed the raw URL. Raises (does not skip) on failure or an empty output file.
+2. `tar -czf /data/backups/vault_backup_{ts}.tar.gz -C /data vault` — note the tarball root is `/data`, so it contains a top-level `vault/` directory (contrast with `ops/kubera-export.sh`'s bundle tarball, which is rooted at `/data/vault` itself — see `docs/OPERATIONS_RUNBOOK.md` §7 for why the two are not interchangeable).
 
-Returns `{"status": "success", "timestamp": ts}`.
+Returns `{"status": "success", "timestamp": ts, "db_backup": ..., "db_bytes": ..., "vault_backup": ..., "vault_bytes": ..., "pruned": ...}`. Pruned by `BACKUP_RETENTION_DAYS` (default 14).
 
 `app/services/email/tasks` is imported at the bottom of `worker.py` so the worker discovers `send_email_async` on startup.
 

@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuditorAuth } from '@/auth/auditor'
 import { ApiError } from '@/api/http'
+import { rateLimitMessage } from '@/api/rateLimit'
 import { Button, Field, Input } from '@/components/ui'
 import { AuthLayout } from '@/pages/company/CompanyLogin'
 
@@ -30,7 +31,10 @@ export function AuditorLogin() {
       await signIn(values)
       navigate(from, { replace: true })
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Login failed. Please try again.')
+      setFormError(
+        rateLimitMessage(err) ??
+          (err instanceof ApiError ? err.message : 'Login failed. Please try again.'),
+      )
     }
   })
 

@@ -235,6 +235,11 @@ async def activate_company_admin(
         body.email,
         limit=settings.ACTIVATE_RATE_LIMIT,
         window_seconds=settings.ACTIVATE_RATE_WINDOW,
+        # Activation keys are one-shot secrets bound to an email; the per-email
+        # counter does nothing against someone trying one leaked key against a
+        # list of addresses.
+        ip_limit=settings.LOGIN_IP_RATE_LIMIT,
+        ip_window=settings.LOGIN_IP_RATE_WINDOW,
     )
     generic_error = HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -401,6 +406,8 @@ async def company_login(
         body.email,
         limit=settings.LOGIN_RATE_LIMIT,
         window_seconds=settings.LOGIN_RATE_WINDOW,
+        ip_limit=settings.LOGIN_IP_RATE_LIMIT,
+        ip_window=settings.LOGIN_IP_RATE_WINDOW,
     )
     # Case-insensitive and live-rows-only: creation lowercases the address but
     # `users.create_user` stores it verbatim, and soft-deleted rows may share it.
@@ -444,10 +451,22 @@ async def company_login(
 
 @router.post("/company/refresh", response_model=TokenResponse)
 async def company_refresh(
+    request: Request,
     body: RefreshRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Refresh access token for company users."""
+    settings = get_settings()
+    # The identifier is a signed token, not something an attacker can enumerate,
+    # so a constant identifier makes this a straight per-IP counter. A second
+    # `ip_limit` on top would only count the same requests twice.
+    await enforce_rate_limit(
+        request,
+        "company_refresh",
+        "token",
+        limit=settings.REFRESH_RATE_LIMIT,
+        window_seconds=settings.REFRESH_RATE_WINDOW,
+    )
     payload = decode_token(body.refresh_token)
     if payload.get("principal_type") != "company_user" or payload.get("type") != "refresh":
         raise HTTPException(
@@ -487,10 +506,21 @@ async def company_me(
     status_code=status.HTTP_201_CREATED,
 )
 async def auditor_register(
+    request: Request,
     body: AuditorRegister,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Open self-registration for auditors."""
+    settings = get_settings()
+    await enforce_rate_limit(
+        request,
+        "auditor_register",
+        body.email,
+        limit=settings.REGISTER_RATE_LIMIT,
+        window_seconds=settings.REGISTER_RATE_WINDOW,
+        ip_limit=settings.REGISTER_RATE_LIMIT,
+        ip_window=settings.REGISTER_RATE_WINDOW,
+    )
     existing = await db.execute(
         select(Auditor).where(Auditor.email == body.email)
     )
@@ -541,10 +571,19 @@ async def auditor_register(
 
 @router.post("/auditor/login", response_model=TokenResponse)
 async def auditor_login(
+    request: Request,
     body: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Login for auditors."""
+    settings = get_settings()
+    await enforce_rate_limit(
+        request, "auditor_login", body.email,
+        limit=settings.LOGIN_RATE_LIMIT,
+        window_seconds=settings.LOGIN_RATE_WINDOW,
+        ip_limit=settings.LOGIN_IP_RATE_LIMIT,
+        ip_window=settings.LOGIN_IP_RATE_WINDOW,
+    )
     result = await db.execute(
         select(Auditor).where(Auditor.email == body.email)
     )
@@ -562,10 +601,20 @@ async def auditor_login(
 
 @router.post("/auditor/refresh", response_model=TokenResponse)
 async def auditor_refresh(
+    request: Request,
     body: RefreshRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Refresh access token for auditors."""
+    settings = get_settings()
+    # Per-IP only, for the same reason as company_refresh above.
+    await enforce_rate_limit(
+        request,
+        "auditor_refresh",
+        "token",
+        limit=settings.REFRESH_RATE_LIMIT,
+        window_seconds=settings.REFRESH_RATE_WINDOW,
+    )
     payload = decode_token(body.refresh_token)
     if payload.get("principal_type") != "auditor" or payload.get("type") != "refresh":
         raise HTTPException(

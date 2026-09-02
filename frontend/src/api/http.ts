@@ -8,6 +8,7 @@ export class ApiError extends Error {
     public readonly status: number,
     message: string,
     public readonly detail?: unknown,
+    public readonly headers?: Headers,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -63,7 +64,7 @@ async function parseError(res: Response): Promise<ApiError> {
   } catch {
     /* non-JSON error body */
   }
-  return new ApiError(res.status, message, detail)
+  return new ApiError(res.status, message, detail, res.headers)
 }
 
 export class HttpClient {

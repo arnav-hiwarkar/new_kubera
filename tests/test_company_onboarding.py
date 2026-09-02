@@ -415,11 +415,16 @@ async def test_login_rate_limit_429(client: AsyncClient, monkeypatch):
     class FakeRedis:
         def __init__(self):
             self.store = {}
+            self.ttls = {}
         async def incr(self, key):
             self.store[key] = self.store.get(key, 0) + 1
             return self.store[key]
         async def expire(self, key, seconds):
-            pass
+            self.ttls[key] = seconds
+        # The limiter reads the remaining TTL to fill in Retry-After, which the
+        # login form renders as "try again in N minutes".
+        async def ttl(self, key):
+            return self.ttls.get(key, -2)
 
     fake = FakeRedis()
     monkeypatch.setattr("app.rate_limit._redis", lambda: fake)

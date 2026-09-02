@@ -123,7 +123,7 @@ The backend application is an asynchronous, high-throughput REST API and backgro
 | **Database Migrations** | **Alembic** | `1.16.2` | Declarative, version-controlled schema migrations executed automatically at container startup (`alembic upgrade head`). |
 | **In-Memory Cache & Broker** | **Redis** | `7-alpine` | Multi-purpose in-memory datastore acting as Celery broker, Celery results backend, and rate-limiting counter store. |
 | **Encrypted Document Storage** | **Filesystem Volume** | Docker Named Volume | Local storage backed by the `vault_data` volume (`/data/vault`), storing per-file AES-256-GCM encrypted payloads. |
-| **Disaster Recovery Backups** | **PostgreSQL Client & Tar** | `postgresql-client` | Nightly automated `pg_dump` SQL dumps and compressed vault tarballs (`.tar.gz`) stored in the `backup_data` volume (`/data/backups`). |
+| **Disaster Recovery Backups** | **PostgreSQL Client & Tar** | `postgresql-client` | Nightly automated `pg_dump -Fc` (custom-format, `pg_restore`-only) dumps and compressed vault tarballs (`.tar.gz`) stored in the `backup_data` volume (`/data/backups`). |
 
 ---
 
@@ -221,7 +221,7 @@ and must never exist on a server. See `docs/SECURITY_HARDENING.md`.
 ### Docker Named Volumes
 * `pgdata`: Persistent PostgreSQL database data directory.
 * `vault_data`: Encrypted document vault storage (`/data/vault`).
-* `backup_data`: Automated database SQL dumps and vault archives (`/data/backups`).
+* `backup_data`: Automated `pg_dump -Fc` database dumps and vault archives (`/data/backups`).
 * `caddy_data` & `caddy_config`: Persistent TLS certificates and edge configurations.
 * `maintenance_runtime`: Shared runtime volume storing active gateway routing configs and maintenance timestamps.
 * `beat_data`: Celery Beat schedule database (`/var/lib/kubera-beat`), so a redeploy does not re-fire missed schedules.
