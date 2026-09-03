@@ -6,8 +6,12 @@ import { cn } from '@/lib/cn'
 import { useListQueries, useAddQueryMessage } from '@/api/hooks/auditease'
 import { useDocuments, useDownloadDocument } from '@/api/hooks/docvault'
 import { DocVaultPickerModal } from '@/components/docvault/DocVaultPickerModal'
+import { useCompanyAuth } from '@/auth/company'
+import { hasModuleAccess } from '@/auth/company/modules'
 
 export function QueriesTab({ engagementId }: { engagementId: string }) {
+  const { profile } = useCompanyAuth()
+  const canBrowseDocVault = hasModuleAccess(profile, 'docvault')
   const toast = useToast()
   const { data: queries = [], isLoading } = useListQueries(engagementId)
   const { data: docs = [] } = useDocuments()
@@ -182,15 +186,17 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
                       disabled={addMsg.isPending}
                     />
                     <span className="text-text-muted text-xs">OR</span>
-                    <button
-                      type="button"
-                      onClick={() => setShowPickerModal(true)}
-                      disabled={addMsg.isPending}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-border bg-bg-surface hover:bg-bg-raised text-xs text-text-primary transition-colors"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5 text-zinc-500" />
-                      <span>{replyDocId ? 'Change DocVault Document' : 'Select from DocVault'}</span>
-                    </button>
+                    {canBrowseDocVault && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPickerModal(true)}
+                        disabled={addMsg.isPending}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-border bg-bg-surface hover:bg-bg-raised text-xs text-text-primary transition-colors"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>{replyDocId ? 'Change DocVault Document' : 'Select from DocVault'}</span>
+                      </button>
+                    )}
                     {replyDocId && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800">
                         <FileText className="w-3 h-3 text-blue-500 shrink-0" />

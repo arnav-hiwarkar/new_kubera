@@ -18,6 +18,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { RequirementRequestResponse } from '@/api/types'
 import { formatFileSize } from './progress'
 import { DocVaultPickerModal } from '@/components/docvault/DocVaultPickerModal'
+import { useCompanyAuth } from '@/auth/company'
+import { hasModuleAccess } from '@/auth/company/modules'
 import { cn } from '@/lib/cn'
 
 interface RespondPanelProps {
@@ -33,6 +35,8 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
   onSuccess,
   className,
 }) => {
+  const { profile } = useCompanyAuth()
+  const canBrowseDocVault = hasModuleAccess(profile, 'docvault')
   const toast = useToast()
   const queryClient = useQueryClient()
   const respondMutation = useRespondToRequirement()
@@ -247,16 +251,18 @@ export const RespondPanel: React.FC<RespondPanelProps> = ({
               <span>Browse device</span>
             </Button>
 
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowVaultPickerModal(true)}
-              className="gap-1.5 text-xs h-8 shadow-xs"
-            >
-              <FolderPlus className="w-3.5 h-3.5 text-accent" />
-              <span>Select from DocVault</span>
-            </Button>
+            {canBrowseDocVault && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowVaultPickerModal(true)}
+                className="gap-1.5 text-xs h-8 shadow-xs"
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-accent" />
+                <span>Select from DocVault</span>
+              </Button>
+            )}
           </div>
         </div>
 
