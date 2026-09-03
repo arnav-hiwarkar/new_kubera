@@ -70,23 +70,23 @@ async def test_assert_document_attachable_matrix(client: AsyncClient, db):
     await db.commit()
     await db.refresh(document)
 
-    # No docvault module at all.
+    # 1. No docvault module at all -> 403
     with pytest.raises(Exception) as exc_info:
         await assert_document_attachable(db, no_docvault_user, document.id)
     assert exc_info.value.status_code == 403
     assert "docvault module" in exc_info.value.detail
 
-    # Has docvault module, but the bucket is restricted and ungranted.
+    # 2. Has docvault module, but the bucket is restricted and ungranted -> 403
     with pytest.raises(Exception) as exc_info:
         await assert_document_attachable(db, with_docvault_user, document.id)
     assert exc_info.value.status_code == 403
     assert "access to this document" in exc_info.value.detail
 
-    # Admin bypasses both checks regardless of grants.
+    # 3. Admin bypasses both checks regardless of grants -> success
     result = await assert_document_attachable(db, admin, document.id)
     assert result.id == document.id
 
-    # Grant bucket access -> now succeeds for the non-admin too.
+    # 4. Grant bucket access -> now succeeds for non-admin employee
     db.add(BucketAccessGrant(bucket_id=bucket.id, company_user_id=with_docvault_user.id))
     await db.commit()
     result = await assert_document_attachable(db, with_docvault_user, document.id)
@@ -95,7 +95,7 @@ async def test_assert_document_attachable_matrix(client: AsyncClient, db):
 
 @pytest.mark.asyncio
 async def test_assert_document_attachable_wrong_company_404(client: AsyncClient, db):
-    """A document belonging to a different company must 404, not leak existence."""
+    """Tenant isolation: A document belonging to a different company must 404, not leak existence."""
     await create_test_company(client, email="companyA@testco.com")
     admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='companyA@testco.com')}"}
     await _make_employee(client, admin_headers, "userA@testco.com", ["docvault"])
