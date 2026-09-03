@@ -224,3 +224,48 @@ async def grant_document_access_to_auditors(
             permission_level="read",
         ))
 
+
+async def company_user_can_access_engagement_document(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID
+) -> Optional[Document]:
+    """A document any company user may read via AuditEase, because it is
+    attached to a query message or a requirement-response submission belonging
+    to an engagement of this company -- independent of the caller's own
+    DocVault module or bucket access. Mirrors auditor_can_access_document: once
+    a document is attached to a query or requirement, it becomes part of that
+    record for everyone with legitimate access to the engagement."""
+    res = await db.execute(select(Document).where(Document.id == document_id, Document.company_id == company_id))
+    doc = res.scalar_one_or_none()
+    if doc is None:
+        return None
+
+    res_req = await db.execute(
+        select(RequirementResponseDocument.id)
+        .join(RequirementResponse, RequirementResponse.id == RequirementResponseDocument.response_id)
+        .join(RequirementRequest, RequirementRequest.id == RequirementResponse.requirement_id)
+        .join(AuditEngagement, AuditEngagement.id == RequirementRequest.engagement_id)
+        .where(
+            RequirementResponseDocument.document_id == document_id,
+            AuditEngagement.company_id == company_id,
+        )
+        .limit(1)
+    )
+    if res_req.first():
+        return doc
+
+    res_q = await db.execute(
+        select(QueryMessage.id)
+        .join(Query, Query.id == QueryMessage.query_id)
+        .join(AuditEngagement, AuditEngagement.id == Query.engagement_id)
+        .where(
+            QueryMessage.attached_document_id == document_id,
+            AuditEngagement.company_id == company_id,
+        )
+        .limit(1)
+    )
+    if res_q.first():
+        return doc
+
+    return None
+
+

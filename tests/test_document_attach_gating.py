@@ -276,3 +276,126 @@ async def test_attach_asset_document_anti_tamper_and_tenant_isolation(client: As
     )
     assert resp_cross.status_code == 404
 
+
+async def _create_engagement_with_accepted_auditor(client: AsyncClient, co_headers: dict, aud_email: str) -> tuple[str, dict]:
+    from tests.conftest import create_test_auditor, get_auditor_token
+
+    eng_resp = await client.post("/api/v1/auditease/engagements", json={"period_label": "FY24"}, headers=co_headers)
+    assert eng_resp.status_code == 201, eng_resp.text
+    engagement_id = eng_resp.json()["id"]
+
+    await create_test_auditor(client, email=aud_email, password="Valid1!Pass")
+    aud_headers = {"Authorization": f"Bearer {await get_auditor_token(client, email=aud_email, password='Valid1!Pass')}"}
+
+    invite = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/auditors/invite",
+        json={"email": aud_email},
+        headers=co_headers,
+    )
+    assert invite.status_code in (200, 201), invite.text
+    accept = await client.post(f"/api/v1/auditor/engagements/{engagement_id}/accept", headers=aud_headers)
+    assert accept.status_code == 200, accept.text
+    return engagement_id, aud_headers
+
+
+@pytest.mark.asyncio
+async def test_add_query_message_attach_requires_docvault_module(client: AsyncClient):
+    await create_test_company(client, email="ae-admin@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='ae-admin@testco.com')}"}
+    engagement_id, aud_headers = await _create_engagement_with_accepted_auditor(
+        client, admin_headers, "ae-auditor@aud.com"
+    )
+    query_resp = await client.post(
+        f"/api/v1/auditor/engagements/{engagement_id}/queries",
+        data={"initial_message": "Please clarify"},
+        headers=aud_headers,
+    )
+    assert query_resp.status_code in (200, 201), query_resp.text
+    query_id = query_resp.json()["id"]
+
+    document_id = await _upload_docvault_document(client, admin_headers, "Report")
+
+    await _make_employee(client, admin_headers, "ae-only@testco.com", ["auditease"])
+    auditease_only_headers = await _login_headers(client, "ae-only@testco.com")
+
+    resp = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/queries/{query_id}/messages",
+        data={"text": "See attached", "attached_document_id": document_id},
+        headers=auditease_only_headers,
+    )
+    assert resp.status_code == 403, resp.text
+    assert "docvault module" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_query_attachment_download_permissive_for_module_scoped_user(client: AsyncClient):
+    """Once attached, auditease-scoped company user can download via the dedicated endpoint
+    with zero docvault access; generic docvault download endpoint continues to 403."""
+    await create_test_company(client, email="ae-admin2@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='ae-admin2@testco.com')}"}
+    engagement_id, aud_headers = await _create_engagement_with_accepted_auditor(
+        client, admin_headers, "ae-auditor2@aud.com"
+    )
+    query_resp = await client.post(
+        f"/api/v1/auditor/engagements/{engagement_id}/queries",
+        data={"initial_message": "Please clarify"},
+        headers=aud_headers,
+    )
+    assert query_resp.status_code in (200, 201), query_resp.text
+    query_id = query_resp.json()["id"]
+    document_id = await _upload_docvault_document(client, admin_headers, "Report2")
+
+    attach = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/queries/{query_id}/messages",
+        data={"text": "See attached", "attached_document_id": document_id},
+        headers=admin_headers,
+    )
+    assert attach.status_code == 200, attach.text
+
+    await _make_employee(client, admin_headers, "ae-viewer@testco.com", ["auditease"])
+    auditease_only_headers = await _login_headers(client, "ae-viewer@testco.com")
+
+    # Dedicated auditease download route succeeds
+    new_route = await client.get(f"/api/v1/auditease/documents/{document_id}/download", headers=auditease_only_headers)
+    assert new_route.status_code == 200, new_route.text
+
+    # Metadata route succeeds
+    meta_route = await client.get(f"/api/v1/auditease/documents/{document_id}", headers=auditease_only_headers)
+    assert meta_route.status_code == 200, meta_route.text
+
+    # Generic docvault route rejects
+    generic_route = await client.get(f"/api/v1/docvault/documents/{document_id}/download", headers=auditease_only_headers)
+    assert generic_route.status_code == 403, generic_route.text
+
+
+@pytest.mark.asyncio
+async def test_auditease_documents_unauthenticated_401(client: AsyncClient):
+    """Invariant 4: Pre-auth requests reject with 401 or 403."""
+    random_id = uuid.uuid4()
+    resp1 = await client.get(f"/api/v1/auditease/documents/{random_id}")
+    assert resp1.status_code in (401, 403), resp1.text
+
+    resp2 = await client.get(f"/api/v1/auditease/documents/{random_id}/download")
+    assert resp2.status_code in (401, 403), resp2.text
+
+
+@pytest.mark.asyncio
+async def test_auditease_documents_tenant_isolation_404(client: AsyncClient, db):
+    """Invariant 3: Accessing another company's document via AuditEase returns 404."""
+    await create_test_company(client, email="co1-admin@testco.com")
+    co1_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co1-admin@testco.com')}"}
+
+    await create_test_company(client, name="OtherCo3", email="co3-admin@testco.com")
+    co3_admin = await _user_by_email(db, "co3-admin@testco.com")
+    other_doc = Document(company_id=co3_admin.company_id, title="OtherCo Doc", created_by=co3_admin.id)
+    db.add(other_doc)
+    await db.commit()
+    await db.refresh(other_doc)
+
+    resp = await client.get(f"/api/v1/auditease/documents/{other_doc.id}", headers=co1_headers)
+    assert resp.status_code == 404, resp.text
+
+    resp_dl = await client.get(f"/api/v1/auditease/documents/{other_doc.id}/download", headers=co1_headers)
+    assert resp_dl.status_code == 404, resp_dl.text
+
+

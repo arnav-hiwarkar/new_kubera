@@ -3,11 +3,17 @@ import logging
 import uuid
 from typing import Annotated, List, Optional
 from datetime import date, datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Response, status, UploadFile, File, Form
 from pydantic import BaseModel, ValidationError, model_validator
 from sqlalchemy import select, and_, or_, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.services.bucket_access import assert_document_attachable
+from app.services import document_access as doc_access
+from app.models.docvault import Document, DocumentVersion
+from app.schemas.docvault import DocumentResponse
+from app.encryption import decrypt_dek, decrypt_file_data
 
 logger = logging.getLogger(__name__)
 
@@ -1458,13 +1464,8 @@ async def add_query_message(
         raise HTTPException(status_code=400, detail="Query not found or closed")
         
     final_attached_document_id = None
-    from app.services import document_access as doc_access
     if attached_document_id:
-        from app.models.docvault import Document
-        doc_res = await db.execute(select(Document).where(and_(Document.id == attached_document_id, Document.company_id == current_user.company_id)))
-        if not doc_res.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Document not found")
-            
+        await assert_document_attachable(db, current_user, attached_document_id)
         await doc_access.grant_document_access_to_auditors(db, engagement_id, attached_document_id)
         final_attached_document_id = attached_document_id
     elif file:
@@ -1485,6 +1486,65 @@ async def add_query_message(
     await db.commit()
     await db.refresh(message)
     return message
+
+
+@router.get("/documents/{document_id}", response_model=DocumentResponse)
+async def get_engagement_document(
+    document_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Metadata for a document attached to one of this company's AuditEase
+    queries or requirement submissions -- independent of the caller's own
+    DocVault access. Mirrors GET /api/v1/auditor/documents/{id}."""
+    doc = await doc_access.company_user_can_access_engagement_document(
+        db, current_user.company_id, document_id
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == document_id)
+    )
+    return result.scalar_one()
+
+
+@router.get("/documents/{document_id}/download")
+async def download_engagement_document(
+    document_id: uuid.UUID,
+    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Decrypt and stream a document attached to one of this company's AuditEase
+    queries or requirement submissions. Mirrors GET /api/v1/auditor/documents/{id}/download."""
+    import aiofiles
+
+    from app.routers.docvault import get_company_kek
+
+    doc = await doc_access.company_user_can_access_engagement_document(
+        db, current_user.company_id, document_id
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    result = await db.execute(
+        select(Document).options(selectinload(Document.versions)).where(Document.id == document_id)
+    )
+    doc_full = result.scalar_one()
+    if not doc_full.current_version_id:
+        raise HTTPException(status_code=404, detail="No versions available")
+    version = next((v for v in doc_full.versions if v.id == doc_full.current_version_id), None)
+    if version is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    company_kek = await get_company_kek(db, doc_full.company_id)
+    raw_dek = decrypt_dek(version.encrypted_dek, version.dek_nonce, company_kek)
+    async with aiofiles.open(version.storage_path, "rb") as f:
+        blob = await f.read()
+    plaintext = decrypt_file_data(blob[12:], blob[:12], raw_dek)
+    return Response(
+        content=plaintext,
+        media_type=version.mime_type or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{version.original_filename}"'},
+    )
 
 
 def _round2(v: float) -> float:
