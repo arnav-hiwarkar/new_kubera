@@ -17,7 +17,7 @@ import { useDocuments } from '@/api/hooks/docvault'
 import { useQueryClient } from '@tanstack/react-query'
 import type { RequirementRequestResponse } from '@/api/types'
 import { formatFileSize } from './progress'
-import { DocVaultPickerModal } from './DocVaultPickerModal'
+import { DocVaultPickerModal } from '@/components/docvault/DocVaultPickerModal'
 import { cn } from '@/lib/cn'
 
 interface RespondPanelProps {

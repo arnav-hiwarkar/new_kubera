@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { DocVaultPickerModal } from './DocVaultPickerModal'
+import { DocVaultPickerModal } from '@/components/docvault/DocVaultPickerModal'
 import { docvaultApi } from '@/api/endpoints/docvault'
 
 function renderWithClient(ui: React.ReactElement) {

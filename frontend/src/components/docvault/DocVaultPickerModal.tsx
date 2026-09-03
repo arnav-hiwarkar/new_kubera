@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { Button, Modal, Input } from '@/components/ui'
 import { useBuckets, useDocuments } from '@/api/hooks/docvault'
-import { formatFileSize } from './progress'
+import { formatFileSize } from '@/components/auditease/requirements/progress'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/cn'
 
@@ -27,6 +27,8 @@ interface DocVaultPickerModalProps {
   selectedDocIds: string[]
   onConfirm: (selectedIds: string[]) => void
   multiple?: boolean
+  title?: string
+  confirmLabel?: string
 }
 
 export const DocVaultPickerModal: React.FC<DocVaultPickerModalProps> = ({
@@ -35,6 +37,8 @@ export const DocVaultPickerModal: React.FC<DocVaultPickerModalProps> = ({
   selectedDocIds: initialSelected,
   onConfirm,
   multiple = true,
+  title = 'Select Documents from DocVault',
+  confirmLabel = 'Attach Selected',
 }) => {
   const { data: buckets = [], isLoading: loadingBuckets } = useBuckets()
   const { data: documents = [], isLoading: loadingDocs } = useDocuments()
@@ -186,7 +190,7 @@ export const DocVaultPickerModal: React.FC<DocVaultPickerModalProps> = ({
     <Modal
       open={open}
       onClose={onClose}
-      title="Select Documents from DocVault"
+      title={title}
       size="xl"
       className="p-0 overflow-hidden"
     >
@@ -618,7 +622,7 @@ export const DocVaultPickerModal: React.FC<DocVaultPickerModalProps> = ({
               className="gap-1.5 text-xs font-semibold"
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>Attach Selected ({selectedCount})</span>
+              <span>{confirmLabel} ({selectedCount})</span>
             </Button>
           </div>
         </div>

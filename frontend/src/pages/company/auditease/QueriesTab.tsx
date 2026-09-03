@@ -5,7 +5,7 @@ import { ApiError } from '@/api/http'
 import { cn } from '@/lib/cn'
 import { useListQueries, useAddQueryMessage } from '@/api/hooks/auditease'
 import { useDocuments, useDownloadDocument } from '@/api/hooks/docvault'
-import { DocVaultPickerModal } from '@/components/auditease/requirements/DocVaultPickerModal'
+import { DocVaultPickerModal } from '@/components/docvault/DocVaultPickerModal'
 
 export function QueriesTab({ engagementId }: { engagementId: string }) {
   const toast = useToast()
