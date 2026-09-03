@@ -3,8 +3,13 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RequirementCard } from './RequirementCard'
 import type { RequirementRequestResponse } from '@/api/types'
-
 import { ToastProvider } from '@/components/ui'
+
+vi.mock('@/auth/company', () => ({
+  useCompanyAuth: () => ({
+    profile: { role: 'admin', accessible_modules: ['auditease', 'docvault'] },
+  }),
+}))
 
 function renderWithClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({

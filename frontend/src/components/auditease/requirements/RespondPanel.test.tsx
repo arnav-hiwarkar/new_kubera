@@ -6,6 +6,12 @@ import { auditeaseCompanyApi } from '@/api/endpoints/auditease'
 import type { RequirementRequestResponse } from '@/api/types'
 import { ToastProvider } from '@/components/ui'
 
+vi.mock('@/auth/company', () => ({
+  useCompanyAuth: () => ({
+    profile: { role: 'admin', accessible_modules: ['auditease', 'docvault'] },
+  }),
+}))
+
 function renderWithClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
