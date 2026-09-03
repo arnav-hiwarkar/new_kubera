@@ -16,8 +16,9 @@ In scope:
 - Frontend: hide the "Select from DocVault" option in Assets and AuditEase when the caller lacks DocVault access (currently AuditEase shows it unconditionally, relying on the picker's underlying API calls to fail).
 
 Out of scope (explicitly, per user decision):
-- Changing who can *download* an already-attached document. Once a document is legitimately attached to an asset, query, or requirement response, anyone with access to that module can download it through that module's own endpoint, regardless of their own DocVault/bucket access — this is existing, intended behavior (matches how auditor access already works) and is not being changed.
 - The compliance/ROC/Secretarial router's document linking, the asset `dispose` gate, activity log scoping, and custom-fields module gate — these are separate, out-of-scope findings from the wider security review and are not addressed here.
+
+**Correction found during planning:** the original draft of this spec assumed AuditEase's download side already worked permissively, matching Assets. It does not. Assets has its own dedicated `stream_document` endpoint (`app/routers/asset_documents.py`) that only checks the `assets` module — so it already behaves the way the "download stays permissive" principle requires, and needs no change. AuditEase has **no such dedicated endpoint**: both `QueriesTab.tsx` and `RequirementsTab.tsx` download attachments through the generic `GET /api/v1/docvault/documents/{id}/download`, which is gated on the `docvault` module *and* bucket access. So today, a company user with `auditease` but not `docvault` access cannot download their own query/requirement attachment — the opposite of the intended behavior. Fixing this is now in scope (see below).
 
 ## Backend design
 
@@ -55,6 +56,19 @@ async def assert_document_attachable(
 
 3. **`app/services/requirements.py`** — `validate_document_ids(db, unique_ids, company_id)` gains a `user: CompanyUser` parameter and calls `assert_document_attachable` for each id (or a bulk variant that loads all candidate docs in one query, then checks each against `accessible_bucket_ids` once). Caller (`create_submission`, invoked from `respond_requirement` in `auditease.py`) passes `current_user` through.
 
+### New: dedicated AuditEase document endpoints (company-user side)
+
+Mirroring the pattern the auditor side already uses (`GET /api/v1/auditor/documents/{id}` + `GET /api/v1/auditor/documents/{id}/download`, both gated by `document_access.auditor_can_access_document`), add two endpoints to `app/routers/auditease.py`:
+
+- `GET /api/v1/auditease/documents/{document_id}` — returns `DocumentResponse` (same schema DocVault itself returns).
+- `GET /api/v1/auditease/documents/{document_id}/download` — decrypts and streams the current version, `Content-Disposition` filename from `DocumentVersion.original_filename`.
+
+Both gated by a new `document_access.company_user_can_access_engagement_document(db, company_id, document_id) -> Optional[Document]`: returns the document if it's attached to a `RequirementResponseDocument` or a `QueryMessage` belonging to an engagement of the caller's company — independent of the caller's own DocVault module or bucket access. This is the company-user mirror of `auditor_can_access_document`: once a document is attached to a query or requirement submission, everyone with legitimate access to that engagement's AuditEase record can read it, the same way any accepted auditor already can.
+
+Frontend rewiring:
+- `RequirementsTab.tsx`'s `handleDownload` already receives `filename` from `RequirementResponseDocumentOut.filename` (a denormalized column, no metadata round-trip needed) — just swap the blob call from `docvaultApi.downloadDocument` to a new `auditeaseCompanyApi.downloadDocument(documentId)`.
+- `QueriesTab.tsx`'s `handleDownload` has no filename available (`QueryMessageResponse` carries only the raw `attached_document_id`), so it needs the two-call pattern the auditor frontend already uses: `auditeaseCompanyApi.getDocument(docId)` for metadata (to read `original_filename` off the current version), then `auditeaseCompanyApi.downloadDocument(docId)` for the blob, combined via the existing `saveBlob` helper (`frontend/src/lib/download.ts`).
+
 ### Error contract
 
 All three sites surface the same two failure modes as plain `HTTPException`, consistent with existing `require_module` errors:
@@ -90,7 +104,7 @@ No frontend change. Existing multi-select picker and submit flow stay as-is; onl
 **Backend (pytest, colocated with existing `tests/test_module_enforcement.py` conventions):**
 - `assert_document_attachable` unit tests: admin bypass; no `docvault` module → 403; has `docvault` but wrong bucket → 403; has both → returns doc.
 - `attach_asset_document` / `attach_acquisition_document`: regression test — `assets`-only user (no `docvault`) gets 403 attaching an existing document; `docvault` user scoped to bucket A gets 403 attaching a document in restricted bucket B.
-- `add_query_message` with `attached_document_id`: same matrix. Additionally assert the *download* path for an already-attached document still works for a module-scoped user without docvault/bucket access — locks in the "gate attach, not download" split so a future change doesn't accidentally regress it.
+- `add_query_message` with `attached_document_id`: same matrix. Additionally assert the new `GET /api/v1/auditease/documents/{id}/download` still works for an `auditease`-only user (no `docvault`, no bucket access) once a document is legitimately attached to one of their queries — locks in the "gate attach, not download" split so a future change doesn't accidentally regress it. Also assert the generic `/api/v1/docvault/documents/{id}/download` still correctly 403s the same user (the new endpoint is additive, not a bypass of the existing one).
 - `validate_document_ids` / `create_submission`: same matrix for the requirement-response path.
 
 **Frontend (vitest):** render `DocumentsTab`, `RespondPanel`, `QueriesTab` with a profile lacking `docvault` in `accessible_modules` and assert the attach-from-DocVault control is absent; render with it present and assert it renders and opens the picker.
