@@ -3,6 +3,7 @@ import { acquisitionsApi, assetsApi, type AssetFilters } from '@/api/endpoints/a
 import type {
   AcquisitionUpdate,
   AssetDetailResponse,
+  AssetDocumentAttach,
   AssetExistingCreate,
   AssetQuickAddRequest,
   AssetUpdate,
@@ -182,3 +183,13 @@ export function useDetachAssetDocument() {
     onSuccess: invalidate,
   })
 }
+
+export function useAttachAssetDocument() {
+  const invalidate = useInvalidateAssets()
+  return useMutation({
+    mutationFn: ({ assetId, body }: { assetId: string; body: AssetDocumentAttach }) =>
+      assetsApi.attachDocument(assetId, body),
+    onSuccess: invalidate,
+  })
+}
+
