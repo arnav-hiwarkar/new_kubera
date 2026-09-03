@@ -85,6 +85,13 @@ export const assetsApi = {
       `/api/v1/asset-acquisitions/${acqId}/documents/upload`,
       { formData },
     ),
+  /** Acquisition-level roles (invoice, PO, GRN…) hang off the acquisition batch,
+   *  not the individual asset — the backend rejects them on the asset route. */
+  attachAcquisitionDocument: (acqId: string, body: AssetDocumentAttach) =>
+    companyClient.post<AssetDocumentResponse>(
+      `/api/v1/asset-acquisitions/${acqId}/documents`,
+      { body },
+    ),
   detachDocument: (linkId: string) =>
     companyClient.delete<void>(`/api/v1/asset-documents/${linkId}`),
   /** Vault files are encrypted at rest, so images load through this authenticated

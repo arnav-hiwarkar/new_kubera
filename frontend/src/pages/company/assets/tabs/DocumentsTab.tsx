@@ -51,7 +51,8 @@ export function DocumentsTab({ detail }: { detail: AssetDetail }) {
     }
     try {
       await attach.mutateAsync({
-        assetId: asset.id,
+        assetId: isAcquisitionRole ? undefined : asset.id,
+        acquisitionId: isAcquisitionRole ? (asset.acquisition_id ?? undefined) : undefined,
         body: { document_id: documentId, doc_role: role },
       })
       toast.success(`${DOC_ROLE_LABEL[role]} attached`)
@@ -154,7 +155,7 @@ export function DocumentsTab({ detail }: { detail: AssetDetail }) {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={isAcquisitionRole}
+                  loading={attach.isPending}
                   onClick={() => setShowPicker(true)}
                 >
                   Attach from DocVault

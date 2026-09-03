@@ -16,7 +16,9 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
   const canBrowseDocVault = hasModuleAccess(profile, 'docvault')
   const toast = useToast()
   const { data: queries = [], isLoading } = useListQueries(engagementId)
-  const { data: docs = [] } = useDocuments()
+  // Only needed to label the picker's selection chip, which is unreachable
+  // without the docvault grant — fetching it anyway just 403s.
+  const { data: docs = [] } = useDocuments(undefined, { enabled: canBrowseDocVault })
   const addMsg = useAddQueryMessage()
 
   const [activeQueryId, setActiveQueryId] = useState<string | null>(null)

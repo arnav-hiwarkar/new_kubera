@@ -30,10 +30,13 @@ export function useDocVaultApprovers(bucketId?: string | null) {
   })
 }
 
-export function useDocuments(filters?: DocumentFilters) {
+/** `enabled` lets callers outside DocVault skip the fetch entirely — the route is
+ *  module-gated, so asking for it without the grant is a guaranteed 403. */
+export function useDocuments(filters?: DocumentFilters, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: docvaultKeys.documents(filters),
     queryFn: () => docvaultApi.listDocuments(filters),
+    enabled: options?.enabled ?? true,
   })
 }
 

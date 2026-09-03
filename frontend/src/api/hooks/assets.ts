@@ -184,11 +184,23 @@ export function useDetachAssetDocument() {
   })
 }
 
+/** Mirrors useUploadAssetDocument's asset-vs-acquisition branch: an acquisition
+ *  role must go to the acquisition route or the backend 400s on the role level. */
 export function useAttachAssetDocument() {
   const invalidate = useInvalidateAssets()
   return useMutation({
-    mutationFn: ({ assetId, body }: { assetId: string; body: AssetDocumentAttach }) =>
-      assetsApi.attachDocument(assetId, body),
+    mutationFn: ({
+      assetId,
+      acquisitionId,
+      body,
+    }: {
+      assetId?: string
+      acquisitionId?: string
+      body: AssetDocumentAttach
+    }) =>
+      acquisitionId
+        ? assetsApi.attachAcquisitionDocument(acquisitionId, body)
+        : assetsApi.attachDocument(assetId as string, body),
     onSuccess: invalidate,
   })
 }

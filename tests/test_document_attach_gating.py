@@ -476,3 +476,161 @@ async def test_respond_requirement_all_or_nothing_and_tenant_isolation(client: A
 
 
 
+
+@pytest.mark.asyncio
+async def test_attach_acquisition_document_is_gated(client: AsyncClient):
+    """The acquisition-level attach route shares assert_document_attachable with the
+    asset-level one; cover it directly so a divergence between the two is caught."""
+    await create_test_company(client, email="acq-admin@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='acq-admin@testco.com')}"}
+    category = await _leaf_category(client, admin_headers)
+    quick_add = await client.post(
+        "/api/v1/assets/quick-add",
+        json={"asset_name": "Lathe", "category_id": category["id"], "quantity": 2},
+        headers=admin_headers,
+    )
+    assert quick_add.status_code == 201, quick_add.text
+    acq_id = quick_add.json()["acquisition_id"]
+    document_id = await _upload_docvault_document(client, admin_headers, "AcqInvoice")
+
+    # no docvault module -> 403
+    await _make_employee(client, admin_headers, "acq-assets-only@testco.com", ["assets"])
+    assets_only = await _login_headers(client, "acq-assets-only@testco.com")
+    denied_module = await client.post(
+        f"/api/v1/asset-acquisitions/{acq_id}/documents",
+        json={"document_id": document_id, "doc_role": "invoice"},
+        headers=assets_only,
+    )
+    assert denied_module.status_code == 403, denied_module.text
+    assert "docvault module" in denied_module.json()["detail"]
+
+    # docvault but no bucket grant -> 403
+    scoped = await _make_employee(client, admin_headers, "acq-scoped@testco.com", ["assets", "docvault"])
+    scoped_headers = await _login_headers(client, "acq-scoped@testco.com")
+    restricted = await _restrict_bucket(client, admin_headers, "Acq Private", [])
+    secret_id = await _upload_docvault_document(client, admin_headers, "AcqSecret", restricted)
+    denied_bucket = await client.post(
+        f"/api/v1/asset-acquisitions/{acq_id}/documents",
+        json={"document_id": secret_id, "doc_role": "invoice"},
+        headers=scoped_headers,
+    )
+    assert denied_bucket.status_code == 403, denied_bucket.text
+    assert "access to this document" in denied_bucket.json()["detail"]
+
+    # granted -> 201
+    grant = await client.patch(
+        f"/api/v1/docvault/buckets/{restricted}/access",
+        json={"visibility": "restricted", "user_ids": [scoped["id"]]},
+        headers=admin_headers,
+    )
+    assert grant.status_code == 200, grant.text
+    allowed = await client.post(
+        f"/api/v1/asset-acquisitions/{acq_id}/documents",
+        json={"document_id": secret_id, "doc_role": "invoice"},
+        headers=scoped_headers,
+    )
+    assert allowed.status_code == 201, allowed.text
+
+    # cross-tenant -> 404, not 403 (no existence leak)
+    await create_test_company(client, name="AcqOther", email="acq-other@testco.com")
+    other_headers = {"Authorization": f"Bearer {await get_company_token(client, email='acq-other@testco.com')}"}
+    foreign_id = await _upload_docvault_document(client, other_headers, "Foreign")
+    cross = await client.post(
+        f"/api/v1/asset-acquisitions/{acq_id}/documents",
+        json={"document_id": foreign_id, "doc_role": "invoice"},
+        headers=admin_headers,
+    )
+    assert cross.status_code == 404, cross.text
+
+
+@pytest.mark.asyncio
+async def test_no_attachment_paths_are_untouched_by_the_gate(client: AsyncClient):
+    """A user with no docvault access must still be able to reply with text only or
+    upload a fresh file — the gate must not fire on an absent/empty document input."""
+    await create_test_company(client, email="noop-admin@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='noop-admin@testco.com')}"}
+    engagement_id, aud_headers = await _create_engagement_with_accepted_auditor(
+        client, admin_headers, "noop-aud@aud.com"
+    )
+    await _make_employee(client, admin_headers, "noop-emp@testco.com", ["auditease"])
+    emp_headers = await _login_headers(client, "noop-emp@testco.com")
+
+    query_resp = await client.post(
+        f"/api/v1/auditor/engagements/{engagement_id}/queries",
+        data={"initial_message": "Please clarify"},
+        headers=aud_headers,
+    )
+    assert query_resp.status_code in (200, 201), query_resp.text
+    text_only_msg = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/queries/{query_resp.json()['id']}/messages",
+        data={"text": "text only reply"},
+        headers=emp_headers,
+    )
+    assert text_only_msg.status_code in (200, 201), text_only_msg.text
+
+    req_resp = await client.post(
+        f"/api/v1/auditor/engagements/{engagement_id}/requirement-requests",
+        json={"description": "Provide X"},
+        headers=aud_headers,
+    )
+    req_id = req_resp.json()["id"]
+    text_only = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "text only"},
+        headers=emp_headers,
+    )
+    assert text_only.status_code in (200, 201), text_only.text
+
+    file_only = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "with file"},
+        files={"files": ("a.txt", b"hello", "text/plain")},
+        headers=emp_headers,
+    )
+    assert file_only.status_code in (200, 201), file_only.text
+
+
+@pytest.mark.asyncio
+async def test_auditease_download_is_recorded_in_the_activity_log(client: AsyncClient, db):
+    """The dedicated route reads past DocVault's bucket ACL by design, so it must
+    leave the same audit trail the docvault and auditor download routes leave."""
+    from app.models.activity_log import ActivityLog
+
+    await create_test_company(client, email="audit-log-admin@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='audit-log-admin@testco.com')}"}
+    engagement_id, aud_headers = await _create_engagement_with_accepted_auditor(
+        client, admin_headers, "audit-log-aud@aud.com"
+    )
+    restricted = await _restrict_bucket(client, admin_headers, "Board Only", [])
+    document_id = await _upload_docvault_document(client, admin_headers, "BoardMinutes", restricted)
+
+    query_resp = await client.post(
+        f"/api/v1/auditor/engagements/{engagement_id}/queries",
+        data={"initial_message": "Please clarify"},
+        headers=aud_headers,
+    )
+    attach = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/queries/{query_resp.json()['id']}/messages",
+        data={"text": "See attached", "attached_document_id": document_id},
+        headers=admin_headers,
+    )
+    assert attach.status_code in (200, 201), attach.text
+
+    await _make_employee(client, admin_headers, "audit-log-emp@testco.com", ["auditease"])
+    emp_headers = await _login_headers(client, "audit-log-emp@testco.com")
+    emp = await _user_by_email(db, "audit-log-emp@testco.com")
+
+    download = await client.get(f"/api/v1/auditease/documents/{document_id}/download", headers=emp_headers)
+    assert download.status_code == 200, download.text
+
+    rows = (
+        await db.execute(
+            select(ActivityLog).where(
+                ActivityLog.action == "document.downloaded",
+                ActivityLog.entity_id == uuid.UUID(document_id),
+                ActivityLog.actor_id == emp.id,
+            )
+        )
+    ).scalars().all()
+    assert len(rows) == 1, "the ACL-bypassing download left no audit trail"
+    assert rows[0].metadata_["via"] == "auditease"

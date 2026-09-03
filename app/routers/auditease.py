@@ -1540,6 +1540,17 @@ async def download_engagement_document(
     async with aiofiles.open(version.storage_path, "rb") as f:
         blob = await f.read()
     plaintext = decrypt_file_data(blob[12:], blob[:12], raw_dek)
+
+    # This route deliberately reads past DocVault's bucket ACL, so the download
+    # has to leave the same audit trail the docvault and auditor routes leave —
+    # otherwise the one path that can reach a restricted document is the one
+    # path with no record of who read it.
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "document.downloaded", "document", document_id,
+        metadata_={"filename": version.original_filename, "via": "auditease"},
+    )
+
     return Response(
         content=plaintext,
         media_type=version.mime_type or "application/octet-stream",
