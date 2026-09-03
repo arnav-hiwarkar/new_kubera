@@ -399,3 +399,80 @@ async def test_auditease_documents_tenant_isolation_404(client: AsyncClient, db)
     assert resp_dl.status_code == 404, resp_dl.text
 
 
+@pytest.mark.asyncio
+async def test_respond_requirement_document_ids_requires_docvault_module(client: AsyncClient):
+    await create_test_company(client, email="req-admin@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='req-admin@testco.com')}"}
+    engagement_id, aud_headers = await _create_engagement_with_accepted_auditor(
+        client, admin_headers, "req-auditor@aud.com"
+    )
+    req_resp = await client.post(
+        f"/api/v1/auditor/engagements/{engagement_id}/requirement-requests",
+        json={"description": "Please upload bank reconciliation"},
+        headers=aud_headers,
+    )
+    assert req_resp.status_code in (200, 201), req_resp.text
+    req_id = req_resp.json()["id"]
+
+    document_id = await _upload_docvault_document(client, admin_headers, "BankRecon")
+
+    await _make_employee(client, admin_headers, "req-only@testco.com", ["auditease"])
+    auditease_only_headers = await _login_headers(client, "req-only@testco.com")
+
+    resp = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "Attached", "document_ids": [document_id]},
+        headers=auditease_only_headers,
+    )
+    assert resp.status_code == 403, resp.text
+    assert "docvault module" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_respond_requirement_all_or_nothing_and_tenant_isolation(client: AsyncClient, db):
+    """Invariant 3 & 5: All-or-nothing gating and tenant isolation on requirement responses."""
+    await create_test_company(client, email="req-admin2@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='req-admin2@testco.com')}"}
+    engagement_id, aud_headers = await _create_engagement_with_accepted_auditor(
+        client, admin_headers, "req-aud2@aud.com"
+    )
+    req_resp = await client.post(
+        f"/api/v1/auditor/engagements/{engagement_id}/requirement-requests",
+        json={"description": "Provide ledgers"},
+        headers=aud_headers,
+    )
+    req_id = req_resp.json()["id"]
+
+    # 1. Tenant isolation 404
+    await create_test_company(client, name="OtherCo4", email="admin4@testco.com")
+    other_admin = await _user_by_email(db, "admin4@testco.com")
+    other_doc = Document(company_id=other_admin.company_id, title="Other Doc", created_by=other_admin.id)
+    db.add(other_doc)
+    await db.commit()
+    await db.refresh(other_doc)
+
+    resp_cross = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "Cross tenant", "document_ids": [str(other_doc.id)]},
+        headers=admin_headers,
+    )
+    assert resp_cross.status_code == 404
+
+    # 2. All-or-nothing: Doc 1 allowed, Doc 2 in restricted bucket ungranted
+    doc1 = await _upload_docvault_document(client, admin_headers, "Doc1")
+    restricted_b = await _restrict_bucket(client, admin_headers, "Private", [])
+    doc2 = await _upload_docvault_document(client, admin_headers, "Doc2", restricted_b)
+
+    emp = await _make_employee(client, admin_headers, "req-emp@testco.com", ["auditease", "docvault"])
+    emp_headers = await _login_headers(client, "req-emp@testco.com")
+
+    resp_mixed = await client.post(
+        f"/api/v1/auditease/engagements/{engagement_id}/requirement-requests/{req_id}/respond",
+        data={"text_answer": "Mixed", "document_ids": [doc1, doc2]},
+        headers=emp_headers,
+    )
+    assert resp_mixed.status_code == 403
+    assert "access to this document" in resp_mixed.json()["detail"]
+
+
+

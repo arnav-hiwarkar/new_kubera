@@ -1413,7 +1413,7 @@ async def respond_requirement(
 
     submission = await create_submission(
         db, req=req, engagement_id=engagement_id, company_id=current_user.company_id,
-        user_id=current_user.id, text_answer=text, files=ups, document_ids=docs)
+        user_id=current_user.id, user=current_user, text_answer=text, files=ups, document_ids=docs)
 
     await log_activity(db, current_user.company_id, current_user.id,
         "requirement.submitted", "requirement_request", req.id,

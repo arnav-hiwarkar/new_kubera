@@ -16,6 +16,7 @@ from app.models.auditease import (
 from app.models.auditor import Auditor
 from app.models.company import CompanyUser
 from app.models.docvault import Document, DocumentVersion
+from app.services.bucket_access import assert_document_attachable
 from app.services.document_access import (
     ensure_audit_bucket,
     grant_document_access_to_auditors,
@@ -43,24 +44,16 @@ def submission_document_tags(engagement_id: uuid.UUID, req_display_id: str) -> l
 
 
 async def validate_document_ids(
-    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID], user: CompanyUser
 ) -> None:
-    """Raise HTTPException(404) unless EVERY id is a document of `company_id`.
+    """Raise HTTPException unless EVERY id is a document of `company_id` that
+    `user` may attach (has the docvault module and bucket access to it).
     All-or-nothing: one bad id rejects the whole submission."""
     if not document_ids:
         return
     unique_ids = list(set(document_ids))
-    res = await db.execute(
-        select(Document.id).where(
-            and_(
-                Document.id.in_(unique_ids),
-                Document.company_id == company_id,
-            )
-        )
-    )
-    found_ids = set(res.scalars().all())
-    if len(found_ids) != len(unique_ids):
-        raise HTTPException(status_code=404, detail="One or more documents not found")
+    for document_id in unique_ids:
+        await assert_document_attachable(db, user, document_id)
 
 
 async def create_submission(
@@ -70,6 +63,7 @@ async def create_submission(
     engagement_id: uuid.UUID,
     company_id: uuid.UUID,
     user_id: uuid.UUID,
+    user: CompanyUser,
     text_answer: Optional[str],
     files: Sequence[UploadFile],
     document_ids: Sequence[uuid.UUID],
@@ -82,7 +76,7 @@ async def create_submission(
 
     # Validate picked documents first (all-or-nothing check before creating any records)
     if document_ids:
-        await validate_document_ids(db, company_id, document_ids)
+        await validate_document_ids(db, company_id, document_ids, user)
 
     # Next round number for this requirement
     res = await db.execute(
