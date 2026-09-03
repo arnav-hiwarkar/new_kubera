@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { EmptyState, Spinner, useToast } from '@/components/ui'
 import { useListRequirements } from '@/api/hooks/auditease'
-import { useDownloadDocument } from '@/api/hooks/docvault'
+import { auditeaseCompanyApi } from '@/api/endpoints/auditease'
+import { saveBlob } from '@/lib/download'
 import {
   RequirementsOverview,
 } from '@/components/auditease/requirements/RequirementsOverview'
@@ -15,7 +16,6 @@ import { RequirementCard } from '@/components/auditease/requirements/Requirement
 export function RequirementsTab({ engagementId }: { engagementId: string }) {
   const toast = useToast()
   const { data: reqs = [], isLoading } = useListRequirements(engagementId)
-  const downloadDoc = useDownloadDocument()
 
   const [filter, setFilter] = useState<RequirementStatusFilter>('all')
 
@@ -30,10 +30,8 @@ export function RequirementsTab({ engagementId }: { engagementId: string }) {
 
   const handleDownload = async (docId: string, filename: string) => {
     try {
-      await downloadDoc.mutateAsync({
-        id: docId,
-        filename: filename || 'document',
-      })
+      const blob = await auditeaseCompanyApi.downloadDocument(docId)
+      saveBlob(blob, filename || 'document')
     } catch {
       toast.error('Failed to download document')
     }

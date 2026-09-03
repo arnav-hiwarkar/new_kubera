@@ -4,7 +4,9 @@ import { Button, Input, StatusBadge, Spinner, useToast, EmptyState } from '@/com
 import { ApiError } from '@/api/http'
 import { cn } from '@/lib/cn'
 import { useListQueries, useAddQueryMessage } from '@/api/hooks/auditease'
-import { useDocuments, useDownloadDocument } from '@/api/hooks/docvault'
+import { useDocuments } from '@/api/hooks/docvault'
+import { auditeaseCompanyApi } from '@/api/endpoints/auditease'
+import { saveBlob } from '@/lib/download'
 import { DocVaultPickerModal } from '@/components/docvault/DocVaultPickerModal'
 import { useCompanyAuth } from '@/auth/company'
 import { hasModuleAccess } from '@/auth/company/modules'
@@ -16,7 +18,6 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
   const { data: queries = [], isLoading } = useListQueries(engagementId)
   const { data: docs = [] } = useDocuments()
   const addMsg = useAddQueryMessage()
-  const downloadDoc = useDownloadDocument()
 
   const [activeQueryId, setActiveQueryId] = useState<string | null>(null)
   
@@ -57,15 +58,11 @@ export function QueriesTab({ engagementId }: { engagementId: string }) {
   }
 
   const handleDownload = async (docId: string) => {
-    const doc = docs.find(d => d.id === docId)
-    if (!doc || !doc.current_version_id) {
-      toast.error('Document not found in docVault')
-      return
-    }
-    const version = doc.versions.find(v => v.id === doc.current_version_id)
-    if (!version) return
     try {
-      await downloadDoc.mutateAsync({ id: doc.id, versionId: version.id, filename: version.original_filename })
+      const doc = await auditeaseCompanyApi.getDocument(docId)
+      const blob = await auditeaseCompanyApi.downloadDocument(docId)
+      const version = doc.versions?.find((v) => v.id === doc.current_version_id)
+      saveBlob(blob, version?.original_filename || 'document')
     } catch (err) {
       toast.error('Failed to download document')
     }

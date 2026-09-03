@@ -28,6 +28,7 @@ import type {
   QueryResponse,
   QueryMessageResponse,
   ReportPreviewResponse,
+  DocumentResponse,
 } from '@/api/types'
 
 /** AuditEase — company side (`/api/v1/auditease`). Company_user identity only. */
@@ -179,4 +180,12 @@ export const auditeaseCompanyApi = {
       `/api/v1/auditease/engagements/${engagementId}/reports/archive`,
       { query: { report_key: reportKey, format, units } },
     ),
+
+  // Dedicated Document Downloads (engagement-scoped)
+  getDocument: (documentId: string) =>
+    companyClient.get<DocumentResponse>(`/api/v1/auditease/documents/${documentId}`),
+  downloadDocument: (documentId: string) =>
+    companyClient.get<Blob>(`/api/v1/auditease/documents/${documentId}/download`, {
+      responseType: 'blob',
+    }),
 }
