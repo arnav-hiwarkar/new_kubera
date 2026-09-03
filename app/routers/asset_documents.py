@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_assets_module
 from app.database import get_db
 from app.encryption import decrypt_dek, decrypt_file_data
+from app.services.bucket_access import assert_document_attachable
 from app.models.assets import (
     ACQUISITION_DOC_ROLES,
     PHOTO_DOC_ROLES,
@@ -103,12 +104,6 @@ def _check_role_level(doc_role: AssetDocRole, *, on_acquisition: bool) -> None:
         )
 
 
-async def _verify_document(db: AsyncSession, document_id: uuid.UUID, company_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(Document.id).where(Document.id == document_id, Document.company_id == company_id)
-    )
-    if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="Document not found")
 
 
 async def _hydrate(db: AsyncSession, link: AssetDocument) -> AssetDocumentResponse:
@@ -210,7 +205,7 @@ async def attach_asset_document(
     """Link a document that is already in DocVault."""
     asset = await _load_asset(asset_id, current_user.company_id, db)
     _check_role_level(body.doc_role, on_acquisition=False)
-    await _verify_document(db, body.document_id, current_user.company_id)
+    await assert_document_attachable(db, current_user, body.document_id)
 
     link = AssetDocument(
         company_id=current_user.company_id,
@@ -260,7 +255,7 @@ async def attach_acquisition_document(
 ):
     acq = await _load_acquisition(acq_id, current_user.company_id, db)
     _check_role_level(body.doc_role, on_acquisition=True)
-    await _verify_document(db, body.document_id, current_user.company_id)
+    await assert_document_attachable(db, current_user, body.document_id)
 
     link = AssetDocument(
         company_id=current_user.company_id,

@@ -111,3 +111,168 @@ async def test_assert_document_attachable_wrong_company_404(client: AsyncClient,
     with pytest.raises(Exception) as exc_info:
         await assert_document_attachable(db, user_a, other_doc.id)
     assert exc_info.value.status_code == 404
+
+
+async def _leaf_category(client: AsyncClient, admin_headers: dict) -> dict:
+    resp = await client.post(
+        "/api/v1/asset-masters/categories", json={"name": "Plant & Machinery"}, headers=admin_headers
+    )
+    assert resp.status_code == 201, resp.text
+    parent = resp.json()
+    sub_resp = await client.post(
+        "/api/v1/asset-masters/categories",
+        json={"name": "Machines", "parent_id": parent["id"]},
+        headers=admin_headers,
+    )
+    assert sub_resp.status_code == 201, sub_resp.text
+    return sub_resp.json()
+
+
+async def _upload_docvault_document(
+    client: AsyncClient, headers: dict, title: str, bucket_id: str | None = None
+) -> str:
+    data = {"title": title}
+    if bucket_id:
+        data["bucket_id"] = bucket_id
+    files = {"file": (f"{title}.txt", b"contents", "text/plain")}
+    resp = await client.post("/api/v1/docvault/documents", data=data, files=files, headers=headers)
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+async def _restrict_bucket(client: AsyncClient, admin_headers: dict, name: str, allowed_user_ids: list[str]) -> str:
+    resp = await client.post("/api/v1/docvault/buckets", json={"name": name}, headers=admin_headers)
+    assert resp.status_code == 201, resp.text
+    bucket_id = resp.json()["id"]
+    patch = await client.patch(
+        f"/api/v1/docvault/buckets/{bucket_id}/access",
+        json={"visibility": "restricted", "user_ids": allowed_user_ids},
+        headers=admin_headers,
+    )
+    assert patch.status_code == 200, patch.text
+    return bucket_id
+
+
+@pytest.mark.asyncio
+async def test_attach_asset_document_requires_docvault_module(client: AsyncClient):
+    await create_test_company(client, email="asset-admin@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='asset-admin@testco.com')}"}
+    category = await _leaf_category(client, admin_headers)
+    document_id = await _upload_docvault_document(client, admin_headers, "Invoice")
+
+    quick_add = await client.post(
+        "/api/v1/assets/quick-add",
+        json={"asset_name": "Laptop", "category_id": category["id"], "quantity": 1},
+        headers=admin_headers,
+    )
+    assert quick_add.status_code == 201, quick_add.text
+    asset_id = quick_add.json()["first_asset_id"]
+
+    await _make_employee(client, admin_headers, "assets-only@testco.com", ["assets"])
+    assets_only_headers = await _login_headers(client, "assets-only@testco.com")
+
+    resp = await client.post(
+        f"/api/v1/assets/{asset_id}/documents",
+        json={"document_id": document_id, "doc_role": "asset_photo"},
+        headers=assets_only_headers,
+    )
+    assert resp.status_code == 403, resp.text
+    assert "docvault module" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_attach_asset_document_requires_bucket_access(client: AsyncClient):
+    await create_test_company(client, email="asset-admin2@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='asset-admin2@testco.com')}"}
+    category = await _leaf_category(client, admin_headers)
+
+    quick_add = await client.post(
+        "/api/v1/assets/quick-add",
+        json={"asset_name": "Laptop", "category_id": category["id"], "quantity": 1},
+        headers=admin_headers,
+    )
+    asset_id = quick_add.json()["first_asset_id"]
+
+    scoped = await _make_employee(client, admin_headers, "scoped@testco.com", ["assets", "docvault"])
+    scoped_headers = await _login_headers(client, "scoped@testco.com")
+
+    restricted_bucket_id = await _restrict_bucket(client, admin_headers, "Admin Only", [])
+    document_id = await _upload_docvault_document(client, admin_headers, "Confidential", restricted_bucket_id)
+
+    denied = await client.post(
+        f"/api/v1/assets/{asset_id}/documents",
+        json={"document_id": document_id, "doc_role": "asset_photo"},
+        headers=scoped_headers,
+    )
+    assert denied.status_code == 403, denied.text
+    assert "access to this document" in denied.json()["detail"]
+
+    # Grant bucket access -> attach now succeeds
+    scoped_user_id = scoped["id"]
+    grant = await client.patch(
+        f"/api/v1/docvault/buckets/{restricted_bucket_id}/access",
+        json={"visibility": "restricted", "user_ids": [scoped_user_id]},
+        headers=admin_headers,
+    )
+    assert grant.status_code == 200, grant.text
+
+    allowed = await client.post(
+        f"/api/v1/assets/{asset_id}/documents",
+        json={"document_id": document_id, "doc_role": "asset_photo"},
+        headers=scoped_headers,
+    )
+    assert allowed.status_code == 201, allowed.text
+    link_id = allowed.json()["id"]
+
+    # Invariant 1: Download stays permissive for assets-only user with 0 DocVault access
+    await _make_employee(client, admin_headers, "download-only@testco.com", ["assets"])
+    download_only_headers = await _login_headers(client, "download-only@testco.com")
+    stream = await client.get(f"/api/v1/asset-documents/{link_id}/thumbnail", headers=download_only_headers)
+    assert stream.status_code == 200, stream.text
+
+
+@pytest.mark.asyncio
+async def test_attach_asset_document_anti_tamper_and_tenant_isolation(client: AsyncClient, db):
+    """Tampered request checks: non-existent UUID -> 404; cross-tenant doc -> 404; malformed UUID -> 422."""
+    await create_test_company(client, email="tamper-admin@testco.com")
+    admin_headers = {"Authorization": f"Bearer {await get_company_token(client, email='tamper-admin@testco.com')}"}
+    category = await _leaf_category(client, admin_headers)
+    quick_add = await client.post(
+        "/api/v1/assets/quick-add",
+        json={"asset_name": "Tamper Asset", "category_id": category["id"], "quantity": 1},
+        headers=admin_headers,
+    )
+    asset_id = quick_add.json()["first_asset_id"]
+
+    # 1. Non-existent UUID
+    fake_id = str(uuid.uuid4())
+    resp_fake = await client.post(
+        f"/api/v1/assets/{asset_id}/documents",
+        json={"document_id": fake_id, "doc_role": "asset_photo"},
+        headers=admin_headers,
+    )
+    assert resp_fake.status_code == 404
+
+    # 2. Malformed UUID
+    resp_malformed = await client.post(
+        f"/api/v1/assets/{asset_id}/documents",
+        json={"document_id": "not-a-valid-uuid", "doc_role": "asset_photo"},
+        headers=admin_headers,
+    )
+    assert resp_malformed.status_code == 422
+
+    # 3. Cross-tenant document
+    await create_test_company(client, name="OtherCo2", email="other2@testco.com")
+    other_admin = await _user_by_email(db, "other2@testco.com")
+    other_doc = Document(company_id=other_admin.company_id, title="OtherCo Doc", created_by=other_admin.id)
+    db.add(other_doc)
+    await db.commit()
+    await db.refresh(other_doc)
+
+    resp_cross = await client.post(
+        f"/api/v1/assets/{asset_id}/documents",
+        json={"document_id": str(other_doc.id), "doc_role": "asset_photo"},
+        headers=admin_headers,
+    )
+    assert resp_cross.status_code == 404
+
