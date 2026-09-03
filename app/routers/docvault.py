@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.database import get_db
 from app.auth import get_current_company_user, require_admin, require_module
+from app.services.bucket_access import accessible_bucket_ids, can_access_bucket, _document_bucket_filter
 from app.models.company import CompanyUser, CompanyKey, UserRole
 from app.models.docvault import (
     Bucket, BucketAccessGrant, BucketVisibility, Document, DocumentVersion, DocumentStatus
@@ -76,57 +77,6 @@ async def get_company_kek(db: AsyncSession, company_id: uuid.UUID) -> bytes:
     if not key_record:
         raise HTTPException(status_code=500, detail="Company encryption key not found")
     return decrypt_company_kek(key_record.encrypted_kek, key_record.kek_nonce)
-
-
-async def accessible_bucket_ids(db: AsyncSession, user: CompanyUser) -> Optional[set[uuid.UUID]]:
-    """Bucket ids the user may see within their company.
-
-    Returns None for admins (unrestricted — no filtering should be applied).
-    For non-admins, returns the set of bucket ids that are either visible to
-    everyone or explicitly granted to the user. A restricted bucket is visible
-    strictly to admins + the users on its access list — creating a bucket does
-    not, on its own, grant continued access once it is restricted.
-    """
-    if user.role == UserRole.admin:
-        return None
-    result = await db.execute(
-        select(Bucket.id)
-        .outerjoin(
-            BucketAccessGrant,
-            and_(
-                BucketAccessGrant.bucket_id == Bucket.id,
-                BucketAccessGrant.company_user_id == user.id,
-            ),
-        )
-        .where(
-            and_(
-                Bucket.company_id == user.company_id,
-                or_(
-                    Bucket.visibility == BucketVisibility.everyone,
-                    BucketAccessGrant.id.isnot(None),
-                ),
-            )
-        )
-    )
-    return set(result.scalars().all())
-
-
-def _document_bucket_filter(accessible: Optional[set[uuid.UUID]]):
-    """SQL predicate limiting documents to accessible buckets. Uncategorized
-    documents (no bucket) are visible to everyone. None => no restriction."""
-    if accessible is None:
-        return None
-    return or_(Document.bucket_id.is_(None), Document.bucket_id.in_(accessible))
-
-
-async def can_access_bucket(db: AsyncSession, user: CompanyUser, bucket_id: Optional[uuid.UUID]) -> bool:
-    """Whether the user may use `bucket_id` (None = uncategorized, always allowed)."""
-    if bucket_id is None:
-        return True
-    accessible = await accessible_bucket_ids(db, user)
-    if accessible is None:
-        return True
-    return bucket_id in accessible
 
 
 # --- Buckets ---

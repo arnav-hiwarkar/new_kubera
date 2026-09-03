@@ -136,6 +136,15 @@ def require_role(*allowed_roles):
     return checker
 
 
+def user_has_module(user, module_id: str) -> bool:
+    """True if `user` may use `module_id` — admins always pass."""
+    from app.models.company import UserRole
+
+    if user.role == UserRole.admin:
+        return True
+    return module_id in (user.accessible_modules or [])
+
+
 def require_module(module_id: str):
     """Dependency factory: 403 unless the user has this module granted.
 
@@ -143,12 +152,10 @@ def require_module(module_id: str):
     (ModuleGuard.tsx), which made it a UX affordance rather than a boundary.
     Endpoints that rely on it for authorization must use this. Admins always pass.
     """
-    from app.models.company import CompanyUser, UserRole
+    from app.models.company import CompanyUser
 
     async def checker(user: CompanyUser = Depends(get_current_company_user)):
-        if user.role == UserRole.admin:
-            return user
-        if module_id not in (user.accessible_modules or []):
+        if not user_has_module(user, module_id):
             raise HTTPException(
                 status_code=403, detail=f"No access to the {module_id} module"
             )
