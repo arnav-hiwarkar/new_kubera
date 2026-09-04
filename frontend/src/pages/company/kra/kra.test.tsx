@@ -69,6 +69,8 @@ function user(over: Partial<UserResponse>): UserResponse {
     designation: null,
     department: null,
     is_active: true,
+    can_change_password: true,
+    has_avatar: false,
     accessible_modules: [],
     company_id: 'co',
     created_at: '2026-07-01T00:00:00Z',

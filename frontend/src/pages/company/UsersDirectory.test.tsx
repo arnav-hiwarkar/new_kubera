@@ -30,9 +30,9 @@ const base = {
 }
 
 const users: UserResponse[] = [
-  { ...base, id: 'u1', email: 'active@co.com', full_name: 'Active Person', is_active: true, deleted_at: null },
-  { ...base, id: 'u2', email: 'inactive@co.com', full_name: 'Inactive Person', is_active: false, deleted_at: null },
-  { ...base, id: 'u3', email: 'gone@co.com', full_name: 'Deleted Person', is_active: false, deleted_at: '2026-02-02T00:00:00Z' },
+  { ...base, id: 'u1', email: 'active@co.com', full_name: 'Active Person', is_active: true, deleted_at: null, can_change_password: true, has_avatar: false },
+  { ...base, id: 'u2', email: 'inactive@co.com', full_name: 'Inactive Person', is_active: false, deleted_at: null, can_change_password: true, has_avatar: false },
+  { ...base, id: 'u3', email: 'gone@co.com', full_name: 'Deleted Person', is_active: false, deleted_at: '2026-02-02T00:00:00Z', can_change_password: true, has_avatar: false },
 ]
 
 beforeEach(() => vi.clearAllMocks())
