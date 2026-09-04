@@ -216,6 +216,8 @@ async def create_test_auditor(
 ) -> dict:
     """Register an auditor with valid invite token, return response JSON."""
     clean_email = email.strip().lower()
+    # Only the self-minted-invite path creates a throwaway engagement to clean up.
+    dummy_eng_id = None
     if invite_token is None:
         import secrets
         from datetime import datetime, timezone, timedelta

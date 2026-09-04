@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Response, status, UploadFile, File, Form
 from pydantic import BaseModel, ValidationError, model_validator
 from sqlalchemy import select, and_, or_, update, delete, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -103,7 +104,7 @@ async def _list_auditors(db: AsyncSession, engagement_id: uuid.UUID) -> list[dic
     for p in pend.scalars().all():
         out.append({
             "auditor_id": None, "name": None, "email": p.email,
-            "status": "pending", "area_permissions": dict(FULL_AREA_PERMISSIONS),
+            "status": "pending", "area_permissions": p.area_permissions or dict(FULL_AREA_PERMISSIONS),
             "invited_at": p.created_at, "accepted_at": None,
         })
     return out
@@ -1083,27 +1084,29 @@ async def invite_auditor(
         token_hash = hash_password(token)
         expires_at = datetime.now(timezone.utc) + timedelta(days=7)
 
-        pend_res = await db.execute(
-            select(PendingAuditorInvite).where(
-                and_(
-                    PendingAuditorInvite.engagement_id == engagement_id,
-                    func.lower(PendingAuditorInvite.email) == email,
-                )
-            )
-        )
-        existing_pend = pend_res.scalar_one_or_none()
-        if existing_pend:
-            existing_pend.token_hash = token_hash
-            existing_pend.expires_at = expires_at
-            existing_pend.area_permissions = perms
-        else:
-            db.add(PendingAuditorInvite(
+        # Atomic create-or-refresh. A plain SELECT-then-INSERT races with itself (two
+        # admins, or one double-clicked button) and would leave two pending rows for the
+        # same engagement+email, which then breaks both re-invites and the auditor's
+        # registration. uq_pending_invite_engagement_email makes that impossible and this
+        # upsert resolves the conflict by refreshing the token instead of erroring.
+        await db.execute(
+            pg_insert(PendingAuditorInvite)
+            .values(
                 engagement_id=engagement_id,
                 email=email,
                 token_hash=token_hash,
                 expires_at=expires_at,
                 area_permissions=perms,
-            ))
+            )
+            .on_conflict_do_update(
+                constraint="uq_pending_invite_engagement_email",
+                set_={
+                    "token_hash": token_hash,
+                    "expires_at": expires_at,
+                    "area_permissions": perms,
+                },
+            )
+        )
 
     await log_activity(
         db, current_user.company_id, current_user.id,

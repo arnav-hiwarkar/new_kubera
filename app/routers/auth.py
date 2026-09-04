@@ -550,9 +550,16 @@ async def auditor_register(
     if not pendings:
         raise generic_error
 
-    # Constant-time token verification
-    token_valid = any(verify_password(body.invite_token, p.token_hash) for p in pendings)
-    if not token_valid:
+    # The token must match an invite addressed to *this* email. The query above already
+    # scopes to clean_email, so a token minted for a different address can never match;
+    # re-asserting the matched row's email keeps that binding explicit and local rather
+    # than an invariant implied by a query several lines up. Trimmed because the invite
+    # code is meant to be copy-pasteable out of an email body.
+    submitted_token = body.invite_token.strip()
+    matched = next(
+        (p for p in pendings if verify_password(submitted_token, p.token_hash)), None
+    )
+    if matched is None or matched.email.strip().lower() != clean_email:
         raise generic_error
 
     auditor_obj = Auditor(
@@ -563,13 +570,19 @@ async def auditor_register(
     db.add(auditor_obj)
     await db.flush()
 
+    # One grant per engagement: uq_grant_auditor_engagement forbids duplicates, and a
+    # pre-constraint duplicate invite pair would otherwise turn registration into a
+    # permanent 500 for this auditor. Every consumed row is still deleted.
+    seen_engagements = set()
     for pend in pendings:
-        db.add(AuditorEngagementGrant(
-            auditor_id=auditor_obj.id,
-            engagement_id=pend.engagement_id,
-            status=GrantStatus.invited,
-            area_permissions=pend.area_permissions,
-        ))
+        if pend.engagement_id not in seen_engagements:
+            seen_engagements.add(pend.engagement_id)
+            db.add(AuditorEngagementGrant(
+                auditor_id=auditor_obj.id,
+                engagement_id=pend.engagement_id,
+                status=GrantStatus.invited,
+                area_permissions=pend.area_permissions,
+            ))
         await db.delete(pend)
 
     await db.commit()

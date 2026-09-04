@@ -203,6 +203,10 @@ class PendingAuditorInvite(Base):
     AuditorEngagementGrant automatically when an auditor registers with this email and valid token."""
     __tablename__ = "pending_auditor_invites"
     __table_args__ = (
+        # At most one live invite per engagement+email. email is always written
+        # lower-cased, so a plain unique constraint is case-insensitive in practice and
+        # is usable as an ON CONFLICT target (a functional index is not, by name).
+        UniqueConstraint("engagement_id", "email", name="uq_pending_invite_engagement_email"),
         Index("ix_pending_auditor_invites_email_lower_expires", text("lower(email)"), "expires_at"),
     )
 

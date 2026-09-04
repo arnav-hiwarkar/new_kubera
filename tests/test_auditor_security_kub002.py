@@ -502,3 +502,211 @@ async def test_case_insensitive_email_collision_and_token_matching(mock_email, c
     )
     assert dup_res.status_code == 409
     assert dup_res.json()["detail"] == "Email already registered"
+
+
+# --------------------------------------------------------------------------
+# 11. Anti-Test: token is bound to the exact email it was issued to
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_anti_exploit_token_is_bound_to_its_own_email(mock_email, client: AsyncClient):
+    """A valid token issued for one address must not register any other address, in
+    either direction — an attacker holding a genuine invite of their own cannot use it
+    to claim a victim's invited email, and a stolen victim token cannot be redeemed
+    under the attacker's own email."""
+    mock_email.return_value = MagicMock(id="task-bind")
+    await create_test_company(client, email="bind_co@test.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='bind_co@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+
+    victim_email = "victim_bound@firm.com"
+    attacker_email = "attacker_bound@evil.com"
+
+    await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+        json={"email": victim_email}, headers=co_headers,
+    )
+    victim_token = _extract_token_from_mock(mock_email)
+
+    await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+        json={"email": attacker_email}, headers=co_headers,
+    )
+    attacker_token = _extract_token_from_mock(mock_email)
+    assert victim_token != attacker_token
+
+    # Direction 1: attacker's own genuine token cannot claim the victim's email.
+    res1 = await client.post(
+        "/api/v1/auth/auditor/register",
+        json={"email": victim_email, "password": "Valid1!Pass",
+              "name": "Attacker", "invite_token": attacker_token},
+    )
+    assert res1.status_code == 400
+    assert res1.json()["detail"] == "Invalid or expired invitation details"
+
+    # Direction 2: the victim's token cannot be redeemed under the attacker's email.
+    res2 = await client.post(
+        "/api/v1/auth/auditor/register",
+        json={"email": attacker_email, "password": "Valid1!Pass",
+              "name": "Attacker", "invite_token": victim_token},
+    )
+    assert res2.status_code == 400
+    assert res2.json()["detail"] == "Invalid or expired invitation details"
+
+    # Neither account exists, and both invites survive intact for their real owners.
+    async with TestSessionLocal() as db:
+        assert (await db.execute(select(Auditor).where(
+            func.lower(Auditor.email).in_([victim_email, attacker_email])
+        ))).scalars().all() == []
+        pend_emails = set((await db.execute(
+            select(PendingAuditorInvite.email).where(PendingAuditorInvite.engagement_id == eng_id)
+        )).scalars().all())
+        assert pend_emails == {victim_email, attacker_email}
+
+    # Each token still works for its own email.
+    ok = await client.post(
+        "/api/v1/auth/auditor/register",
+        json={"email": victim_email, "password": "Valid1!Pass",
+              "name": "Victim", "invite_token": victim_token},
+    )
+    assert ok.status_code == 201, ok.text
+
+
+# --------------------------------------------------------------------------
+# 12. A re-invite cannot create a duplicate pending row, and old tokens die
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_reinvite_upserts_single_row_and_invalidates_old_token(mock_email, client: AsyncClient):
+    """Re-inviting refreshes in place (no duplicate rows, no 409), the superseded token
+    stops working, and registration with the current token still succeeds."""
+    mock_email.return_value = MagicMock(id="task-upsert")
+    await create_test_company(client, email="upsert_co@test.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='upsert_co@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    target = "resend_target@firm.com"
+
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                      json={"email": target}, headers=co_headers)
+    first_token = _extract_token_from_mock(mock_email)
+
+    for _ in range(3):
+        again = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                                  json={"email": target}, headers=co_headers)
+        assert again.status_code == 200, again.text
+    latest_token = _extract_token_from_mock(mock_email)
+    assert latest_token != first_token
+
+    # Exactly one pending row survives the repeated invites.
+    async with TestSessionLocal() as db:
+        rows = (await db.execute(select(PendingAuditorInvite).where(
+            PendingAuditorInvite.engagement_id == eng_id,
+            PendingAuditorInvite.email == target,
+        ))).scalars().all()
+        assert len(rows) == 1
+
+    # The superseded token is dead.
+    stale = await client.post(
+        "/api/v1/auth/auditor/register",
+        json={"email": target, "password": "Valid1!Pass",
+              "name": "Stale", "invite_token": first_token},
+    )
+    assert stale.status_code == 400
+
+    # The current token works.
+    ok = await client.post(
+        "/api/v1/auth/auditor/register",
+        json={"email": target, "password": "Valid1!Pass",
+              "name": "Fresh", "invite_token": latest_token},
+    )
+    assert ok.status_code == 201, ok.text
+
+
+# --------------------------------------------------------------------------
+# 13. The DB refuses duplicate pending invites outright
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_duplicate_pending_invite_rejected_by_constraint(mock_email, client: AsyncClient):
+    """uq_pending_invite_engagement_email is what stops a racing double-invite from
+    wedging both re-invites and the auditor's registration."""
+    from sqlalchemy.exc import IntegrityError
+    from app.auth import hash_password
+    from app.models.auditease import FULL_AREA_PERMISSIONS
+
+    mock_email.return_value = MagicMock(id="task-dup")
+    await create_test_company(client, email="dup_co@test.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='dup_co@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    target = "dup_target@firm.com"
+
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                      json={"email": target}, headers=co_headers)
+
+    async with TestSessionLocal() as db:
+        db.add(PendingAuditorInvite(
+            engagement_id=eng_id,
+            email=target,
+            token_hash=hash_password("some-other-token"),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+            area_permissions=dict(FULL_AREA_PERMISSIONS),
+        ))
+        with pytest.raises(IntegrityError):
+            await db.commit()
+
+
+# --------------------------------------------------------------------------
+# 14. A pasted token with surrounding whitespace is accepted
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_token_with_surrounding_whitespace_accepted(mock_email, client: AsyncClient):
+    """Copy-pasting the invite code out of an email often carries a trailing newline;
+    that must not read as an invalid token."""
+    mock_email.return_value = MagicMock(id="task-ws")
+    await create_test_company(client, email="ws_co@test.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='ws_co@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    target = "whitespace_target@firm.com"
+
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                      json={"email": target}, headers=co_headers)
+    token = _extract_token_from_mock(mock_email)
+
+    resp = await client.post(
+        "/api/v1/auth/auditor/register",
+        json={"email": target, "password": "Valid1!Pass",
+              "name": "Pasty", "invite_token": f"  {token}\n"},
+    )
+    assert resp.status_code == 201, resp.text
+
+
+# --------------------------------------------------------------------------
+# 15. Restricted invite permissions are reported honestly to the admin
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_pending_invite_listing_reports_restricted_permissions(mock_email, client: AsyncClient):
+    """The auditors list must show what was actually granted on a pending invite, not a
+    hardcoded full-access set — an admin uses this screen to verify the restriction."""
+    mock_email.return_value = MagicMock(id="task-perm-list")
+    await create_test_company(client, email="permlist_co@test.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='permlist_co@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    target = "restricted_pending@firm.com"
+
+    restricted = {"trial_balance": True, "entries": False, "requirements": False,
+                  "queries": False, "documents": False}
+    inv = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+        json={"email": target, "area_permissions": restricted}, headers=co_headers,
+    )
+    assert inv.status_code == 200, inv.text
+
+    listing = await client.get(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co_headers
+    )
+    assert listing.status_code == 200, listing.text
+    row = next(r for r in listing.json() if r["email"] == target)
+    assert row["status"] == "pending"
+    assert row["area_permissions"] == restricted

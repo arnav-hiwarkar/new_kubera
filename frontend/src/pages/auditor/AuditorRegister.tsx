@@ -39,9 +39,16 @@ export function AuditorRegister() {
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null)
     try {
-      await auditorAuth.register(values)
+      // Trimmed: the invite code and email are usually pasted out of an email body,
+      // which commonly carries a trailing space or newline.
+      const email = values.email.trim()
+      await auditorAuth.register({
+        ...values,
+        email,
+        invite_token: values.invite_token.trim(),
+      })
       // Backend registration doesn't return tokens, so log in immediately after.
-      await signIn({ email: values.email, password: values.password })
+      await signIn({ email, password: values.password })
       toast.success('Account created')
       navigate('/auditor/app', { replace: true })
     } catch (err) {
