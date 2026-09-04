@@ -49,7 +49,7 @@ def _email() -> str:
 async def test_auditor_login_throttles_guessing_against_one_account(client: AsyncClient):
     """The KUB-003 headline: /auth/auditor/login had no limit at all."""
     email = _email()
-    await create_test_auditor(client, email=email, password="correct-horse-battery")
+    await create_test_auditor(client, email=email, password="Valid1!Pass")
 
     for attempt in range(settings.LOGIN_RATE_LIMIT):
         resp = await client.post(
@@ -70,7 +70,7 @@ async def test_lockout_survives_the_correct_password(client: AsyncClient):
     password still gets through — otherwise the limit only slows the attacker
     down until the moment they succeed."""
     email = _email()
-    password = "correct-horse-battery"
+    password = "Valid1!Pass"
     await create_test_auditor(client, email=email, password=password)
 
     for _ in range(settings.LOGIN_RATE_LIMIT):
@@ -87,7 +87,7 @@ async def test_login_under_the_limit_is_untouched(client: AsyncClient):
     """A user who fumbles their password a few times and then gets it right must
     not be blocked."""
     email = _email()
-    password = "correct-horse-battery"
+    password = "Valid1!Pass"
     await create_test_auditor(client, email=email, password=password)
 
     for _ in range(settings.LOGIN_RATE_LIMIT - 1):
@@ -246,7 +246,7 @@ async def test_company_activation_is_capped_per_ip(client: AsyncClient):
             json={
                 "email": _email(),
                 "activation_key": "not-a-real-key",
-                "password": "correct-horse-battery",
+                "password": "Valid1!Pass",
                 "full_name": "Attacker",
             },
         )
@@ -257,7 +257,7 @@ async def test_company_activation_is_capped_per_ip(client: AsyncClient):
         json={
             "email": _email(),
             "activation_key": "not-a-real-key",
-            "password": "correct-horse-battery",
+            "password": "Valid1!Pass",
             "full_name": "Attacker",
         },
     )
@@ -279,7 +279,7 @@ async def test_a_real_activation_survives_unrelated_noise_on_the_same_ip(
             json={
                 "email": _email(),
                 "activation_key": "wrong",
-                "password": "correct-horse-battery",
+                "password": "Valid1!Pass",
                 "full_name": "Someone Else",
             },
         )
@@ -289,7 +289,7 @@ async def test_a_real_activation_survives_unrelated_noise_on_the_same_ip(
         json={
             "email": "admin@activateco.com",
             "activation_key": data["activation_key"],
-            "password": "correct-horse-battery",
+            "password": "Valid1!Pass",
             "full_name": "Real Admin",
         },
     )
@@ -306,15 +306,11 @@ async def test_auditor_registration_is_capped_per_ip(client: AsyncClient):
     """Distinct emails each time — this is account spam plus the KUB-002
     enumeration oracle, and only the coarse counter covers it."""
     for _ in range(settings.REGISTER_RATE_LIMIT):
-        resp = await client.post(
-            "/api/v1/auth/auditor/register",
-            json={"email": _email(), "password": "Valid1!Pass!", "name": "Auditor"},
-        )
-        assert resp.status_code == 201, resp.text
+        await create_test_auditor(client, email=_email(), password="Valid1!Pass!", name="Auditor")
 
     resp = await client.post(
         "/api/v1/auth/auditor/register",
-        json={"email": _email(), "password": "Valid1!Pass!", "name": "Auditor"},
+        json={"email": _email(), "password": "Valid1!Pass!", "name": "Auditor", "invite_token": "any"},
     )
     assert resp.status_code == 429
 

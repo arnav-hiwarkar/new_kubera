@@ -2,7 +2,7 @@ import uuid
 import enum
 from decimal import Decimal
 from datetime import date, datetime, timezone
-from sqlalchemy import String, ForeignKey, Boolean, Enum as SAEnum, Integer, Numeric, Text, DateTime, Date, UniqueConstraint, text
+from sqlalchemy import String, ForeignKey, Boolean, Enum as SAEnum, Integer, Numeric, Text, DateTime, Date, UniqueConstraint, Index, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -200,13 +200,27 @@ class AuditorEngagementGrant(Base):
 
 class PendingAuditorInvite(Base):
     """An invite to an email that has no auditor account yet. Converted to an
-    AuditorEngagementGrant automatically when an auditor registers with this email."""
+    AuditorEngagementGrant automatically when an auditor registers with this email and valid token."""
     __tablename__ = "pending_auditor_invites"
+    __table_args__ = (
+        # At most one live invite per engagement+email. email is always written
+        # lower-cased, so a plain unique constraint is case-insensitive in practice and
+        # is usable as an ON CONFLICT target (a functional index is not, by name).
+        UniqueConstraint("engagement_id", "email", name="uq_pending_invite_engagement_email"),
+        Index("ix_pending_auditor_invites_email_lower_expires", text("lower(email)"), "expires_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     engagement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("audit_engagements.id", ondelete="CASCADE"), nullable=False, index=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    token: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    area_permissions: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text('\'{"trial_balance": true, "entries": true, "requirements": true, "queries": true, "documents": true}\'::jsonb'),
+        default=lambda: dict(FULL_AREA_PERMISSIONS),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
 

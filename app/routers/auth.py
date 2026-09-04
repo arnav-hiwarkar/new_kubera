@@ -521,47 +521,68 @@ async def auditor_register(
         ip_limit=settings.REGISTER_RATE_LIMIT,
         ip_window=settings.REGISTER_RATE_WINDOW,
     )
+    clean_email = body.email.strip().lower()
+
+    # Case-insensitive duplicate check
     existing = await db.execute(
-        select(Auditor).where(Auditor.email == body.email)
+        select(Auditor).where(func.lower(Auditor.email) == clean_email)
     )
-    auditor_obj = existing.scalar_one_or_none()
-    
-    if auditor_obj:
-        if auditor_obj.hashed_password == "__pending__":
-            # Re-use the placeholder auditor account created by an invite
-            auditor_obj.hashed_password = hash_password(body.password)
-            auditor_obj.name = body.name
-            await db.commit()
-            await db.refresh(auditor_obj)
-            return auditor_obj
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered",
-            )
-            
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+
+    generic_error = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid or expired invitation details",
+    )
+
+    from app.models.auditease import PendingAuditorInvite, AuditorEngagementGrant, GrantStatus
+    now = datetime.now(timezone.utc)
+    pend_res = await db.execute(
+        select(PendingAuditorInvite).where(
+            func.lower(PendingAuditorInvite.email) == clean_email,
+            PendingAuditorInvite.expires_at > now,
+        )
+    )
+    pendings = pend_res.scalars().all()
+    if not pendings:
+        raise generic_error
+
+    # The token must match an invite addressed to *this* email. The query above already
+    # scopes to clean_email, so a token minted for a different address can never match;
+    # re-asserting the matched row's email keeps that binding explicit and local rather
+    # than an invariant implied by a query several lines up. Trimmed because the invite
+    # code is meant to be copy-pasteable out of an email body.
+    submitted_token = body.invite_token.strip()
+    matched = next(
+        (p for p in pendings if verify_password(submitted_token, p.token_hash)), None
+    )
+    if matched is None or matched.email.strip().lower() != clean_email:
+        raise generic_error
+
     auditor_obj = Auditor(
-        email=body.email,
+        email=clean_email,
         hashed_password=hash_password(body.password),
-        name=body.name,
+        name=body.name.strip(),
     )
     db.add(auditor_obj)
     await db.flush()
 
-    # Convert any pending engagement invites addressed to this email into grants.
-    from app.models.auditease import PendingAuditorInvite, AuditorEngagementGrant, GrantStatus
-    pend_res = await db.execute(
-        select(PendingAuditorInvite).where(
-            func.lower(PendingAuditorInvite.email) == body.email.strip().lower()
-        )
-    )
-    pendings = pend_res.scalars().all()
+    # One grant per engagement: uq_grant_auditor_engagement forbids duplicates, and a
+    # pre-constraint duplicate invite pair would otherwise turn registration into a
+    # permanent 500 for this auditor. Every consumed row is still deleted.
+    seen_engagements = set()
     for pend in pendings:
-        db.add(AuditorEngagementGrant(
-            auditor_id=auditor_obj.id,
-            engagement_id=pend.engagement_id,
-            status=GrantStatus.invited,
-        ))
+        if pend.engagement_id not in seen_engagements:
+            seen_engagements.add(pend.engagement_id)
+            db.add(AuditorEngagementGrant(
+                auditor_id=auditor_obj.id,
+                engagement_id=pend.engagement_id,
+                status=GrantStatus.invited,
+                area_permissions=pend.area_permissions,
+            ))
         await db.delete(pend)
 
     await db.commit()
@@ -585,7 +606,7 @@ async def auditor_login(
         ip_window=settings.LOGIN_IP_RATE_WINDOW,
     )
     result = await db.execute(
-        select(Auditor).where(Auditor.email == body.email)
+        select(Auditor).where(func.lower(Auditor.email) == body.email.strip().lower())
     )
     auditor = result.scalar_one_or_none()
     if auditor is None or not verify_password(body.password, auditor.hashed_password):

@@ -119,6 +119,16 @@ export function useRemoveEngagementAuditor(engagementId: string) {
   })
 }
 
+export function useCancelPendingInvite(engagementId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (email: string) => auditeaseCompanyApi.cancelPendingInvite(engagementId, email),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['auditease', 'engagements', engagementId] })
+    },
+  })
+}
+
 export function useAuditorActivity(engagementId: string, auditorId: string | null) {
   return useQuery({
     queryKey: ['auditease', 'engagements', engagementId, 'auditors', auditorId, 'activity'],

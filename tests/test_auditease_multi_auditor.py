@@ -1,12 +1,14 @@
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import create_test_company, get_company_token
+from tests.conftest import create_test_company, get_company_token, create_test_auditor
 
 
 async def _register_login(client: AsyncClient, email: str) -> dict:
-    await client.post("/api/v1/auth/auditor/register", json={"email": email, "password": "Valid1!Pass", "name": email.split("@")[0].title()})
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "Valid1!Pass"})
+    if resp.status_code != 200:
+        await create_test_auditor(client, email=email, password="Valid1!Pass", name=email.split("@")[0].title())
+        resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "Valid1!Pass"})
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -78,12 +80,13 @@ async def test_duplicate_live_and_pending_invites_rejected(client: AsyncClient):
     r2 = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "dupaud@a.com"}, headers=co)
     assert r2.status_code == 400
 
-    # Unregistered email: second invite while pending is 409
+    # Unregistered email: second invite refreshes token and returns 200
     p1 = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "ghost@firm.com"}, headers=co)
     assert p1.status_code == 200
     assert p1.json()["auditors"][-1]["status"] == "pending"
     p2 = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "ghost@firm.com"}, headers=co)
-    assert p2.status_code == 409
+    assert p2.status_code == 200
+    assert p2.json()["auditors"][-1]["status"] == "pending"
 
 
 @pytest.mark.asyncio

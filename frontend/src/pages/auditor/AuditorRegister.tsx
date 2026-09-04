@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { auditorAuth } from '@/api/endpoints/auth'
 import { useAuditorAuth } from '@/auth/auditor'
 import { ApiError } from '@/api/http'
@@ -13,9 +13,14 @@ interface FormValues {
   name: string
   email: string
   password: string
+  invite_token: string
 }
 
 export function AuditorRegister() {
+  const [searchParams] = useSearchParams()
+  const initialEmail = searchParams.get('email') ?? ''
+  const initialToken = searchParams.get('token') ?? ''
+
   const { signIn } = useAuditorAuth()
   const navigate = useNavigate()
   const toast = useToast()
@@ -24,14 +29,26 @@ export function AuditorRegister() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>()
+  } = useForm<FormValues>({
+    defaultValues: {
+      email: initialEmail,
+      invite_token: initialToken,
+    },
+  })
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null)
     try {
-      await auditorAuth.register(values)
+      // Trimmed: the invite code and email are usually pasted out of an email body,
+      // which commonly carries a trailing space or newline.
+      const email = values.email.trim()
+      await auditorAuth.register({
+        ...values,
+        email,
+        invite_token: values.invite_token.trim(),
+      })
       // Backend registration doesn't return tokens, so log in immediately after.
-      await signIn({ email: values.email, password: values.password })
+      await signIn({ email, password: values.password })
       toast.success('Account created')
       navigate('/auditor/app', { replace: true })
     } catch (err) {
@@ -43,7 +60,7 @@ export function AuditorRegister() {
   })
 
   return (
-    <AuthLayout accent="auditor" title="Auditor Registration" subtitle="Self-service auditor sign up">
+    <AuthLayout accent="auditor" title="Auditor Registration" subtitle="Register with your invitation code">
       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
         {formError && (
           <div className="rounded-btn border border-status-action/40 badge-bg-action px-3 py-2 text-sm text-status-action">
@@ -60,6 +77,20 @@ export function AuditorRegister() {
             autoComplete="username"
             error={!!errors.email}
             {...register('email', { required: 'Email is required' })}
+          />
+        </Field>
+        <Field
+          label="Invitation code"
+          htmlFor="invite_token"
+          required
+          error={errors.invite_token?.message}
+          hint="Auditor registration is by invitation only. If you received an invitation email, paste your invite code here."
+        >
+          <Input
+            id="invite_token"
+            placeholder="Paste your invite code"
+            error={!!errors.invite_token}
+            {...register('invite_token', { required: 'Invitation code is required' })}
           />
         </Field>
         <Field label="Password" htmlFor="password" required error={errors.password?.message}>

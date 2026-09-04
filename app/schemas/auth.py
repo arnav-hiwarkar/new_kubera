@@ -91,6 +91,7 @@ class AuditorRegister(BaseModel):
     email: EmailStr
     password: Password
     name: str = Field(min_length=1, max_length=255)
+    invite_token: str = Field(min_length=1, max_length=255)
 
 
 class AuditorOut(BaseModel):

@@ -4224,6 +4224,8 @@ export interface components {
             password: string;
             /** Name */
             name: string;
+            /** Invite Token */
+            invite_token: string;
         };
         /**
          * BalanceNature
@@ -5208,6 +5210,8 @@ export interface components {
             invited_at?: string | null;
             /** Accepted At */
             accepted_at?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
         };
         /**
          * EngagementStatus

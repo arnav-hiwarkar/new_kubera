@@ -4,7 +4,8 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import create_test_company, get_company_token
+from unittest.mock import patch
+from tests.conftest import create_test_company, get_company_token, create_test_auditor
 from app.models.auditease import EngagementStatus, GrantStatus, AuditEntryStatus, RequestStatus, QueryStatus
 
 # --- Trial-balance import fixtures/helpers -------------------------------------
@@ -257,7 +258,7 @@ async def test_engagement_lifecycle(client: AsyncClient):
     await create_test_company(client, email="co@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co@a.com', password='Valid1!Pass')}"}
 
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    await create_test_auditor(client, email="aud@a.com", password="Valid1!Pass", name="Auditor")
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -298,7 +299,7 @@ async def test_auditor_engagement_list_includes_company_name(client: AsyncClient
     await create_test_company(client, name="Acme Audit Co", email="acme@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='acme@a.com', password='Valid1!Pass')}"}
 
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud2@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    await create_test_auditor(client, email="aud2@a.com", password="Valid1!Pass", name="Auditor")
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud2@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -317,7 +318,7 @@ async def test_auditor_engagement_list_includes_company_name(client: AsyncClient
 async def test_delete_engagement_guard(client: AsyncClient):
     await create_test_company(client, email="del@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='del@a.com', password='Valid1!Pass')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "deld@a.com", "password": "Valid1!Pass", "name": "A"})
+    await create_test_auditor(client, email="deld@a.com", password="Valid1!Pass", name="A")
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "deld@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -340,7 +341,9 @@ async def test_delete_engagement_guard(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_pending_invite_autoconverts_on_registration(client: AsyncClient):
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_pending_invite_autoconverts_on_registration(mock_email, client: AsyncClient):
+    import urllib.parse
     await create_test_company(client, email="pi@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='pi@a.com', password='Valid1!Pass')}"}
     eng_id = await make_engagement(client, co_headers)
@@ -351,8 +354,13 @@ async def test_pending_invite_autoconverts_on_registration(client: AsyncClient):
     assert resp.json()["status"] == EngagementStatus.invited.value
     assert resp.json()["auditors"][0]["status"] == "pending"
 
-    # Auditor registers with that email -> pending invite becomes a grant
-    await client.post("/api/v1/auth/auditor/register", json={"email": "future@aud.com", "password": "Valid1!Pass", "name": "Future"})
+    # Extract token from invite email action url
+    action_url = mock_email.call_args[0][0]["template_context"]["action_button"]["url"]
+    parsed_qs = urllib.parse.parse_qs(urllib.parse.urlparse(action_url).query)
+    invite_token = parsed_qs["token"][0]
+
+    # Auditor registers with that email and token -> pending invite becomes a grant
+    await client.post("/api/v1/auth/auditor/register", json={"email": "future@aud.com", "password": "Valid1!Pass", "name": "Future", "invite_token": invite_token})
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "future@aud.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -366,8 +374,7 @@ async def _engagement_with_entry(client, slug, approve=False):
     """An engagement with an imported TB and one adjusting entry, for re-import tests."""
     await create_test_company(client, email=f"{slug}@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email=f'{slug}@a.com', password='Valid1!Pass')}"}
-    await client.post("/api/v1/auth/auditor/register",
-                      json={"email": f"{slug}aud@a.com", "password": "Valid1!Pass", "name": "A"})
+    await create_test_auditor(client, email=f"{slug}aud@a.com", password="Valid1!Pass", name="A")
     resp = await client.post("/api/v1/auth/auditor/login",
                              json={"email": f"{slug}aud@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
@@ -525,7 +532,7 @@ async def test_chart_of_accounts(client: AsyncClient):
 async def test_ledger_mapping(client: AsyncClient):
     await create_test_company(client, email="map@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='map@a.com', password='Valid1!Pass')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "mapaud@a.com", "password": "Valid1!Pass", "name": "A"})
+    await create_test_auditor(client, email="mapaud@a.com", password="Valid1!Pass", name="A")
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "mapaud@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -793,7 +800,7 @@ async def test_mapping_import_validation_and_tenant_isolation(client: AsyncClien
 async def test_audit_entries(client: AsyncClient):
     await create_test_company(client, email="co2@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co2@a.com', password='Valid1!Pass')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud2@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    await create_test_auditor(client, email="aud2@a.com", password="Valid1!Pass", name="Auditor")
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud2@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -823,7 +830,7 @@ async def test_audit_entries(client: AsyncClient):
 async def test_requirements_and_queries(client: AsyncClient):
     await create_test_company(client, email="co3@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co3@a.com', password='Valid1!Pass')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud3@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    await create_test_auditor(client, email="aud3@a.com", password="Valid1!Pass", name="Auditor")
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud3@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -979,12 +986,12 @@ async def test_auditease_cross_tenant_leak(client: AsyncClient):
 async def test_auditor_document_access_and_queries(client: AsyncClient):
     await create_test_company(client, email="co4@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='co4@a.com', password='Valid1!Pass')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud4@a.com", "password": "Valid1!Pass", "name": "Auditor"})
+    await create_test_auditor(client, email="aud4@a.com", password="Valid1!Pass", name="Auditor")
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "aud4@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
     
     # second auditor for cross-check
-    await client.post("/api/v1/auth/auditor/register", json={"email": "aud_other@a.com", "password": "Valid1!Pass", "name": "Other"})
+    await create_test_auditor(client, email="aud_other@a.com", password="Valid1!Pass", name="Other")
     resp2 = await client.post("/api/v1/auth/auditor/login", json={"email": "aud_other@a.com", "password": "Valid1!Pass"})
     aud_other_headers = {"Authorization": f"Bearer {resp2.json()['access_token']}"}
 
@@ -1045,7 +1052,7 @@ async def test_auditor_document_access_and_queries(client: AsyncClient):
 # --- Entry ledger names + report preview ---------------------------------------
 
 async def _accept_auditor(client, co_headers, eng_id, email):
-    await client.post("/api/v1/auth/auditor/register", json={"email": email, "password": "Valid1!Pass", "name": "A"})
+    await create_test_auditor(client, email=email, password="Valid1!Pass", name="A")
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
     await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": email}, headers=co_headers)
@@ -1481,7 +1488,7 @@ async def test_requirement_bulk_import_roundtrip(client: AsyncClient):
 
     await create_test_company(client, email="coi@a.com", password="Valid1!Pass")
     co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='coi@a.com', password='Valid1!Pass')}"}
-    await client.post("/api/v1/auth/auditor/register", json={"email": "audi@a.com", "password": "Valid1!Pass", "name": "Aud"})
+    await create_test_auditor(client, email="audi@a.com", password="Valid1!Pass", name="Aud")
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": "audi@a.com", "password": "Valid1!Pass"})
     aud_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
     eng_id = await make_engagement(client, co_headers)

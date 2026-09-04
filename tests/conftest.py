@@ -207,13 +207,74 @@ async def get_company_token(client: AsyncClient, email: str = "admin@testco.com"
     return resp.json()["access_token"]
 
 
-async def create_test_auditor(client: AsyncClient, email: str = "auditor@test.com", password: str = "Valid1!Pass", name: str = "Test Auditor") -> dict:
-    """Register an auditor, return response JSON."""
+async def create_test_auditor(
+    client: AsyncClient,
+    email: str = "auditor@test.com",
+    password: str = "Valid1!Pass",
+    name: str = "Test Auditor",
+    invite_token: str | None = None,
+) -> dict:
+    """Register an auditor with valid invite token, return response JSON."""
+    clean_email = email.strip().lower()
+    # Only the self-minted-invite path creates a throwaway engagement to clean up.
+    dummy_eng_id = None
+    if invite_token is None:
+        import secrets
+        from datetime import datetime, timezone, timedelta
+        from sqlalchemy import select
+        from app.auth import hash_password
+        from app.models.auditease import PendingAuditorInvite, AuditEngagement, FULL_AREA_PERMISSIONS
+        from app.models.company import Company
+
+        invite_token = secrets.token_urlsafe(32)
+        async with TestSessionLocal() as db:
+            comp = Company(name=f"Isolated Auth {secrets.token_hex(6)}")
+            db.add(comp)
+            await db.flush()
+            user = CompanyUser(
+                company_id=comp.id,
+                email=f"admin_{secrets.token_hex(6)}@isolated.com",
+                hashed_password=hash_password("Valid1!Pass"),
+                full_name="Admin",
+                role="admin",
+            )
+            db.add(user)
+            await db.flush()
+            eng = AuditEngagement(company_id=comp.id, period_label="FY Isolated", created_by=user.id)
+            db.add(eng)
+            await db.flush()
+            dummy_eng_id = eng.id
+
+            db.add(
+                PendingAuditorInvite(
+                    engagement_id=eng.id,
+                    email=clean_email,
+                    token_hash=hash_password(invite_token),
+                    expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+                    area_permissions=dict(FULL_AREA_PERMISSIONS),
+                )
+            )
+            await db.commit()
+
     resp = await client.post(
         "/api/v1/auth/auditor/register",
-        json={"email": email, "password": password, "name": name},
+        json={
+            "email": clean_email,
+            "password": password,
+            "name": name,
+            "invite_token": invite_token,
+        },
     )
     assert resp.status_code == 201, f"Failed to register auditor: {resp.text}"
+
+    if dummy_eng_id:
+        async with TestSessionLocal() as db:
+            from sqlalchemy import delete
+            from app.models.auditease import AuditorEngagementGrant, AuditEngagement
+            await db.execute(delete(AuditorEngagementGrant).where(AuditorEngagementGrant.engagement_id == dummy_eng_id))
+            await db.execute(delete(AuditEngagement).where(AuditEngagement.id == dummy_eng_id))
+            await db.commit()
+
     return resp.json()
 
 

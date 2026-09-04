@@ -1,11 +1,13 @@
 import json
 import logging
+import secrets
 import uuid
 from typing import Annotated, List, Optional
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Response, status, UploadFile, File, Form
 from pydantic import BaseModel, ValidationError, model_validator
 from sqlalchemy import select, and_, or_, update, delete, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,7 +20,7 @@ from app.encryption import decrypt_dek, decrypt_file_data
 logger = logging.getLogger(__name__)
 
 from app.database import get_db
-from app.auth import get_current_company_user, require_admin, require_manager_or_admin, require_module
+from app.auth import get_current_company_user, require_admin, require_manager_or_admin, require_module, hash_password
 from app.models.company import CompanyUser
 from app.models.auditor import Auditor
 from app.models.activity_log import ActorType, ActivityLog
@@ -99,11 +101,17 @@ async def _list_auditors(db: AsyncSession, engagement_id: uuid.UUID) -> list[dic
         .where(PendingAuditorInvite.engagement_id == engagement_id)
         .order_by(PendingAuditorInvite.created_at.desc())
     )
+    now = datetime.now(timezone.utc)
     for p in pend.scalars().all():
+        # A row past its TTL can never be redeemed (auditor_register filters on
+        # expires_at > now), so it must not keep reading as an actionable "pending"
+        # invite — the admin needs a distinct signal that tells them to re-invite.
         out.append({
             "auditor_id": None, "name": None, "email": p.email,
-            "status": "pending", "area_permissions": dict(FULL_AREA_PERMISSIONS),
+            "status": "expired" if p.expires_at <= now else "pending",
+            "area_permissions": p.area_permissions or dict(FULL_AREA_PERMISSIONS),
             "invited_at": p.created_at, "accepted_at": None,
+            "expires_at": p.expires_at,
         })
     return out
 
@@ -1078,17 +1086,33 @@ async def invite_auditor(
                 status=GrantStatus.invited, area_permissions=perms,
             ))
     else:
-        pend_res = await db.execute(
-            select(PendingAuditorInvite).where(
-                and_(
-                    PendingAuditorInvite.engagement_id == engagement_id,
-                    func.lower(PendingAuditorInvite.email) == email,
-                )
+        token = secrets.token_urlsafe(32)
+        token_hash = hash_password(token)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+
+        # Atomic create-or-refresh. A plain SELECT-then-INSERT races with itself (two
+        # admins, or one double-clicked button) and would leave two pending rows for the
+        # same engagement+email, which then breaks both re-invites and the auditor's
+        # registration. uq_pending_invite_engagement_email makes that impossible and this
+        # upsert resolves the conflict by refreshing the token instead of erroring.
+        await db.execute(
+            pg_insert(PendingAuditorInvite)
+            .values(
+                engagement_id=engagement_id,
+                email=email,
+                token_hash=token_hash,
+                expires_at=expires_at,
+                area_permissions=perms,
+            )
+            .on_conflict_do_update(
+                constraint="uq_pending_invite_engagement_email",
+                set_={
+                    "token_hash": token_hash,
+                    "expires_at": expires_at,
+                    "area_permissions": perms,
+                },
             )
         )
-        if pend_res.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="An invite for this email is already pending")
-        db.add(PendingAuditorInvite(engagement_id=engagement_id, email=email))
 
     await log_activity(
         db, current_user.company_id, current_user.id,
@@ -1125,7 +1149,7 @@ async def invite_auditor(
             action_url = f"{base_url}/auditor/login"
             action_label = "Log In to Audit Portal"
         else:
-            action_url = f"{base_url}/auditor/register?email={encoded_email}"
+            action_url = f"{base_url}/auditor/register?email={encoded_email}&token={urllib.parse.quote(token)}"
             action_label = "Set Up Auditor Account"
 
         company_config = await get_email_config_for_company(db, current_user.company_id)
@@ -1257,6 +1281,45 @@ async def remove_engagement_auditor(
         db, current_user.company_id, current_user.id,
         "auditor.access_revoked", "auditor_engagement_grant", grant.id,
         actor_type=ActorType.company_user, engagement_id=eng.id,
+    )
+    await db.commit()
+    return None
+
+
+@router.delete(
+    "/engagements/{engagement_id}/auditors/pending/{email}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def cancel_pending_invite(
+    engagement_id: uuid.UUID,
+    email: str,
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Withdraw an invite to an email that never registered. A distinct route (not
+    /auditors/{auditor_id}) because a pending invite has no Auditor row to key off —
+    email is the natural key here, made safe to match on by
+    uq_pending_invite_engagement_email."""
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    clean_email = email.strip().lower()
+    res = await db.execute(
+        select(PendingAuditorInvite).where(
+            and_(
+                PendingAuditorInvite.engagement_id == engagement_id,
+                PendingAuditorInvite.email == clean_email,
+            )
+        )
+    )
+    pending = res.scalar_one_or_none()
+    if not pending:
+        raise HTTPException(status_code=404, detail="No pending invite for this email")
+
+    await db.delete(pending)
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "auditor.invite_cancelled", "audit_engagement", engagement_id,
+        metadata_={"email": clean_email}, actor_type=ActorType.company_user,
+        engagement_id=engagement_id,
     )
     await db.commit()
     return None

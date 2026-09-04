@@ -15,7 +15,7 @@ from app.services.reporting.auditease_reports import (
     build_extended_trial_balance,
     build_adjusting_entries,
 )
-from tests.conftest import create_test_company, get_company_token, TestSessionLocal
+from tests.conftest import create_test_company, get_company_token, create_test_auditor, TestSessionLocal
 from tests.test_auditease import import_tb, make_engagement
 
 
@@ -212,8 +212,7 @@ async def test_auditease_adjusting_entries_ledger_name(client: AsyncClient):
 
     # Register and invite auditor to propose adjusting entry
     aud_email = "aud_adj@testco.com"
-    reg_res = await client.post("/api/v1/auth/auditor/register", json={"email": aud_email, "password": "Valid1!Pass", "name": "Auditor Adj"})
-    assert reg_res.status_code == 201, reg_res.text
+    await create_test_auditor(client, email=aud_email, password="Valid1!Pass", name="Auditor Adj")
     resp_login = await client.post("/api/v1/auth/auditor/login", json={"email": aud_email, "password": "Valid1!Pass"})
     assert resp_login.status_code == 200, resp_login.text
     aud_headers = {"Authorization": f"Bearer {resp_login.json()['access_token']}"}
