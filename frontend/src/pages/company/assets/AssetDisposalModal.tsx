@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Modal, Button, Field, Input, Select, useToast } from '@/components/ui'
 import { assetsApi } from '@/api/endpoints/assets'
+import { ApiError } from '@/api/http'
 import { useQueryClient } from '@tanstack/react-query'
 
 interface AssetDisposalModalProps {
@@ -56,7 +57,12 @@ export function AssetDisposalModal({
       qc.invalidateQueries({ queryKey: ['asset', assetId] })
       onClose()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to dispose asset')
+      if (err instanceof ApiError && err.status === 403) {
+        toast.error(err.message || 'You do not have permission to dispose of assets.')
+        onClose()
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Failed to dispose asset')
+      }
     } finally {
       setLoading(false)
     }
