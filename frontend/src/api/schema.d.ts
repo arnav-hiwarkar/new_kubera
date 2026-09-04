@@ -3925,8 +3925,6 @@ export interface components {
             disposal_invoice_no?: string | null;
             /** Disposal Remarks */
             disposal_remarks?: string | null;
-            /** Disposal Gain Loss */
-            disposal_gain_loss?: string | null;
             /** Disposal It Proceeds */
             disposal_it_proceeds?: string | null;
             /** Created By */
@@ -3939,6 +3937,8 @@ export interface components {
             approved_by: string | null;
             /** Approved At */
             approved_at: string | null;
+            /** Disposed By */
+            disposed_by?: string | null;
             /**
              * Created At
              * Format: date-time

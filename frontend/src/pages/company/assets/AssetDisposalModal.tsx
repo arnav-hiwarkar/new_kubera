@@ -32,6 +32,10 @@ export function AssetDisposalModal({
   )
   const [disposalType, setDisposalType] = useState('sale')
   const [saleProceeds, setSaleProceeds] = useState('0')
+  // Sale consideration for Income Tax. Left blank the server defaults it to the
+  // book proceeds, which is right whenever the two agree — but when they differ
+  // this is the only way to record the figure the IT block computation needs.
+  const [itProceeds, setItProceeds] = useState('')
   const [buyerName, setBuyerName] = useState('')
   const [invoiceNo, setInvoiceNo] = useState('')
   const [remarks, setRemarks] = useState('')
@@ -39,6 +43,10 @@ export function AssetDisposalModal({
 
   const qc = useQueryClient()
   const toast = useToast()
+
+  // The two types `validate_disposal` requires proceeds for are the two where a
+  // separate tax consideration is meaningful.
+  const proceedsRelevant = disposalType === 'sale' || disposalType === 'insurance_claim'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,6 +56,7 @@ export function AssetDisposalModal({
         disposal_date: disposalDate,
         disposal_type: disposalType,
         sale_proceeds: Number(saleProceeds) || 0,
+        disposal_it_proceeds: itProceeds.trim() === '' ? undefined : Number(itProceeds),
         buyer_name: buyerName.trim() || undefined,
         disposal_invoice_no: invoiceNo.trim() || undefined,
         disposal_remarks: remarks.trim() || undefined,
@@ -88,8 +97,9 @@ export function AssetDisposalModal({
         </p>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Disposal Date" required>
+          <Field label="Disposal Date" htmlFor="disposal-date" required>
             <Input
+              id="disposal-date"
               type="date"
               min={capitalizationDate || undefined}
               value={disposalDate}
@@ -97,8 +107,9 @@ export function AssetDisposalModal({
               required
             />
           </Field>
-          <Field label="Disposal Type" required>
+          <Field label="Disposal Type" htmlFor="disposal-type" required>
             <Select
+              id="disposal-type"
               value={disposalType}
               onChange={(e) => setDisposalType(e.target.value)}
             >
@@ -111,28 +122,50 @@ export function AssetDisposalModal({
           </Field>
         </div>
 
-        <Field label="Sale Proceeds (₹)" required>
-          <Input
-            type="number"
-            step="0.01"
-            min="0"
-            value={saleProceeds}
-            onChange={(e) => setSaleProceeds(e.target.value)}
-            required
-          />
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Sale Proceeds (₹)" htmlFor="sale-proceeds" required>
+            <Input
+              id="sale-proceeds"
+              type="number"
+              step="0.01"
+              min="0"
+              value={saleProceeds}
+              onChange={(e) => setSaleProceeds(e.target.value)}
+              required
+            />
+          </Field>
+          {proceedsRelevant && (
+            <Field
+              label="Sale consideration for Income Tax (₹)"
+              htmlFor="disposal-it-proceeds"
+              hint="Only if it differs from the book proceeds. Blank uses the figure above."
+            >
+              <Input
+                id="disposal-it-proceeds"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Same as book proceeds"
+                value={itProceeds}
+                onChange={(e) => setItProceeds(e.target.value)}
+              />
+            </Field>
+          )}
+        </div>
 
         {disposalType === 'sale' && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Buyer Name">
+            <Field label="Buyer Name" htmlFor="buyer-name">
               <Input
+                id="buyer-name"
                 placeholder="e.g. Acme Scrap Co"
                 value={buyerName}
                 onChange={(e) => setBuyerName(e.target.value)}
               />
             </Field>
-            <Field label="Disposal Invoice / Bill No.">
+            <Field label="Disposal Invoice / Bill No." htmlFor="disposal-invoice-no">
               <Input
+                id="disposal-invoice-no"
                 placeholder="e.g. INV-DISP-001"
                 value={invoiceNo}
                 onChange={(e) => setInvoiceNo(e.target.value)}
@@ -141,8 +174,9 @@ export function AssetDisposalModal({
           </div>
         )}
 
-        <Field label="Remarks">
+        <Field label="Remarks" htmlFor="disposal-remarks">
           <Input
+            id="disposal-remarks"
             placeholder="Reason for disposal, condition, etc."
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}

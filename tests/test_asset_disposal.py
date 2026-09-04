@@ -1074,3 +1074,189 @@ async def test_kub_020_employee_with_module_exploit_prevented(client: AsyncClien
     assert res.status_code == 403
     assert "Insufficient permissions" in res.text
     await _assert_untouched(asset_id)
+
+
+# --- Read contract: who sees the disposal record, and what it contains ---
+
+
+@pytest.mark.asyncio
+async def test_disposal_record_readable_by_assets_module_holder(client: AsyncClient):
+    """Deliberate product decision: *performing* a disposal is admin-only, but
+    *reading* the disposal record is not. The register is a finance artifact and
+    gross block/NBV have to tie, so an employee preparing the schedule needs the
+    proceeds. Pinned as a test so narrowing it later is a conscious choice."""
+    admin_h = await admin_headers(client, "admin_read_disp@testco.com")
+    await make_user(client, admin_h, "emp_read_disp@testco.com", role="employee")
+    emp_h = await user_headers(client, "emp_read_disp@testco.com")
+
+    cat_id = await _child_category_id(client, admin_h)
+    asset_id = await _capitalized_asset_for(
+        "admin_read_disp@testco.com", cat_id, "READ-DISP-001"
+    )
+
+    disposed = await client.post(
+        f"/api/v1/assets/{asset_id}/dispose",
+        json={
+            "disposal_date": "2024-09-30",
+            "disposal_type": "sale",
+            "sale_proceeds": 12345.67,
+            "buyer_name": "Acme Scrap Co",
+            "disposal_invoice_no": "INV-DISP-9",
+            "disposal_remarks": "End of life",
+        },
+        headers=admin_h,
+    )
+    assert disposed.status_code == 200, disposed.text
+
+    detail = await client.get(f"/api/v1/assets/{asset_id}", headers=emp_h)
+    assert detail.status_code == 200
+    body = detail.json()["asset"]
+    assert body["lifecycle_status"] == "disposed"
+    assert body["disposal_date"] == "2024-09-30"
+    assert body["disposal_type"] == "sale"
+    assert Decimal(str(body["sale_proceeds"])) == Decimal("12345.67")
+    assert body["buyer_name"] == "Acme Scrap Co"
+    assert body["disposal_invoice_no"] == "INV-DISP-9"
+    assert body["disposal_remarks"] == "End of life"
+
+    # Non-repudiation stands in for a segregation-of-duties rule here, so the
+    # actor has to be readable and not merely buried in the activity log.
+    async with TestSessionLocal() as session:
+        admin = (
+            await session.execute(
+                select(CompanyUser).where(
+                    CompanyUser.email == "admin_read_disp@testco.com"
+                )
+            )
+        ).scalar_one()
+        assert body["disposed_by"] == str(admin.id)
+
+
+@pytest.mark.asyncio
+async def test_asset_response_does_not_advertise_disposal_gain_loss(client: AsyncClient):
+    """`disposal_gain_loss` is a column nothing ever writes. It used to ship in
+    every AssetResponse as a permanent null, which reads as "we have this figure
+    and it is empty". Gain or loss is proceeds minus NBV *at the disposal date*,
+    so the depreciation run owns it."""
+    admin_h = await admin_headers(client, "admin_no_gl@testco.com")
+    cat_id = await _child_category_id(client, admin_h)
+    asset_id = await _capitalized_asset_for("admin_no_gl@testco.com", cat_id, "NOGL-001")
+
+    res = await client.post(
+        f"/api/v1/assets/{asset_id}/dispose",
+        json={
+            "disposal_date": "2024-09-30",
+            "disposal_type": "sale",
+            "sale_proceeds": 5000.0,
+        },
+        headers=admin_h,
+    )
+    assert res.status_code == 200
+    assert "disposal_gain_loss" not in res.json()
+
+    detail = await client.get(f"/api/v1/assets/{asset_id}", headers=admin_h)
+    assert "disposal_gain_loss" not in detail.json()["asset"]
+
+
+@pytest.mark.asyncio
+async def test_disposal_it_proceeds_recorded_when_it_differs_from_book(
+    client: AsyncClient,
+):
+    """Sale consideration for Income Tax can legitimately differ from the book
+    figure, and it is what feeds the IT block computation. When supplied it must
+    be stored as given, not silently replaced by the book proceeds."""
+    admin_h = await admin_headers(client, "admin_itproc@testco.com")
+    cat_id = await _child_category_id(client, admin_h)
+    asset_id = await _capitalized_asset_for("admin_itproc@testco.com", cat_id, "ITP-001")
+
+    res = await client.post(
+        f"/api/v1/assets/{asset_id}/dispose",
+        json={
+            "disposal_date": "2024-09-30",
+            "disposal_type": "sale",
+            "sale_proceeds": 40000.0,
+            "disposal_it_proceeds": 35000.0,
+        },
+        headers=admin_h,
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert Decimal(str(body["sale_proceeds"])) == Decimal("40000.00")
+    assert Decimal(str(body["disposal_it_proceeds"])) == Decimal("35000.00")
+
+    async with TestSessionLocal() as session:
+        asset = await session.get(Asset, asset_id)
+        assert asset.disposal_it_proceeds == Decimal("35000.00")
+        assert asset.sale_proceeds == Decimal("40000.00")
+
+
+@pytest.mark.asyncio
+async def test_disposal_it_proceeds_defaults_to_book_proceeds_when_omitted(
+    client: AsyncClient,
+):
+    """Omitted, it falls back to the book proceeds — correct for the common case
+    where the two agree, and what every existing caller relies on."""
+    admin_h = await admin_headers(client, "admin_itdefault@testco.com")
+    cat_id = await _child_category_id(client, admin_h)
+    asset_id = await _capitalized_asset_for(
+        "admin_itdefault@testco.com", cat_id, "ITD-001"
+    )
+
+    res = await client.post(
+        f"/api/v1/assets/{asset_id}/dispose",
+        json={
+            "disposal_date": "2024-09-30",
+            "disposal_type": "sale",
+            "sale_proceeds": 40000.0,
+        },
+        headers=admin_h,
+    )
+    assert res.status_code == 200, res.text
+    assert Decimal(str(res.json()["disposal_it_proceeds"])) == Decimal("40000.00")
+
+
+@pytest.mark.asyncio
+async def test_employee_cannot_reach_disposal_fields_through_patch(client: AsyncClient):
+    """The disposal endpoint is admin-gated, so the obvious way around it is the
+    ordinary PATCH any module holder may call. `AssetUpdate` must not accept
+    disposal fields — otherwise KUB-020 is still exploitable by another route."""
+    from app.schemas.assets import AssetUpdate
+
+    disposal_fields = {
+        "lifecycle_status",
+        "disposal_date",
+        "disposal_type",
+        "sale_proceeds",
+        "buyer_name",
+        "disposal_invoice_no",
+        "disposal_remarks",
+        "disposal_it_proceeds",
+        "disposal_gain_loss",
+        "disposed_by",
+    }
+    accepted = disposal_fields & set(AssetUpdate.model_fields)
+    assert not accepted, f"AssetUpdate accepts disposal fields: {sorted(accepted)}"
+
+    admin_h = await admin_headers(client, "admin_patch_disp@testco.com")
+    await make_user(client, admin_h, "emp_patch_disp@testco.com", role="employee")
+    emp_h = await user_headers(client, "emp_patch_disp@testco.com")
+
+    cat_id = await _child_category_id(client, admin_h)
+    asset_id = await _capitalized_asset_for(
+        "admin_patch_disp@testco.com", cat_id, "PATCH-DISP-001"
+    )
+
+    # Extra fields are ignored rather than applied, so this must be a no-op on
+    # the disposal columns whatever status code it returns.
+    await client.patch(
+        f"/api/v1/assets/{asset_id}",
+        json={
+            "lifecycle_status": "disposed",
+            "disposal_date": "2024-09-30",
+            "disposal_type": "sale",
+            "sale_proceeds": 1.0,
+            "buyer_name": "Attacker Shell Corp",
+        },
+        headers=emp_h,
+    )
+    await _assert_untouched(asset_id)

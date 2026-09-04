@@ -193,3 +193,49 @@ describe('AssetDisposalModal — server refusal handling', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 })
+
+describe('AssetDisposalModal — Income Tax sale consideration', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('omits the tax consideration when left blank, so the server defaults it', async () => {
+    const u = userEvent.setup()
+    vi.mocked(assetsApi.dispose).mockResolvedValue({} as never)
+    wrapModal()
+
+    await u.click(screen.getByRole('button', { name: /confirm disposal/i }))
+
+    await waitFor(() => expect(assetsApi.dispose).toHaveBeenCalled())
+    const body = vi.mocked(assetsApi.dispose).mock.calls[0][1]
+    expect(body.disposal_it_proceeds).toBeUndefined()
+  })
+
+  it('sends the tax consideration when it differs from the book proceeds', async () => {
+    const u = userEvent.setup()
+    vi.mocked(assetsApi.dispose).mockResolvedValue({} as never)
+    wrapModal()
+
+    await u.clear(screen.getByLabelText(/sale proceeds/i))
+    await u.type(screen.getByLabelText(/sale proceeds/i), '40000')
+    await u.type(
+      screen.getByLabelText(/sale consideration for income tax/i),
+      '35000',
+    )
+    await u.click(screen.getByRole('button', { name: /confirm disposal/i }))
+
+    await waitFor(() => expect(assetsApi.dispose).toHaveBeenCalled())
+    const body = vi.mocked(assetsApi.dispose).mock.calls[0][1]
+    expect(body.sale_proceeds).toBe(40000)
+    expect(body.disposal_it_proceeds).toBe(35000)
+  })
+
+  it('does not ask for a tax consideration on a scrap, where there are no proceeds', async () => {
+    const u = userEvent.setup()
+    wrapModal()
+
+    await u.selectOptions(screen.getByLabelText(/disposal type/i), 'scrap')
+
+    expect(
+      screen.queryByLabelText(/sale consideration for income tax/i),
+    ).not.toBeInTheDocument()
+  })
+})

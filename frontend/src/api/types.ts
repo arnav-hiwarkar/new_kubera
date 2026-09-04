@@ -52,16 +52,11 @@ export type CustomFieldCreate = S['CustomFieldCreate']
 export type CustomFieldUpdate = S['CustomFieldUpdate']
 
 // Assets — fixed asset register
-export type AssetResponse = S['AssetResponse'] & {
-  disposal_type?: string | null
-  disposal_date?: string | null
-  sale_proceeds?: number | null
-  buyer_name?: string | null
-  disposal_invoice_no?: string | null
-  disposal_remarks?: string | null
-  disposal_gain_loss?: number | null
-  disposal_it_proceeds?: number | null
-}
+// The disposal fields are in the generated schema now, typed `string | null`
+// like every other Decimal the API serialises. The hand-written intersection
+// that used to re-declare them as `number` collapsed them to `null` (a
+// `string & number` intersection), which is why nothing could read them.
+export type AssetResponse = S['AssetResponse']
 export type AssetUpdate = S['AssetUpdate']
 export type AssetDetailResponse = Omit<S['AssetDetailResponse'], 'asset'> & {
   asset: AssetResponse
