@@ -98,10 +98,15 @@ identical output from the file as from the URL.
    now breaks the **backend** suite until the types are regenerated.
 
 2. **No shadow types** (pytest, same file). `src/api/types.ts` may not
-   hand-declare (`export interface X`) any name present in
-   `openapi.json#/components/schemas`. Allowlist for genuinely frontend-local
-   types: `ImpactPreview`, `TBColumnMap`, `ImpactKind`, `UserRoleType`,
-   `AssetExistingCreate` (diverges intentionally — see note below).
+   hand-declare a type — `export interface X` or `export type X = { ... }` —
+   whose name matches a component in `openapi.json#/components/schemas`. Names
+   that are not component names (`UserRoleType`, `ImpactKind`, `Domain`) are out
+   of the rule's scope by construction and need no allowlist entry.
+
+   Allowlist, for the two types that genuinely have no server counterpart
+   (verified absent from the OpenAPI): `ImpactPreview`, `TBColumnMap`. Each
+   allowlist entry must carry a comment saying why, so the list cannot quietly
+   become a dumping ground.
 
 3. **Every called route exists** (pytest, same file). Paths referenced in
    `src/api/endpoints/*.ts` must exist in the snapshot with that method.
@@ -112,13 +117,31 @@ identical output from the file as from the URL.
 ### 3.4 Reconciliation commit
 
 * Regenerate `schema.d.ts` from the snapshot.
-* Delete shadow declarations now covered by the generated schema:
-  `UserChangePasswordRequest`, `DocumentReviewRequest`,
-  `DocumentRequestApprovalRequest`, `DocVaultApproverResponse`,
-  `FinancialYearReopenRequest`, and the redundant `DocumentResponse` /
-  `DocumentUpdate` intersections (every field they add is now generated).
+* Delete shadow declarations the fresh schema makes redundant. Verified
+  field-for-field against the live OpenAPI:
+  * **Hand-written interfaces that now exist generated, identically:**
+    `UserChangePasswordRequest`, `DocumentReviewRequest`,
+    `DocumentRequestApprovalRequest`, `DocVaultApproverResponse`,
+    `FinancialYearReopenRequest`, `AssetExistingCreate` (all 20 fields match).
+  * **Redundant intersections** — every field they add is now generated:
+    `DocumentResponse`, `DocumentUpdate` (`approver_id`), and `CompanyUserOut`
+    (`can_change_password`, `has_avatar`, `avatar_updated_at`,
+    `password_changed_at` are all present in the schema).
+  * **Redundant `Omit<…, 'role'>` overrides** on `UserResponse`, `UserCreate`
+    and `UserUpdate`. The generated `UserRole` is already `"admin" |
+    "employee"` — KUB-018's removal of `manager` is reflected in the live API —
+    so the override reproduces the generated type exactly. `UserRoleType`
+    becomes `S['UserRole']` rather than a hand-maintained union that only
+    happens to be correct today.
 * Delete `FinancialYearResponse.is_first_year` — it does not exist server-side.
 * Fix the 6 test fixtures to include `can_change_password` and `has_avatar`.
+
+Every deletion here is mechanical and proven by `tsc -b`: if a shadow was
+load-bearing, removing it fails the typecheck rather than changing behaviour at
+runtime. Dropping the `role` overrides cannot cascade into the dead
+`role === 'manager'` comparisons in Sales and KRA, because those read
+`profile.role` from `CompanyUserOut`, whose `role` the backend types as a plain
+`string`.
 
 ---
 
@@ -141,6 +164,13 @@ wrong in two places (§4.3).
 | Archive | `DELETE /documents/{id}` | `admin \|\| creator` + pending guard. Sets `archived`, `is_editable = false` |
 | Restore | `POST /documents/{id}/restore` | **admin only** (`require_admin`); status = `archived`. Resets to `uploaded`, `is_editable = true`, clears all approval fields |
 | Upload version | `POST /documents/{id}/versions` | `admin \|\| creator`; `is_editable`; + pending guard. A new version on a `verified` doc resets it to `uploaded` and clears approval |
+
+`canAssignApprover` covers only whether the caller may change the approver at
+all. The server's *per-candidate* rules — approver must be active, hold DocVault
+access, have access to the target bucket, and not be the creator unless the
+caller is an admin — are properties of each candidate, not of the document, so
+they belong in `ApproverPicker`'s filtering (which `GET /approvers` already does
+server-side) rather than in this predicate.
 
 Every endpoint is additionally gated on company scope and `can_access_bucket`,
 which returns **404, not 403** — deliberately, so the endpoints are not a
@@ -165,7 +195,7 @@ mayEdit,            // admin || creator || approver          (_may_edit_document
 pendingOk,          // !isPending || isApprover || isAdmin
 canEditMeta,        // mayEdit && pendingOk && is_editable
 canToggleEditable,  // mayEdit && pendingOk && (is_editable || isAdmin)
-canUnlock,          // !is_editable && isAdmin
+canUnlock,          // !is_editable && isAdmin   — the false->true case specifically
 canAssignApprover,  // mayEdit && pendingOk && (isAdmin || status not in {verified, archived})
 canRequestApproval, // (uploaded || action_required) && (isCreator || isAdmin) && !isArchived
 canReview,          // isPending && (isApprover || isAdmin) && !(isCreator && !isAdmin)
@@ -264,6 +294,12 @@ description, verified to contain no tenant data, hosts, or secrets.
   `version_id` branch 404s correctly). Robustness, not a leak.
 * `Content-Disposition` uses the raw `original_filename` — this is **KUB-010**,
   already tracked as open in the security audit.
+* `SalesPage.tsx:38`, `SalesDrawer.tsx:39` and `KraPage.tsx:23` still compare
+  `role === 'manager'`. The live API's `UserRole` no longer contains `manager`
+  (KUB-018), so these branches are dead. Behaviour is correct today — there are
+  no managers — so this is cosmetic dead code, not breakage, and the typecheck
+  will not flag it because `CompanyUserOut.role` is typed `string`. Left for a
+  KUB-018 cleanup.
 
 ---
 
