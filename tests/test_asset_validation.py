@@ -5,6 +5,7 @@ are set explicitly here the way the router does before validating.
 """
 from datetime import date
 from decimal import Decimal
+import uuid
 
 import pytest
 
@@ -17,7 +18,8 @@ from app.models.assets import (
     AssetLifecycleStatus,
     AssetOperationalStatus,
 )
-from app.services.asset_validation import validate_transition
+from app.models.company import CompanyUser, UserRole
+from app.services.asset_validation import can_dispose_asset, validate_transition
 
 D = Decimal
 
@@ -292,3 +294,47 @@ def test_pre_cutover_assets_must_declare_opening_balances():
         "opening_wdv",
         "opening_it_wdv",
     } <= _fields(issues)
+
+
+def test_can_dispose_asset_matrix():
+    """Table-driven unit test verifying can_dispose_asset across roles and lifecycle statuses."""
+    admin = CompanyUser(id=uuid.uuid4(), company_id=uuid.uuid4(), role=UserRole.admin)
+    emp = CompanyUser(id=uuid.uuid4(), company_id=uuid.uuid4(), role=UserRole.employee)
+
+    # Only admin + capitalized is allowed
+    cases = [
+        # (user, status, expected_ok, expected_err_substring)
+        (admin, AssetLifecycleStatus.capitalized, True, None),
+        (admin, AssetLifecycleStatus.draft, False, "Only a capitalized asset can be disposed of"),
+        (admin, AssetLifecycleStatus.ready, False, "Only a capitalized asset can be disposed of"),
+        (admin, AssetLifecycleStatus.disposed, False, "Only a capitalized asset can be disposed of"),
+        (emp, AssetLifecycleStatus.capitalized, False, "Insufficient permissions"),
+        (emp, AssetLifecycleStatus.draft, False, "Insufficient permissions"),
+        (emp, AssetLifecycleStatus.ready, False, "Insufficient permissions"),
+        (emp, AssetLifecycleStatus.disposed, False, "Insufficient permissions"),
+    ]
+
+    for user, status, expected_ok, expected_msg in cases:
+        asset = Asset(id=uuid.uuid4(), company_id=user.company_id, lifecycle_status=status)
+        ok, reason = can_dispose_asset(user, asset)
+        assert ok is expected_ok, f"Failed for {user.role} with status {status}: got ok={ok}"
+        if expected_msg:
+            assert expected_msg in (reason or ""), f"Expected '{expected_msg}' in '{reason}'"
+
+
+def test_can_dispose_asset_creator_approver_allowed_for_admin():
+    """An admin who created and approved the asset can still dispose of it (single-admin SoD rule)."""
+    admin_id = uuid.uuid4()
+    company_id = uuid.uuid4()
+    admin = CompanyUser(id=admin_id, company_id=company_id, role=UserRole.admin)
+    asset = Asset(
+        id=uuid.uuid4(),
+        company_id=company_id,
+        lifecycle_status=AssetLifecycleStatus.capitalized,
+        created_by=admin_id,
+        approved_by=admin_id,
+    )
+    ok, reason = can_dispose_asset(admin, asset)
+    assert ok is True
+    assert reason is None
+

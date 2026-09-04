@@ -377,3 +377,21 @@ def validate_disposal(
     return issues
 
 
+def can_dispose_asset(user: "CompanyUser", asset: Asset) -> tuple[bool, Optional[str]]:
+    """Pure authorization and lifecycle predicate for asset disposal.
+
+    Returns (allowed, reason_if_denied).
+    """
+    from app.models.company import CompanyUser, UserRole
+
+    if user.role != UserRole.admin:
+        return False, "Insufficient permissions"
+    if asset.lifecycle_status != AssetLifecycleStatus.capitalized:
+        return (
+            False,
+            f"Only a capitalized asset can be disposed of (this asset is {asset.lifecycle_status.value})",
+        )
+    return True, None
+
+
+
