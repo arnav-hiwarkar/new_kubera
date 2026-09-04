@@ -343,6 +343,12 @@ class Asset(Base, TimestampMixin, TenantScopedMixin):
     buyer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     disposal_invoice_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
     disposal_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Unused by design: nothing writes this. Gain or loss is proceeds minus NBV
+    # *at the disposal date*, which depends on depreciation charged up to that
+    # date, so the depreciation run owns it (`gain_loss_on_disposal` on the run
+    # line) and the disposals register derives it. Persisting a copy here would
+    # freeze a figure a later re-run could contradict, with no reversal path to
+    # correct it. Kept only so existing rows are not dropped; do not wire it up.
     disposal_gain_loss: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     disposal_it_proceeds: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     disposed_by: Mapped[uuid.UUID | None] = mapped_column(

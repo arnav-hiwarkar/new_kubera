@@ -1,13 +1,14 @@
 """Fixed asset register — asset units and lifecycle transitions.
 
-Permission model (decision: split, with segregation of duties):
-  * read    — anyone with the `assets` module sees the WHOLE register. It is a
-              finance artifact: gross block and NBV totals have to tie, so a
-              manager seeing only their reports' assets would be misleading.
-  * create / edit drafts — anyone with the module.
-  * approve -> capitalized — admin or manager, and never your own asset unless
-              you are admin.
-  * edit after capitalization — admin only, and cost is locked.
+Permission model:
+  * module gate — all endpoints require the `assets` module (admins pass all module gates).
+  * read — anyone with the `assets` module sees the whole register (company-scoped).
+  * create / edit drafts / submit — anyone with the `assets` module.
+  * approve -> capitalized — admin only (unreviewed capitalized cost enters the depreciation base).
+  * reject -> draft — admin only.
+  * edit after capitalization — admin only, and statutory cost/depreciation fields are locked.
+  * dispose — admin only (irreversible accounting event removing asset from active gross block with P&L consequences; logged with full user attribution).
+  * delete draft — admin only (capitalized assets can never be deleted; they must be disposed).
 """
 import uuid
 from datetime import date, datetime, timezone
@@ -20,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth import get_current_company_user, require_admin, require_assets_module
+from app.auth import require_admin, require_assets_module
 from app.database import get_db
 from app.models.asset_masters import AssetCategory
 from app.models.assets import (
@@ -38,7 +39,7 @@ from app.models.custom_fields import CustomFieldModule
 from app.models.depreciation import DepreciationRun, DepreciationRunStatus
 from app.models.docvault import Document, DocumentVersion
 from app.models.financial_year import FinancialYear, FinancialYearStatus
-from app.services.asset_validation import validate_disposal
+from app.services.asset_validation import can_dispose_asset, validate_disposal
 from app.schemas.assets import (
     AssetDetailResponse,
     AssetDisposalRequest,
@@ -86,7 +87,11 @@ from app.services.custom_field_validator import validate_custom_fields
 from app.services.export_service import ExportColumn, generate_xlsx
 from app.services.import_service import load_sheet
 
-router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
+router = APIRouter(
+    prefix="/api/v1/assets",
+    tags=["assets"],
+    dependencies=[Depends(require_assets_module)],
+)
 
 Reader = Annotated[CompanyUser, Depends(require_assets_module)]
 Admin = Annotated[CompanyUser, Depends(require_admin)]
@@ -133,10 +138,24 @@ def _asset_query() -> Select:
     )
 
 
-async def _load_asset(asset_id: uuid.UUID, company_id: uuid.UUID, db: AsyncSession) -> Asset:
-    result = await db.execute(
-        _asset_query().where(Asset.id == asset_id, Asset.company_id == company_id)
-    )
+async def _load_asset(
+    asset_id: uuid.UUID,
+    company_id: uuid.UUID,
+    db: AsyncSession,
+    *,
+    for_update: bool = False,
+) -> Asset:
+    stmt = _asset_query().where(Asset.id == asset_id, Asset.company_id == company_id)
+    if for_update:
+        # Disposal is irreversible and has a P&L consequence, so it cannot be
+        # allowed to interleave with a concurrent disposal of the same unit:
+        # two callers would both read `capitalized` and the later commit would
+        # silently overwrite the first one's proceeds/buyer/disposed_by. Taking
+        # a row lock makes the second transaction re-read the committed
+        # `disposed` state and 409 instead. `_asset_query` uses selectinload,
+        # not a join, so `FOR UPDATE OF assets` is valid here.
+        stmt = stmt.with_for_update(of=Asset)
+    result = await db.execute(stmt)
     asset = result.scalars().unique().one_or_none()
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -737,15 +756,10 @@ async def submit_asset(
 async def approve_asset(
     asset_id: uuid.UUID,
     body: TransitionRequest,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Admin,
     db: Db,
 ):
-    """ready -> capitalized. Admin or manager, and never your own asset unless you
-    are an admin — an unreviewed capitalized cost enters the depreciation base."""
-    if current_user.role != UserRole.admin:
-        raise HTTPException(
-            status_code=403, detail="Only an admin can approve an asset"
-        )
+    """ready -> capitalized. Admin only — an unreviewed capitalized cost enters the depreciation base."""
     anchor = await _load_asset(asset_id, current_user.company_id, db)
     units = await _units_for_transition(anchor, body.apply_to_siblings, db)
 
@@ -762,11 +776,6 @@ async def approve_asset(
                     ),
                 )
             continue
-        if current_user.role != UserRole.admin and unit.created_by == current_user.id:
-            raise HTTPException(
-                status_code=403,
-                detail="You cannot approve an asset you created. Ask an admin to approve it.",
-            )
         category = await _category_of(db, unit)
         roles = await _present_doc_roles(db, unit)
         issues = validate_transition(
@@ -812,14 +821,10 @@ async def approve_asset(
 async def reject_asset(
     asset_id: uuid.UUID,
     body: TransitionRequest,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Admin,
     db: Db,
 ):
     """ready -> draft, so the submitter can fix it."""
-    if current_user.role != UserRole.admin:
-        raise HTTPException(
-            status_code=403, detail="Only an admin can reject an asset"
-        )
     anchor = await _load_asset(asset_id, current_user.company_id, db)
     units = await _units_for_transition(anchor, body.apply_to_siblings, db)
 
@@ -850,15 +855,26 @@ async def reject_asset(
 async def dispose_asset(
     asset_id: uuid.UUID,
     body: AssetDisposalRequest,
-    current_user: Annotated[CompanyUser, Depends(get_current_company_user)],
+    current_user: Admin,
     db: Db,
 ):
-    """Dispose of a capitalized asset (sale, scrap, write-off, etc.)."""
-    asset = await _load_asset(asset_id, current_user.company_id, db)
-    if asset.lifecycle_status != AssetLifecycleStatus.capitalized:
+    """Dispose of a capitalized asset (sale, scrap, write-off, etc.). Admin only.
+
+    Authorization runs entirely in dependencies (`require_assets_module` on the
+    router, `require_admin` here) so nothing is read from the database until the
+    caller is known to be a company admin with the module — an unauthorized
+    caller gets an identical 403 whether or not `asset_id` exists, so the
+    endpoint is not an asset-existence oracle.
+    """
+    asset = await _load_asset(asset_id, current_user.company_id, db, for_update=True)
+    allowed, reason = can_dispose_asset(current_user, asset)
+    if not allowed:
+        # Role is already enforced by `require_admin`, so in practice only the
+        # lifecycle precondition can fail here; the role branch is kept mapped
+        # to 403 so the codes stay right if that dependency is ever dropped.
         raise HTTPException(
-            status_code=409,
-            detail=f"Only a capitalized asset can be disposed of (this asset is {asset.lifecycle_status.value})",
+            status_code=409 if current_user.role == UserRole.admin else 403,
+            detail=reason,
         )
 
     fys_stmt = select(FinancialYear).where(FinancialYear.company_id == current_user.company_id)

@@ -335,14 +335,18 @@ class AssetResponse(BaseModel):
     parent_asset_id: Optional[uuid.UUID]
     custom_fields: Dict[str, Any] = Field(default_factory=dict)
 
-    # Disposals
+    # Disposals. Readable by anyone with the `assets` module: the register is a
+    # finance artifact and gross block/NBV have to tie, so a preparer needs the
+    # proceeds. Only *performing* a disposal is admin-gated (KUB-020).
+    # `disposal_gain_loss` is deliberately not exposed — see the model, it is
+    # never written. Gain or loss is proceeds minus NBV *at the disposal date*,
+    # which only the depreciation run knows; read it from the run line instead.
     disposal_date: Optional[date] = None
     disposal_type: Optional[str] = None
     sale_proceeds: Optional[Decimal] = None
     buyer_name: Optional[str] = None
     disposal_invoice_no: Optional[str] = None
     disposal_remarks: Optional[str] = None
-    disposal_gain_loss: Optional[Decimal] = None
     disposal_it_proceeds: Optional[Decimal] = None
 
     created_by: Optional[uuid.UUID]
@@ -350,6 +354,10 @@ class AssetResponse(BaseModel):
     submitted_at: Optional[datetime]
     approved_by: Optional[uuid.UUID]
     approved_at: Optional[datetime]
+    # Who pulled this asset off the books. Non-repudiation is the control that
+    # stands in for a segregation-of-duties rule here (a single-admin tenant
+    # could not satisfy one), so it has to be visible, not just logged.
+    disposed_by: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
 

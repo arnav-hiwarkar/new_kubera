@@ -16,6 +16,18 @@ GATED_ROUTES = {
     "/api/v1/activity-log": "activity",
     "/api/v1/depreciation": "assets",
     "/api/v1/financial-years": "assets",
+    "/api/v1/assets": "assets",
+}
+
+ALLOWED_BARE_ROUTES = {
+    "/api/v1/auth/company/me",
+    "/api/v1/company/profile",
+    "/api/v1/company/profile/logo",
+    "/api/v1/users/me",
+    "/api/v1/users/me/change-password",
+    "/api/v1/users/me/avatar",
+    "/api/v1/users/{user_id}/avatar",
+    "/api/v1/custom-fields/{module}",  # Known deferred gap from KUB-001
 }
 
 def test_every_module_router_has_a_server_side_gate():
@@ -45,6 +57,109 @@ def test_every_module_router_has_a_server_side_gate():
             if path.startswith(prefix) and module not in guards(route):
                 missing.append((path, module))
     assert not missing, f"endpoints missing their module gate: {missing}"
+
+
+def test_no_route_has_bare_company_user_without_gate():
+    """No route in the app should depend on get_current_company_user without
+    either a module gate or a role gate (unless explicitly allowlisted)."""
+    from app.auth import get_current_company_user
+    from app.main import app
+
+    def inspect_dependencies(route):
+        calls = []
+        def walk(dep, depth=0):
+            if depth > 5:
+                return
+            for sub in dep.dependencies:
+                calls.append(sub.call)
+                walk(sub, depth + 1)
+        if getattr(route, "dependant", None):
+            walk(route.dependant)
+        return calls
+
+    unprotected = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        calls = inspect_dependencies(route)
+        has_user = any(c == get_current_company_user for c in calls)
+        has_checker = any(getattr(c, "__name__", "") == "checker" for c in calls)
+
+        if has_user and not has_checker and path not in ALLOWED_BARE_ROUTES:
+            unprotected.append((path, getattr(route, "methods", None)))
+
+    assert not unprotected, f"Found routes using bare get_current_company_user without role/module gate: {unprotected}"
+
+
+def test_allowlisted_bare_routes_all_still_exist():
+    """Keep ALLOWED_BARE_ROUTES honest: a renamed or deleted path would otherwise
+    leave a stale entry that silently blesses some future ungated route."""
+    from app.main import app
+
+    live = {getattr(r, "path", "") for r in app.routes}
+    stale = sorted(ALLOWED_BARE_ROUTES - live)
+    assert not stale, f"ALLOWED_BARE_ROUTES entries no longer match any route: {stale}"
+
+
+# (method, path) -> the role gate that endpoint must carry. A module gate is NOT
+# enough for these: the whole point of KUB-020 was that `dispose_asset` sat behind
+# nothing, and now that the assets router carries a router-level module gate, the
+# generic bare-user test above can no longer tell "admin only" apart from "any
+# module holder". This is the check that fails if someone drops `Admin` from one
+# of these handlers.
+ROLE_GATED_ROUTES = {
+    ("POST", "/api/v1/assets/{asset_id}/dispose"): "admin",
+    ("POST", "/api/v1/assets/{asset_id}/approve"): "admin",
+    ("POST", "/api/v1/assets/{asset_id}/reject"): "admin",
+    ("DELETE", "/api/v1/assets/{asset_id}"): "admin",
+}
+
+
+def test_privileged_asset_routes_carry_a_role_gate():
+    """See KUB-020. Disposal is an irreversible accounting event; it must be
+    gated on role, not merely on holding the `assets` module."""
+    from app.models.company import UserRole
+    from app.main import app
+
+    def roles(route):
+        """Roles named in any `require_role` closure in this route's dependency tree."""
+        found = set()
+
+        def walk(dep, depth=0):
+            if depth > 5:
+                return
+            for sub in dep.dependencies:
+                if getattr(sub.call, "__name__", "") == "checker":
+                    for cell in (sub.call.__closure__ or ()):
+                        contents = cell.cell_contents
+                        # require_role closes over `allowed_roles`, a tuple of
+                        # UserRole; require_module closes over a str instead.
+                        if isinstance(contents, tuple):
+                            found.update(
+                                c.value for c in contents if isinstance(c, UserRole)
+                            )
+                walk(sub, depth + 1)
+
+        if getattr(route, "dependant", None):
+            walk(route.dependant)
+        return found
+
+    seen = set()
+    missing = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        for method in getattr(route, "methods", None) or ():
+            key = (method, path)
+            if key not in ROLE_GATED_ROUTES:
+                continue
+            seen.add(key)
+            required = ROLE_GATED_ROUTES[key]
+            if roles(route) != {required}:
+                missing.append((key, required, sorted(roles(route))))
+
+    assert not missing, f"privileged routes missing their role gate: {missing}"
+    unmatched = sorted(set(ROLE_GATED_ROUTES) - seen)
+    assert not unmatched, f"ROLE_GATED_ROUTES references routes that do not exist: {unmatched}"
+
 
 @pytest.mark.asyncio
 async def test_module_gate_behavior(client: AsyncClient):

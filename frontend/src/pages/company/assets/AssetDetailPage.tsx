@@ -93,7 +93,8 @@ export function AssetDetailPage() {
   const asset = detail.asset
   const acq = detail.acquisition
   const isAdmin = profile?.role === 'admin'
-  const canApprove = isAdmin || profile?.role === 'manager'
+  const canApprove = isAdmin
+  const canDispose = isAdmin
   const isDraft = asset.lifecycle_status === 'draft'
   const isReady = asset.lifecycle_status === 'ready'
   const locked = asset.lifecycle_status === 'capitalized' || asset.lifecycle_status === 'disposed'
@@ -247,7 +248,7 @@ export function AssetDetailPage() {
                   <CheckCircle2 className="h-4 w-4" />
                   On the books
                 </span>
-                {canApprove && (
+                {canDispose && (
                   <Button variant="secondary" size="sm" onClick={() => setDisposalOpen(true)}>
                     Dispose Asset
                   </Button>

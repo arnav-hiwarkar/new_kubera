@@ -42,8 +42,8 @@ finished.
 | High | 6 | 4 | 1 | 1 |
 | Medium | 11 | 1 | 1 | 9 |
 | Low | 21 | 0 | 2 | 19 |
-| **New findings (this session)** | 3 | 0 | 0 | 3 |
-| **Total** | **43** | **5** | **5** | **33** |
+| **New findings (this session)** | 3 | 1 | 0 | 2 |
+| **Total** | **43** | **6** | **5** | **32** |
 
 Read that as: the team correctly triaged and closed the findings that were
 easiest to fix and/or most visible in code review (rate limiting, password
@@ -176,18 +176,72 @@ short of deleting the auditor row (which the current admin UI/API may not
 even expose) — changing nothing about their session, because nothing checks
 it.
 
-### KUB-020 — `dispose_asset` has no authorization check at all — **OPEN — High (new finding)**
+### KUB-020 — `dispose_asset` has no authorization check at all — **FIXED — was High (new finding)**
 
 Found during this session's review of module-gating coverage, not in the
-original audit. `POST /api/v1/assets/{asset_id}/dispose`
-(`app/routers/assets.py:849-928`) depends only on
-`get_current_company_user` — no module check, no role check, nothing. Its
-siblings `approve_asset` and `reject_asset` at least manually verify
-`current_user.role != UserRole.admin`-adjacent logic; `dispose_asset` has
-none of that. Any authenticated company user — including one with zero
-`accessible_modules` — can dispose a capitalized asset. This is a strict
-regression relative to every other module-gated write path in the app and
-should be treated with the same urgency as the original KUB-001.
+original audit. `POST /api/v1/assets/{asset_id}/dispose` depended only on
+`get_current_company_user` — no module check, no role check, nothing — so any
+authenticated company user, including one with zero `accessible_modules`, could
+dispose a capitalized asset. Fixed on `fix/kub-020-asset-disposal-auth`; design
+in `docs/superpowers/specs/2026-09-04-KUB-020-asset-disposal-authorization-design.md`.
+
+What landed, re-verified against the current file rather than the commit
+messages:
+
+- `app/routers/assets.py` declares `dependencies=[Depends(require_assets_module)]`
+  at the router level, so the module gate is a prefix boundary rather than a
+  per-handler habit — this is what let `dispose_asset` slip in the first place.
+- `dispose_asset` takes `current_user: Admin` (`Depends(require_admin)`).
+  `approve_asset`/`reject_asset` were normalised onto the same dependency and
+  their hand-rolled checks removed, along with the genuinely dead
+  segregation-of-duties branch in `approve_asset` that the router docstring used
+  to promise. The docstring now describes what the code does, disposal included.
+- Both gates are dependencies, so no row is read before the caller is known to
+  be a company admin with the module: an unauthorized caller gets the same 403
+  whether or not the asset exists, and the endpoint is not an existence oracle.
+  Cross-tenant lookups by a legitimate admin still 404 via `_load_asset`.
+- No segregation-of-duties rule was added (creator/approver may still dispose).
+  That is deliberate: `UserRole` has only `admin` and `employee`, and a
+  single-admin tenant would be permanently unable to dispose anything. The
+  control is non-repudiation instead — `disposed_by` on the row plus an
+  `asset.disposed` activity-log entry.
+- Disposal now takes a `FOR UPDATE` row lock. Without it two concurrent calls
+  both read `capitalized` and both committed, so the later one overwrote the
+  first's proceeds/buyer/`disposed_by` and wrote a second activity-log row — on
+  an event with no reversal path. The loser now 409s.
+- The authorization rule lives in one pure predicate, `can_dispose_asset`
+  (`app/services/asset_validation.py`), which the handler calls, so the
+  table-driven unit tests constrain the endpoint rather than a copy of it.
+- Frontend (`AssetDetailPage.tsx`) drops the dead `role === 'manager'`
+  reference and gates the button on `canDispose = isAdmin`; the disposal modal
+  closes and refreshes on 403/409 instead of leaving a form that can only keep
+  failing. The browser is not the boundary here — the server is — but a button
+  that only 403s is still a bug.
+
+Regression-proofing: `/api/v1/assets` is now in `GATED_ROUTES`,
+`test_no_route_has_bare_company_user_without_gate` asserts no route anywhere
+depends on bare `get_current_company_user` without a role or module gate
+(allowlist for `/me`-style self-service and the deferred KUB-001 custom-fields
+gap), and `test_privileged_asset_routes_carry_a_role_gate` asserts the *role*
+gate specifically — necessary because once the router carries a module gate, the
+generic test can no longer tell "admin only" apart from "any module holder".
+Both new static tests were confirmed to fail when the fix is reverted.
+
+**Read policy, decided and pinned:** *performing* a disposal is admin-only, but
+*reading* the disposal record — including `sale_proceeds`, `buyer_name`,
+`disposal_invoice_no` and `disposed_by` — stays available to every holder of the
+`assets` module. The register is a finance artifact and gross block/NBV have to
+tie, so a non-admin preparer needs the proceeds; the read side is also the
+fraud-*detection* surface for the understated-proceeds shape, which argues for
+visibility rather than against it. `test_disposal_record_readable_by_assets_module_holder`
+pins this so narrowing it later is a deliberate decision rather than drift. The
+alternate write path was checked too: `AssetUpdate` accepts no disposal or
+lifecycle field, so the admin gate cannot be walked around via the `PATCH` that
+any module holder may call (`test_employee_cannot_reach_disposal_fields_through_patch`).
+
+**Explicitly still deferred, not fixed by this change:** `POST
+/api/v1/depreciation/runs` role gating (KUB-008) and
+`GET /api/v1/custom-fields/{module}` (KUB-001 remainder). Both remain open below.
 
 ---
 
@@ -195,7 +249,7 @@ should be treated with the same urgency as the original KUB-001.
 
 | ID | Title | Status | What's left |
 |---|---|---|---|
-| [KUB-001](#kub-001-detail) | Module access enforced only in the browser | **PARTIAL** | Broad rollout done (docvault/auditease/sales/kra/notifications/activity/assets/roc/secretarial all gated). Two gaps remain: `dispose_asset` (now tracked separately as [KUB-020](#kub-020), High) and `GET /api/v1/custom-fields/{module}` (`app/routers/custom_fields.py:16-21`), which still has no module/role dependency at all — any authenticated user can read any other module's custom-field schema. |
+| [KUB-001](#kub-001-detail) | Module access enforced only in the browser | **PARTIAL** | Broad rollout done (docvault/auditease/sales/kra/notifications/activity/assets/roc/secretarial all gated). `dispose_asset` is closed (see [KUB-020](#kub-020), fixed). One gap remains: `GET /api/v1/custom-fields/{module}` (`app/routers/custom_fields.py:16-21`), which still has no module/role dependency at all — any authenticated user can read any other module's custom-field schema. |
 | KUB-008 | Financial-year / depreciation controls inconsistently gated | **PARTIAL** | `close`/`reopen` (financial years) and `finalize`/`delete` (depreciation) are now `require_admin` + audit-logged, and depreciation execution now blocks against a closed financial year. But `POST /depreciation/runs` (create) is still open to any employee (`app/routers/depreciation.py:110-113`, plain `get_current_company_user`) — only creation, not the destructive transitions, remains ungated. |
 | KUB-009 | `inline` disposition with client-supplied Content-Type (latent stored XSS) | **OPEN** | No CSP, no shared safe-response helper, no magic-byte validation on upload anywhere. `asset_documents.py` still serves photo-role documents `inline` with the raw client-supplied MIME type. |
 | KUB-010 | `Content-Disposition` filename injection | **OPEN** | No sanitization at upload (`docvault.py:332` stores `file.filename` raw) and no RFC 6266 encoding on output. CRLF is still rejected by the framework (500, not header injection) but bare-quote filename spoofing is unchanged. |
@@ -299,9 +353,10 @@ label alone:
    engagement, and it locks out the legitimate auditor as a side effect. Fix
    scoped and ready in the original audit; a dead `token` column already
    exists waiting to be wired up.
-2. **KUB-020** — `dispose_asset` with zero auth check. Trivial to exploit
-   (any authenticated user, any company), directly destructive
-   (asset disposal is not casually reversible).
+2. ~~**KUB-020** — `dispose_asset` with zero auth check.~~ **FIXED** (§3) —
+   the endpoint now requires the `assets` module and the admin role, and the
+   fix is covered by unit, functional, edge-case, anti-exploit and static
+   regression tests.
 3. **KUB-005** — session revocation. Makes every other credential-compromise
    scenario in this list (including #1) unrecoverable for up to 7 days even
    after you notice and react.
