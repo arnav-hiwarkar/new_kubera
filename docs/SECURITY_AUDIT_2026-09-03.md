@@ -227,6 +227,18 @@ gate specifically — necessary because once the router carries a module gate, t
 generic test can no longer tell "admin only" apart from "any module holder".
 Both new static tests were confirmed to fail when the fix is reverted.
 
+**Read policy, decided and pinned:** *performing* a disposal is admin-only, but
+*reading* the disposal record — including `sale_proceeds`, `buyer_name`,
+`disposal_invoice_no` and `disposed_by` — stays available to every holder of the
+`assets` module. The register is a finance artifact and gross block/NBV have to
+tie, so a non-admin preparer needs the proceeds; the read side is also the
+fraud-*detection* surface for the understated-proceeds shape, which argues for
+visibility rather than against it. `test_disposal_record_readable_by_assets_module_holder`
+pins this so narrowing it later is a deliberate decision rather than drift. The
+alternate write path was checked too: `AssetUpdate` accepts no disposal or
+lifecycle field, so the admin gate cannot be walked around via the `PATCH` that
+any module holder may call (`test_employee_cannot_reach_disposal_fields_through_patch`).
+
 **Explicitly still deferred, not fixed by this change:** `POST
 /api/v1/depreciation/runs` role gating (KUB-008) and
 `GET /api/v1/custom-fields/{module}` (KUB-001 remainder). Both remain open below.
