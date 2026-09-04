@@ -78,12 +78,13 @@ async def test_duplicate_live_and_pending_invites_rejected(client: AsyncClient):
     r2 = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "dupaud@a.com"}, headers=co)
     assert r2.status_code == 400
 
-    # Unregistered email: second invite while pending is 409
+    # Unregistered email: second invite refreshes token and returns 200
     p1 = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "ghost@firm.com"}, headers=co)
     assert p1.status_code == 200
     assert p1.json()["auditors"][-1]["status"] == "pending"
     p2 = await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite", json={"email": "ghost@firm.com"}, headers=co)
-    assert p2.status_code == 409
+    assert p2.status_code == 200
+    assert p2.json()["auditors"][-1]["status"] == "pending"
 
 
 @pytest.mark.asyncio

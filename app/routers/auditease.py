@@ -1,8 +1,9 @@
 import json
 import logging
+import secrets
 import uuid
 from typing import Annotated, List, Optional
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Response, status, UploadFile, File, Form
 from pydantic import BaseModel, ValidationError, model_validator
 from sqlalchemy import select, and_, or_, update, delete, func
@@ -18,7 +19,7 @@ from app.encryption import decrypt_dek, decrypt_file_data
 logger = logging.getLogger(__name__)
 
 from app.database import get_db
-from app.auth import get_current_company_user, require_admin, require_manager_or_admin, require_module
+from app.auth import get_current_company_user, require_admin, require_manager_or_admin, require_module, hash_password
 from app.models.company import CompanyUser
 from app.models.auditor import Auditor
 from app.models.activity_log import ActorType, ActivityLog
@@ -1078,6 +1079,10 @@ async def invite_auditor(
                 status=GrantStatus.invited, area_permissions=perms,
             ))
     else:
+        token = secrets.token_urlsafe(32)
+        token_hash = hash_password(token)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+
         pend_res = await db.execute(
             select(PendingAuditorInvite).where(
                 and_(
@@ -1086,9 +1091,19 @@ async def invite_auditor(
                 )
             )
         )
-        if pend_res.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="An invite for this email is already pending")
-        db.add(PendingAuditorInvite(engagement_id=engagement_id, email=email))
+        existing_pend = pend_res.scalar_one_or_none()
+        if existing_pend:
+            existing_pend.token_hash = token_hash
+            existing_pend.expires_at = expires_at
+            existing_pend.area_permissions = perms
+        else:
+            db.add(PendingAuditorInvite(
+                engagement_id=engagement_id,
+                email=email,
+                token_hash=token_hash,
+                expires_at=expires_at,
+                area_permissions=perms,
+            ))
 
     await log_activity(
         db, current_user.company_id, current_user.id,
@@ -1125,7 +1140,7 @@ async def invite_auditor(
             action_url = f"{base_url}/auditor/login"
             action_label = "Log In to Audit Portal"
         else:
-            action_url = f"{base_url}/auditor/register?email={encoded_email}"
+            action_url = f"{base_url}/auditor/register?email={encoded_email}&token={urllib.parse.quote(token)}"
             action_label = "Set Up Auditor Account"
 
         company_config = await get_email_config_for_company(db, current_user.company_id)

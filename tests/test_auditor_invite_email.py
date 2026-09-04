@@ -37,11 +37,26 @@ async def test_invite_unregistered_auditor_dispatches_register_email(
     kwargs = mock_send_task.call_args.kwargs
     assert "new_auditor@test.com" in message_dict["to"]
     assert message_dict["template_name"] == "auditor_invite.html"
-    assert "auditor/register?email=new_auditor%40test.com" in message_dict["template_context"]["action_button"]["url"]
+    url1 = message_dict["template_context"]["action_button"]["url"]
+    assert "auditor/register?email=new_auditor%40test.com" in url1
+    assert "&token=" in url1
     assert "AuditCo" in message_dict["template_context"]["company_name"]
     assert "AuditCo" == message_dict["template_context"]["header_title"]
     assert kwargs.get("company_id") is not None
     assert kwargs.get("log_id") is not None
+
+    # Re-invite to the same email succeeds (refreshing the token rather than 409)
+    res2 = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res2.status_code == 200
+    assert mock_send_task.call_count == 2
+    message_dict2 = mock_send_task.call_args[0][0]
+    url2 = message_dict2["template_context"]["action_button"]["url"]
+    assert "&token=" in url2
+    assert url1 != url2  # Fresh token minted
 
 
 @pytest.mark.asyncio
