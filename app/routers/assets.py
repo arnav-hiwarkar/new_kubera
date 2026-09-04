@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth import get_current_company_user, require_admin, require_assets_module
+from app.auth import require_admin, require_assets_module
 from app.database import get_db
 from app.models.asset_masters import AssetCategory
 from app.models.assets import (
@@ -39,7 +39,7 @@ from app.models.custom_fields import CustomFieldModule
 from app.models.depreciation import DepreciationRun, DepreciationRunStatus
 from app.models.docvault import Document, DocumentVersion
 from app.models.financial_year import FinancialYear, FinancialYearStatus
-from app.services.asset_validation import validate_disposal
+from app.services.asset_validation import can_dispose_asset, validate_disposal
 from app.schemas.assets import (
     AssetDetailResponse,
     AssetDisposalRequest,
@@ -138,10 +138,24 @@ def _asset_query() -> Select:
     )
 
 
-async def _load_asset(asset_id: uuid.UUID, company_id: uuid.UUID, db: AsyncSession) -> Asset:
-    result = await db.execute(
-        _asset_query().where(Asset.id == asset_id, Asset.company_id == company_id)
-    )
+async def _load_asset(
+    asset_id: uuid.UUID,
+    company_id: uuid.UUID,
+    db: AsyncSession,
+    *,
+    for_update: bool = False,
+) -> Asset:
+    stmt = _asset_query().where(Asset.id == asset_id, Asset.company_id == company_id)
+    if for_update:
+        # Disposal is irreversible and has a P&L consequence, so it cannot be
+        # allowed to interleave with a concurrent disposal of the same unit:
+        # two callers would both read `capitalized` and the later commit would
+        # silently overwrite the first one's proceeds/buyer/disposed_by. Taking
+        # a row lock makes the second transaction re-read the committed
+        # `disposed` state and 409 instead. `_asset_query` uses selectinload,
+        # not a join, so `FOR UPDATE OF assets` is valid here.
+        stmt = stmt.with_for_update(of=Asset)
+    result = await db.execute(stmt)
     asset = result.scalars().unique().one_or_none()
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -844,12 +858,23 @@ async def dispose_asset(
     current_user: Admin,
     db: Db,
 ):
-    """Dispose of a capitalized asset (sale, scrap, write-off, etc.). Admin only."""
-    asset = await _load_asset(asset_id, current_user.company_id, db)
-    if asset.lifecycle_status != AssetLifecycleStatus.capitalized:
+    """Dispose of a capitalized asset (sale, scrap, write-off, etc.). Admin only.
+
+    Authorization runs entirely in dependencies (`require_assets_module` on the
+    router, `require_admin` here) so nothing is read from the database until the
+    caller is known to be a company admin with the module — an unauthorized
+    caller gets an identical 403 whether or not `asset_id` exists, so the
+    endpoint is not an asset-existence oracle.
+    """
+    asset = await _load_asset(asset_id, current_user.company_id, db, for_update=True)
+    allowed, reason = can_dispose_asset(current_user, asset)
+    if not allowed:
+        # Role is already enforced by `require_admin`, so in practice only the
+        # lifecycle precondition can fail here; the role branch is kept mapped
+        # to 403 so the codes stay right if that dependency is ever dropped.
         raise HTTPException(
-            status_code=409,
-            detail=f"Only a capitalized asset can be disposed of (this asset is {asset.lifecycle_status.value})",
+            status_code=409 if current_user.role == UserRole.admin else 403,
+            detail=reason,
         )
 
     fys_stmt = select(FinancialYear).where(FinancialYear.company_id == current_user.company_id)

@@ -377,12 +377,16 @@ def validate_disposal(
     return issues
 
 
-def can_dispose_asset(user: "CompanyUser", asset: Asset) -> tuple[bool, Optional[str]]:
-    """Pure authorization and lifecycle predicate for asset disposal.
+def can_dispose_asset(user, asset: Asset) -> tuple[bool, Optional[str]]:
+    """Pure authorization + lifecycle predicate for asset disposal.
 
-    Returns (allowed, reason_if_denied).
+    Returns (allowed, reason_if_denied). This is the single source of truth for
+    "may this user dispose of this asset" — `dispose_asset` calls it, so the unit
+    tests over this function constrain the real endpoint rather than a copy of it.
+    The role branch is also enforced declaratively by `require_admin` on the route;
+    keeping it here means the rule survives someone dropping the dependency.
     """
-    from app.models.company import CompanyUser, UserRole
+    from app.models.company import UserRole
 
     if user.role != UserRole.admin:
         return False, "Insufficient permissions"
@@ -392,6 +396,3 @@ def can_dispose_asset(user: "CompanyUser", asset: Asset) -> tuple[bool, Optional
             f"Only a capitalized asset can be disposed of (this asset is {asset.lifecycle_status.value})",
         )
     return True, None
-
-
-

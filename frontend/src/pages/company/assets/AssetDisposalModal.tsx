@@ -57,8 +57,20 @@ export function AssetDisposalModal({
       qc.invalidateQueries({ queryKey: ['asset', assetId] })
       onClose()
     } catch (err) {
-      if (err instanceof ApiError && err.status === 403) {
-        toast.error(err.message || 'You do not have permission to dispose of assets.')
+      // The server is the authority on who may dispose (KUB-020): only an admin.
+      // Reaching a 403 here means the button was rendered from a stale profile —
+      // a role changed mid-session, or a hand-crafted request. A 409 means the
+      // asset is no longer capitalized, usually because someone else disposed
+      // of it first. Neither can be fixed by resubmitting this form, so close it
+      // and refresh instead of leaving a dead-end dialog open.
+      if (err instanceof ApiError && (err.status === 403 || err.status === 409)) {
+        toast.error(
+          err.status === 403
+            ? 'You do not have permission to dispose of assets. Ask a company admin.'
+            : err.message || 'This asset is no longer on the books.',
+        )
+        qc.invalidateQueries({ queryKey: ['assets'] })
+        qc.invalidateQueries({ queryKey: ['asset', assetId] })
         onClose()
       } else {
         toast.error(err instanceof Error ? err.message : 'Failed to dispose asset')
