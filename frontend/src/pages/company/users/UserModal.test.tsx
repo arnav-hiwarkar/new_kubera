@@ -54,6 +54,8 @@ describe('UserModal module access', () => {
       accessible_modules: ['roc'],
       company_id: 'company-1',
       created_at: '2026-08-03T00:00:00Z',
+      can_change_password: true,
+      has_avatar: false,
     }
     render(
       <UserModal
@@ -82,6 +84,8 @@ describe('UserModal module access', () => {
       accessible_modules: [],
       company_id: 'company-1',
       created_at: '2026-08-03T00:00:00Z',
+      can_change_password: true,
+      has_avatar: false,
     }
     render(
       <UserModal

@@ -12,6 +12,17 @@ vi.mock('@/lib/download', () => ({
   saveBlob: vi.fn(),
 }))
 
+// The inspector now reads the profile to decide which controls to render.
+// mockDoc.created_by is 'u-1', so an admin with that id is creator + admin and
+// therefore sees every control — which keeps the pre-existing cases valid.
+const authState = vi.hoisted(() => ({
+  profile: { id: 'u-1', role: 'admin' } as { id: string; role: string } | null,
+}))
+
+vi.mock('@/auth/company', () => ({
+  useCompanyAuth: () => ({ profile: authState.profile, status: 'authenticated' }),
+}))
+
 // Render tabs instantly — skip enter/exit animations in jsdom
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
@@ -39,6 +50,10 @@ vi.mock('@/api/endpoints/docvault', () => ({
     downloadDocument: vi.fn().mockResolvedValue(new Blob()),
     listDocuments: vi.fn().mockResolvedValue([]),
     listBuckets: vi.fn().mockResolvedValue([]),
+    reviewDocument: vi.fn().mockResolvedValue({}),
+    requestApproval: vi.fn().mockResolvedValue({}),
+    restoreDocument: vi.fn().mockResolvedValue({}),
+    listApprovers: vi.fn().mockResolvedValue([]),
   },
 }))
 
@@ -130,6 +145,7 @@ const mockDoc: DocumentResponse = {
 describe('GraphDocumentInspector', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authState.profile = { id: 'u-1', role: 'admin' }
   })
 
   it('renders nothing when open is false or document is null', () => {
@@ -253,7 +269,7 @@ describe('GraphDocumentInspector', () => {
     )
   })
 
-  it('handles changing status from select dropdown', async () => {
+  it('offers no free-form status control — status moves only through the workflow', async () => {
     const user = userEvent.setup()
     renderComponent(
       <GraphDocumentInspector
@@ -266,15 +282,118 @@ describe('GraphDocumentInspector', () => {
 
     await goToTab(user, 'edit')
 
-    // Find the status select
-    const statusSelect = screen.getByDisplayValue('Uploaded')
-    await user.selectOptions(statusSelect, 'pending_approval')
+    // Bug A: this dropdown PATCHed a `status` field DocumentUpdate forbids, so
+    // every pick 422'd. DocVault status transitions are request-approval,
+    // review, archive and restore — there is no "set status" endpoint.
+    expect(screen.queryByDisplayValue('Uploaded')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Pending Approval')).not.toBeInTheDocument()
+  })
+
+  it('submits for approval through the request-approval endpoint', async () => {
+    const user = userEvent.setup()
+    renderComponent(
+      <GraphDocumentInspector
+        open={true}
+        document={{ ...mockDoc, approver_id: 'u-approver' } as DocumentResponse}
+        buckets={mockBuckets}
+        onClose={vi.fn()}
+      />,
+    )
+
+    await goToTab(user, 'edit')
+    await user.click(screen.getByRole('button', { name: 'Submit for Approval' }))
 
     await waitFor(() =>
-      expect(docvaultApi.updateDocument).toHaveBeenCalledWith('doc-1', {
-        status: 'pending_approval',
+      expect(docvaultApi.requestApproval).toHaveBeenCalledWith('doc-1', {
+        approver_id: 'u-approver',
       }),
     )
+    expect(docvaultApi.updateDocument).not.toHaveBeenCalled()
+  })
+
+  it('reviews a pending document through the review endpoint', async () => {
+    const user = userEvent.setup()
+    authState.profile = { id: 'u-approver', role: 'employee' }
+    renderComponent(
+      <GraphDocumentInspector
+        open={true}
+        document={
+          { ...mockDoc, status: 'pending_approval', approver_id: 'u-approver' } as DocumentResponse
+        }
+        buckets={mockBuckets}
+        onClose={vi.fn()}
+      />,
+    )
+
+    await goToTab(user, 'edit')
+    await user.click(screen.getByRole('button', { name: /Approve \(Verified\)/ }))
+
+    await waitFor(() =>
+      expect(docvaultApi.reviewDocument).toHaveBeenCalledWith('doc-1', {
+        decision: 'verified',
+        approval_notes: undefined,
+      }),
+    )
+  })
+
+  it('allows approval review directly from the default Overview tab', async () => {
+    const user = userEvent.setup()
+    authState.profile = { id: 'u-approver', role: 'employee' }
+    renderComponent(
+      <GraphDocumentInspector
+        open={true}
+        document={
+          { ...mockDoc, status: 'pending_approval', approver_id: 'u-approver' } as DocumentResponse
+        }
+        buckets={mockBuckets}
+        onClose={vi.fn()}
+      />,
+    )
+
+    // User is on the default 'overview' tab without switching
+    expect(screen.getByText('Review & Approval Required')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Approve \(Verified\)/ }))
+
+    await waitFor(() =>
+      expect(docvaultApi.reviewDocument).toHaveBeenCalledWith('doc-1', {
+        decision: 'verified',
+        approval_notes: undefined,
+      }),
+    )
+  })
+
+  it('hides review controls from someone who is neither approver nor admin', async () => {
+    const user = userEvent.setup()
+    authState.profile = { id: 'u-stranger', role: 'employee' }
+    renderComponent(
+      <GraphDocumentInspector
+        open={true}
+        document={
+          { ...mockDoc, status: 'pending_approval', approver_id: 'u-approver' } as DocumentResponse
+        }
+        buckets={mockBuckets}
+        onClose={vi.fn()}
+      />,
+    )
+
+    await goToTab(user, 'edit')
+    expect(screen.getByText('Awaiting Document Approval')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Approve \(Verified\)/ })).not.toBeInTheDocument()
+  })
+
+  it('withholds archive from a user who is neither creator nor admin', async () => {
+    authState.profile = { id: 'u-stranger', role: 'employee' }
+    renderComponent(
+      <GraphDocumentInspector
+        open={true}
+        document={mockDoc}
+        buckets={mockBuckets}
+        onClose={vi.fn()}
+      />,
+    )
+
+    // server: 403 "Only creator or admin can archive a document"
+    expect(screen.queryByRole('button', { name: 'Archive document' })).not.toBeInTheDocument()
   })
 
   it('handles changing bucket from select dropdown', async () => {
@@ -441,12 +560,10 @@ describe('GraphDocumentInspector', () => {
     const restoreBtn = screen.getByRole('button', { name: 'Restore document' })
     await user.click(restoreBtn)
 
-    await waitFor(() =>
-      expect(docvaultApi.updateDocument).toHaveBeenCalledWith('doc-1', {
-        status: 'uploaded',
-        is_editable: true,
-      }),
-    )
+    await waitFor(() => expect(docvaultApi.restoreDocument).toHaveBeenCalledWith('doc-1'))
+    // Bug A: restore used to PATCH {status:'uploaded', is_editable:true}, which
+    // DocumentUpdate forbids, so it 422'd.
+    expect(docvaultApi.updateDocument).not.toHaveBeenCalled()
   })
 
   it('disables editing inputs and new version dropzone when document is locked (not editable)', async () => {

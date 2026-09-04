@@ -1011,3 +1011,54 @@ async def test_restore_non_archived_document_returns_409(client: AsyncClient):
     restore_res = await client.post(f"/api/v1/docvault/documents/{doc_id}/restore", headers=admin_headers)
     assert restore_res.status_code == 409
 
+
+@pytest.mark.asyncio
+async def test_patch_document_rejects_a_status_field_even_for_an_admin(client: AsyncClient):
+    """The server half of the anti-test.
+
+    KUB-007 removed `status` from DocumentUpdate because setting it directly was
+    the self-approval bypass: an uploader could mark their own document verified
+    without review. `extra="forbid"` makes the attempt a 422 rather than a
+    silently-ignored field. Asserted for an admin too, so nobody "fixes" this by
+    re-adding the field behind a role check.
+    """
+    await create_test_company(
+        client, name="StatusCo", email="admin@statusco.com", password="Valid1!Pass"
+    )
+    token = await get_company_token(
+        client, email="admin@statusco.com", password="Valid1!Pass"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    files = {"file": ("policy.pdf", b"pdf content", "application/pdf")}
+    upload = await client.post(
+        "/api/v1/docvault/documents",
+        files=files,
+        data={"title": "Policy"},
+        headers=headers,
+    )
+    assert upload.status_code == 201, upload.text
+    doc_id = upload.json()["id"]
+    assert upload.json()["status"] == "uploaded"
+
+    for body in ({"status": "verified"}, {"status": "verified", "title": "Renamed"}):
+        res = await client.patch(
+            f"/api/v1/docvault/documents/{doc_id}", json=body, headers=headers
+        )
+        assert res.status_code == 422, f"{body} -> {res.status_code} {res.text}"
+
+    # Neither the status nor the co-submitted title may have been applied.
+    after = await client.get(f"/api/v1/docvault/documents/{doc_id}", headers=headers)
+    assert after.json()["status"] == "uploaded"
+    assert after.json()["title"] == "Policy"
+
+
+@pytest.mark.asyncio
+async def test_document_update_schema_has_no_status_field():
+    """Fails the moment someone re-adds the field, without needing a request."""
+    from app.schemas.docvault import DocumentUpdate
+
+    assert "status" not in DocumentUpdate.model_fields
+    assert DocumentUpdate.model_config.get("extra") == "forbid"
+
+

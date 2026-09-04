@@ -11,22 +11,11 @@ import {
   StatusBadge,
   FileUploadDropzone,
   ConfirmDialog,
-  useToast,
 } from '@/components/ui'
-import { DOCUMENT_STATUS, humanize } from '@/api/enums'
-import { ApiError } from '@/api/http'
 import type { BucketResponse, DocumentResponse } from '@/api/types'
 import { formatBytes, formatDate } from '@/lib/format'
-import {
-  useUpdateDocument,
-  useArchiveDocument,
-  useUploadVersion,
-  useDownloadDocument,
-} from '@/api/hooks/docvault'
-
-// The dropdown offers every live status; 'archived' is reached only via the
-// Archive action (which also locks the doc), never as a plain status pick.
-const LIVE_STATUSES = DOCUMENT_STATUS.filter((s) => s !== 'archived')
+import { useDocumentActions, type DocumentActions } from '../../useDocumentActions'
+import { DocumentApprovalPanel } from '../../DocumentApprovalPanel'
 
 type Tab = 'overview' | 'edit' | 'versions'
 const TABS: { key: Tab; label: string; icon: typeof FileText }[] = [
@@ -48,29 +37,16 @@ export function GraphDocumentInspector({
   open,
   onClose,
 }: GraphDocumentInspectorProps) {
-  const toast = useToast()
-  const update = useUpdateDocument()
-  const archive = useArchiveDocument()
-  const uploadVersion = useUploadVersion()
-  const download = useDownloadDocument()
-
-  const [tagsInput, setTagsInput] = useState('')
-  const [titleInput, setTitleInput] = useState('')
+  const actions = useDocumentActions(document)
   const [confirmArchive, setConfirmArchive] = useState(false)
   const [tab, setTab] = useState<Tab>('overview')
 
   useEffect(() => {
-    setTagsInput(document?.tags.join(', ') ?? '')
-    setTitleInput(document?.title ?? '')
     setTab('overview')
   }, [document])
 
   if (!open || !document) return null
 
-  const isArchived = document.status === 'archived'
-  // A locked (non-editable) document freezes its name, tags, bucket and new
-  // versions. Status changes (incl. archive) and the editable toggle stay open.
-  const locked = !document.is_editable
   const bucketName = buckets.find((b) => b.id === document.bucket_id)?.name ?? 'Uncategorized'
   const currentVersion = document.versions.find((v) => v.id === document.current_version_id)
   const currentVersionNo =
@@ -78,61 +54,10 @@ export function GraphDocumentInspector({
     Math.max(0, ...document.versions.map((v) => v.version_number))
   const sortedVersions = [...document.versions].sort((a, b) => b.version_number - a.version_number)
 
-  const wrap = async (p: Promise<unknown>, ok: string) => {
-    try {
-      await p
-      toast.success(ok)
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Action failed')
-    }
-  }
-
-  const changeStatus = (status: string) =>
-    wrap(update.mutateAsync({ id: document.id, body: { status: status as never } }), 'Status updated')
-
-  const changeBucket = (value: string) =>
-    wrap(
-      update.mutateAsync({ id: document.id, body: { bucket_id: (value || null) as never } }),
-      'Moved',
-    )
-
-  const saveTitle = () => {
-    const title = titleInput.trim()
-    if (!title || title === document.title) return
-    return wrap(update.mutateAsync({ id: document.id, body: { title } }), 'Name updated')
-  }
-
-  const changeEditable = (checked: boolean) =>
-    wrap(update.mutateAsync({ id: document.id, body: { is_editable: checked } }), 'Updated')
-
-  const saveTags = () => {
-    const tags = tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean)
-    return wrap(update.mutateAsync({ id: document.id, body: { tags } }), 'Tags saved')
-  }
-
-  const restore = () =>
-    wrap(
-      update.mutateAsync({ id: document.id, body: { status: 'uploaded' as never, is_editable: true } }),
-      'Document restored',
-    )
-
   const doArchive = async () => {
-    await wrap(archive.mutateAsync(document.id), 'Document archived')
+    await actions.doArchive()
     setConfirmArchive(false)
   }
-
-  const handleNewVersion = (files: File[]) => {
-    if (!files.length) return
-    const fd = new FormData()
-    fd.append('file', files[0])
-    void wrap(uploadVersion.mutateAsync({ id: document.id, formData: fd }), 'New version uploaded')
-  }
-
-  const downloadVersion = (versionId: string, filename: string) =>
-    void wrap(download.mutateAsync({ id: document.id, versionId, filename }), 'Download started')
 
   return (
     <>
@@ -228,32 +153,17 @@ export function GraphDocumentInspector({
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.15 }}
             >
-              {tab === 'overview' && <OverviewTab document={document} currentVersion={currentVersion} />}
+              {tab === 'overview' && (
+                <OverviewTab document={document} currentVersion={currentVersion} actions={actions} />
+              )}
               {tab === 'edit' && (
-                <EditTab
-                  document={document}
-                  buckets={buckets}
-                  locked={locked}
-                  isArchived={isArchived}
-                  titleInput={titleInput}
-                  setTitleInput={setTitleInput}
-                  tagsInput={tagsInput}
-                  setTagsInput={setTagsInput}
-                  saveTitle={saveTitle}
-                  saveTags={saveTags}
-                  changeEditable={changeEditable}
-                  changeStatus={changeStatus}
-                  changeBucket={changeBucket}
-                  update={update}
-                />
+                <EditTab document={document} buckets={buckets} actions={actions} />
               )}
               {tab === 'versions' && (
                 <VersionsTab
                   document={document}
                   sortedVersions={sortedVersions}
-                  downloadVersion={downloadVersion}
-                  handleNewVersion={handleNewVersion}
-                  uploadVersion={uploadVersion}
+                  actions={actions}
                 />
               )}
             </motion.div>
@@ -262,14 +172,31 @@ export function GraphDocumentInspector({
 
         {/* Danger zone footer */}
         <div className="border-t border-border p-3">
-          {isArchived ? (
-            <Button variant="secondary" onClick={restore} loading={update.isPending} className="w-full">
-              Restore document
-            </Button>
+          {actions.isArchived ? (
+            actions.canRestore ? (
+              <Button
+                variant="secondary"
+                onClick={actions.restore}
+                loading={actions.isRestoring}
+                className="w-full"
+              >
+                Restore document
+              </Button>
+            ) : (
+              <p className="text-center text-xs text-text-muted">
+                Only an administrator can restore an archived document.
+              </p>
+            )
           ) : (
-            <Button variant="danger" onClick={() => setConfirmArchive(true)} className="w-full">
-              Archive document
-            </Button>
+            actions.canArchive && (
+              <Button
+                variant="danger"
+                onClick={() => setConfirmArchive(true)}
+                className="w-full"
+              >
+                Archive document
+              </Button>
+            )
           )}
         </div>
       </div>
@@ -280,7 +207,6 @@ export function GraphDocumentInspector({
         message="Archiving locks the document and hides it from active lists. You can restore it later."
         confirmLabel="Archive"
         destructive
-        loading={archive.isPending}
         onConfirm={doArchive}
         onCancel={() => setConfirmArchive(false)}
       />
@@ -291,9 +217,11 @@ export function GraphDocumentInspector({
 function OverviewTab({
   document,
   currentVersion,
+  actions,
 }: {
   document: DocumentResponse
   currentVersion?: DocumentResponse['versions'][number]
+  actions: DocumentActions
 }) {
   const facts: [string, string][] = [
     ['Created by', document.created_by_name ?? 'Unknown'],
@@ -304,6 +232,7 @@ function OverviewTab({
   ]
   return (
     <div className="flex flex-col gap-4">
+      <DocumentApprovalPanel document={document} actions={actions} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         {facts.map(([k, v]) => (
           <div key={k} className="col-span-2 grid grid-cols-[130px_1fr] items-baseline gap-3">
@@ -340,99 +269,78 @@ function OverviewTab({
 function EditTab({
   document,
   buckets,
-  locked,
-  isArchived,
-  titleInput,
-  setTitleInput,
-  tagsInput,
-  setTagsInput,
-  saveTitle,
-  saveTags,
-  changeEditable,
-  changeStatus,
-  changeBucket,
-  update,
+  actions,
 }: {
   document: DocumentResponse
   buckets: BucketResponse[]
-  locked: boolean
-  isArchived: boolean
-  titleInput: string
-  setTitleInput: (v: string) => void
-  tagsInput: string
-  setTagsInput: (v: string) => void
-  saveTitle: () => Promise<void> | undefined
-  saveTags: () => Promise<void> | undefined
-  changeEditable: (checked: boolean) => Promise<void>
-  changeStatus: (status: string) => Promise<void>
-  changeBucket: (value: string) => Promise<void>
-  update: ReturnType<typeof useUpdateDocument>
+  actions: DocumentActions
 }) {
-  const isTitleUnchanged = !titleInput.trim() || titleInput.trim() === document.title
+  const isTitleUnchanged =
+    !actions.titleInput.trim() || actions.titleInput.trim() === document.title
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Inline Title edit */}
-      <Field label="Name" hint={locked ? 'Locked — enable editing to rename' : undefined}>
+      <DocumentApprovalPanel document={document} actions={actions} />
+
+      {/* Status is read-only here: it moves through the workflow above, never
+          by direct assignment. */}
+      <Field label="Status">
+        <div className="flex items-center gap-2">
+          <StatusBadge status={document.status} />
+          {actions.isArchived && (
+            <span className="text-sm text-text-muted">Archived documents are locked.</span>
+          )}
+        </div>
+      </Field>
+
+      <Field
+        label="Name"
+        htmlFor="doc-title"
+        hint={!actions.canEditMeta ? 'Locked — you cannot rename this document' : undefined}
+      >
         <div className="flex gap-2">
           <Input
-            value={titleInput}
-            onChange={(e) => setTitleInput(e.target.value)}
-            disabled={isArchived || locked}
+            id="doc-title"
+            value={actions.titleInput}
+            onChange={(e) => actions.setTitleInput(e.target.value)}
+            disabled={!actions.canEditMeta}
             placeholder="Document name"
           />
           <Button
             variant="secondary"
             size="sm"
-            onClick={saveTitle}
-            disabled={isArchived || locked || isTitleUnchanged || update.isPending}
+            onClick={actions.saveTitle}
+            disabled={!actions.canEditMeta || isTitleUnchanged || actions.isMutating}
           >
             Save
           </Button>
         </div>
       </Field>
 
-      {/* Editable toggle */}
       <Field
         label="Editable"
-        hint="When off, the file is locked: no new versions, renaming, tags or bucket changes."
+        hint={
+          actions.isPending && !actions.canReview
+            ? 'Locked while pending approval. Only the assigned approver or an admin can adjust.'
+            : !document.is_editable && !actions.isAdmin
+              ? 'Finalized (Locked). Only an administrator can unlock this document.'
+              : 'When off, the file is Final: no new versions, renaming, tags or bucket changes.'
+        }
       >
         <Switch
           checked={document.is_editable}
-          onChange={changeEditable}
-          disabled={isArchived || update.isPending}
+          onChange={actions.changeEditable}
+          disabled={!actions.canToggleEditable || actions.isMutating}
           label={document.is_editable ? 'Editable' : 'Locked'}
         />
       </Field>
 
-      {/* Status picker */}
-      <Field label="Status">
-        {isArchived ? (
-          <div className="flex items-center gap-2">
-            <StatusBadge status="archived" />
-            <span className="text-sm text-text-muted">Archived documents are locked.</span>
-          </div>
-        ) : (
-          <Select
-            value={document.status}
-            onChange={(e) => changeStatus(e.target.value)}
-            disabled={update.isPending}
-          >
-            {LIVE_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {humanize(s)}
-              </option>
-            ))}
-          </Select>
-        )}
-      </Field>
-
-      {/* Bucket selector */}
-      <Field label="Bucket">
+      <Field label="Bucket" htmlFor="doc-bucket">
         <Select
+          id="doc-bucket"
           value={document.bucket_id ?? ''}
-          onChange={(e) => changeBucket(e.target.value)}
-          disabled={update.isPending || isArchived || locked}
+          onChange={(e) => actions.changeBucket(e.target.value)}
+          disabled={!actions.canEditMeta || actions.isMutating}
         >
           <option value="">Uncategorized</option>
           {buckets.map((b) => (
@@ -443,20 +351,20 @@ function EditTab({
         </Select>
       </Field>
 
-      {/* Tags editor */}
-      <Field label="Tags" hint="Comma-separated">
+      <Field label="Tags" htmlFor="doc-tags" hint="Comma-separated">
         <div className="flex gap-2">
           <Input
-            value={tagsInput}
-            onChange={(e) => setTagsInput(e.target.value)}
+            id="doc-tags"
+            value={actions.tagsInput}
+            onChange={(e) => actions.setTagsInput(e.target.value)}
             placeholder="board, 2026"
-            disabled={isArchived || locked}
+            disabled={!actions.canEditMeta}
           />
           <Button
             variant="secondary"
             size="sm"
-            onClick={saveTags}
-            disabled={isArchived || locked || update.isPending}
+            onClick={actions.saveTags}
+            disabled={!actions.canEditMeta || actions.isMutating}
           >
             Save
           </Button>
@@ -469,15 +377,11 @@ function EditTab({
 function VersionsTab({
   document,
   sortedVersions,
-  downloadVersion,
-  handleNewVersion,
-  uploadVersion,
+  actions,
 }: {
   document: DocumentResponse
   sortedVersions: DocumentResponse['versions']
-  downloadVersion: (versionId: string, filename: string) => void
-  handleNewVersion: (files: File[]) => void
-  uploadVersion: ReturnType<typeof useUploadVersion>
+  actions: DocumentActions
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -507,7 +411,7 @@ function VersionsTab({
               </div>
               <button
                 type="button"
-                onClick={() => downloadVersion(v.id, v.original_filename)}
+                onClick={() => actions.downloadVersion(v.id, v.original_filename)}
                 className="shrink-0 text-accent hover:underline text-sm font-medium"
               >
                 Download
@@ -524,15 +428,15 @@ function VersionsTab({
         </h3>
         {document.status === 'archived' ? (
           <p className="text-sm text-text-muted">Archived — new versions are disabled.</p>
-        ) : !document.is_editable ? (
+        ) : !actions.canUploadVersion ? (
           <p className="text-sm text-text-muted">
             This document is locked (new versions not allowed).
           </p>
         ) : (
           <FileUploadDropzone
-            onFilesSelected={handleNewVersion}
-            disabled={uploadVersion.isPending}
-            hint={uploadVersion.isPending ? 'Uploading…' : 'Replaces the current version'}
+            onFilesSelected={actions.handleNewVersion}
+            disabled={actions.isUploadingVersion}
+            hint={actions.isUploadingVersion ? 'Uploading…' : 'Replaces the current version'}
           />
         )}
       </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Modal, Button, Field, Input, Select, useToast } from '@/components/ui'
 import { assetsApi } from '@/api/endpoints/assets'
+import type { AssetDisposalRequest } from '@/api/types'
 import { ApiError } from '@/api/http'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -30,7 +31,7 @@ export function AssetDisposalModal({
   const [disposalDate, setDisposalDate] = useState(
     new Date().toISOString().split('T')[0],
   )
-  const [disposalType, setDisposalType] = useState('sale')
+  const [disposalType, setDisposalType] = useState<AssetDisposalRequest['disposal_type']>('sale')
   const [saleProceeds, setSaleProceeds] = useState('0')
   // Sale consideration for Income Tax. Left blank the server defaults it to the
   // book proceeds, which is right whenever the two agree — but when they differ
@@ -111,7 +112,9 @@ export function AssetDisposalModal({
             <Select
               id="disposal-type"
               value={disposalType}
-              onChange={(e) => setDisposalType(e.target.value)}
+              onChange={(e) =>
+                setDisposalType(e.target.value as AssetDisposalRequest['disposal_type'])
+              }
             >
               {DISPOSAL_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
