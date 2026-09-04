@@ -101,11 +101,17 @@ async def _list_auditors(db: AsyncSession, engagement_id: uuid.UUID) -> list[dic
         .where(PendingAuditorInvite.engagement_id == engagement_id)
         .order_by(PendingAuditorInvite.created_at.desc())
     )
+    now = datetime.now(timezone.utc)
     for p in pend.scalars().all():
+        # A row past its TTL can never be redeemed (auditor_register filters on
+        # expires_at > now), so it must not keep reading as an actionable "pending"
+        # invite — the admin needs a distinct signal that tells them to re-invite.
         out.append({
             "auditor_id": None, "name": None, "email": p.email,
-            "status": "pending", "area_permissions": p.area_permissions or dict(FULL_AREA_PERMISSIONS),
+            "status": "expired" if p.expires_at <= now else "pending",
+            "area_permissions": p.area_permissions or dict(FULL_AREA_PERMISSIONS),
             "invited_at": p.created_at, "accepted_at": None,
+            "expires_at": p.expires_at,
         })
     return out
 

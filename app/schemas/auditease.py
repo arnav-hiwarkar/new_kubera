@@ -327,11 +327,13 @@ class EngagementAuditorResponse(BaseModel):
     auditor_id: Optional[uuid.UUID] = None  # None for pending unregistered invites
     name: Optional[str] = None
     email: str
-    # one of: invited | accepted | revoked | pending (not yet registered)
+    # one of: invited | accepted | revoked | pending (not yet registered) | expired (pending, TTL passed)
     status: str
     area_permissions: dict[str, bool]
     invited_at: Optional[datetime] = None
     accepted_at: Optional[datetime] = None
+    # Only set for pending/expired rows — when the invite token stops being redeemable.
+    expires_at: Optional[datetime] = None
 
 class AuditEngagementResponse(AuditEngagementBase):
     id: uuid.UUID

@@ -710,3 +710,45 @@ async def test_pending_invite_listing_reports_restricted_permissions(mock_email,
     row = next(r for r in listing.json() if r["email"] == target)
     assert row["status"] == "pending"
     assert row["area_permissions"] == restricted
+
+
+# --------------------------------------------------------------------------
+# 16. Expired pending invites must not read as actionable "pending" forever
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_expired_pending_invite_reports_as_expired_not_pending(mock_email, client: AsyncClient):
+    """An admin looking at the auditors list must be able to tell an invite has gone
+    stale (past its 7-day TTL) rather than seeing it sit as 'pending' forever with no
+    signal that the link the auditor has can no longer be redeemed."""
+    mock_email.return_value = MagicMock(id="task-expiry-list")
+    await create_test_company(client, email="expirylist_co@test.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='expirylist_co@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    target = "stale_invitee@firm.com"
+
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                      json={"email": target}, headers=co_headers)
+
+    listing = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co_headers)
+    row = next(r for r in listing.json() if r["email"] == target)
+    assert row["status"] == "pending"
+    assert row["expires_at"] is not None
+
+    async with TestSessionLocal() as db:
+        invite = (await db.execute(select(PendingAuditorInvite).where(
+            PendingAuditorInvite.engagement_id == eng_id, PendingAuditorInvite.email == target
+        ))).scalar_one()
+        invite.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        await db.commit()
+
+    listing2 = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co_headers)
+    row2 = next(r for r in listing2.json() if r["email"] == target)
+    assert row2["status"] == "expired"
+
+    # Re-inviting refreshes it back to a live, non-expired pending row.
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                      json={"email": target}, headers=co_headers)
+    listing3 = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co_headers)
+    row3 = next(r for r in listing3.json() if r["email"] == target)
+    assert row3["status"] == "pending"

@@ -27,10 +27,11 @@ const AREA_LABELS: Record<string, string> = {
   documents: 'Documents',
 }
 
-const STATUS_TONES: Record<string, 'success' | 'info' | 'warning' | 'neutral'> = {
+const STATUS_TONES: Record<string, 'success' | 'info' | 'warning' | 'neutral' | 'danger'> = {
   accepted: 'success',
   invited: 'info',
   pending: 'warning',
+  expired: 'danger',
   revoked: 'neutral',
 }
 
@@ -143,6 +144,7 @@ export function AuditorsTab({ engagementId, canManage }: { engagementId: string;
             <tbody className="divide-y divide-border">
               {auditors.map((a) => {
                 const isPending = !a.auditor_id
+                const isExpired = a.status === 'expired'
                 const isExpanded = a.auditor_id !== null && expandedId === a.auditor_id
                 return (
                   <Fragment key={a.email + (a.auditor_id ?? 'pending')}>
@@ -150,7 +152,11 @@ export function AuditorsTab({ engagementId, canManage }: { engagementId: string;
                       <td className="px-4 py-3">
                         <div className="font-medium text-text-primary">{a.name ?? a.email}</div>
                         {isPending && (
-                          <div className="text-xs text-status-pending">Invite pending registration</div>
+                          <div className={isExpired ? 'text-xs text-status-action' : 'text-xs text-status-pending'}>
+                            {isExpired
+                              ? 'Invitation expired — invite again to resend'
+                              : 'Invite pending registration'}
+                          </div>
                         )}
                         {a.name && <div className="text-xs text-text-muted">{a.email}</div>}
                       </td>
