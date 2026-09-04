@@ -108,3 +108,53 @@ def test_every_called_route_exists_in_the_contract():
             unmatched.append(f"{f.name}: {raw}")
     assert not unmatched, f"frontend calls routes absent from the API: {unmatched}"
 
+
+FRONTEND_SRC = REPO_ROOT / "frontend/src"
+DOCVAULT_SRC = FRONTEND_SRC / "pages/company/docvault"
+
+
+def test_no_frontend_call_site_sends_a_document_status():
+    """The KUB-020-shaped anti-test for this fix.
+
+    `DocumentUpdate` has `extra="forbid"` and no `status` field — KUB-007
+    removed it because free status-setting was the self-approval bypass. Two
+    call sites in the graph inspector sent one anyway and 422'd in production.
+    Status moves only through request-approval, review, archive and restore.
+
+    Stays meaningful if someone "fixes" a future 422 by re-adding the field.
+    """
+    offenders = []
+    for f in sorted(FRONTEND_SRC.rglob("*.ts*")):
+        if f.name.endswith(".d.ts"):
+            continue
+        text = f.read_text()
+        # A `status:` key inside a body passed to a document update.
+        for m in re.finditer(r"(updateDocument|useUpdateDocument)[\s\S]{0,400}?", text):
+            window = text[m.start(): m.start() + 400]
+            if re.search(r"body:\s*\{[^}]*\bstatus\s*:", window):
+                offenders.append(f"{f.relative_to(REPO_ROOT)}")
+    assert not offenders, (
+        "document update call sites sending a `status` field: "
+        f"{sorted(set(offenders))}\nDocumentUpdate forbids it. Use "
+        "requestApproval / reviewDocument / deleteDocument / restoreDocument."
+    )
+
+
+def test_docvault_surfaces_have_no_as_never_casts():
+    """`as never` is what let the `status` bug past review — it silenced the
+    exact type error that would have caught it."""
+    offenders = [
+        str(f.relative_to(REPO_ROOT))
+        for f in sorted(DOCVAULT_SRC.rglob("*.tsx"))
+        if "as never" in f.read_text()
+    ] + [
+        str(f.relative_to(REPO_ROOT))
+        for f in sorted(DOCVAULT_SRC.rglob("*.ts"))
+        if "as never" in f.read_text()
+    ]
+    assert not offenders, (
+        f"`as never` casts in DocVault: {offenders}. These suppress the type "
+        "errors that catch contract drift — fix the type instead."
+    )
+
+
