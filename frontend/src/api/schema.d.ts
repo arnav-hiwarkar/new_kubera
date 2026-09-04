@@ -4224,6 +4224,8 @@ export interface components {
             password: string;
             /** Name */
             name: string;
+            /** Invite Token */
+            invite_token: string;
         };
         /**
          * BalanceNature
