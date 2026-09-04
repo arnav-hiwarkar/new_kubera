@@ -15,7 +15,8 @@ from app.models.docvault import Document, DocumentVersion
 from app.models.company import Company
 from app.models.auditease import (
     AuditEngagement, AuditorEngagementGrant, AuditEntry, AuditEntryLine,
-    RequirementRequest, RequirementResponse, Query, QueryMessage, TrialBalanceAccount,
+    RequirementRequest, RequirementResponse, RequirementResponseDocument,
+    Query, QueryMessage, TrialBalanceAccount,
     EngagementStatus, GrantStatus, AuditEntryStatus, RequestStatus, QueryStatus, SenderType,
     AREA_LABELS
 )
@@ -50,7 +51,7 @@ async def check_auditor_access(
             and_(
                 AuditorEngagementGrant.auditor_id == auditor_id,
                 AuditorEngagementGrant.engagement_id == engagement_id,
-                AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted]),
+                AuditorEngagementGrant.status == GrantStatus.accepted,
                 AuditEngagement.status == EngagementStatus.active
             )
         )
@@ -138,6 +139,16 @@ async def accept_engagement(
     eng = eng_res.scalar_one_or_none()
     if eng and eng.status == EngagementStatus.invited:
         eng.status = EngagementStatus.active
+
+    # Backfill document access overrides for any existing documents in this engagement
+    req_doc_ids = (await db.execute(
+        select(RequirementResponseDocument.document_id)
+        .join(RequirementResponse, RequirementResponse.id == RequirementResponseDocument.response_id)
+        .join(RequirementRequest, RequirementRequest.id == RequirementResponse.requirement_id)
+        .where(RequirementRequest.engagement_id == engagement_id)
+    )).scalars().all()
+    for rdid in set(req_doc_ids):
+        await doc_access.grant_document_access_to_auditors(db, engagement_id, rdid)
 
     await log_activity(db, eng.company_id, current_auditor.id,
                  "auditor.grant_accepted", "audit_engagement", engagement_id,

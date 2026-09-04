@@ -140,7 +140,7 @@ async def auditor_can_access_document(
             and_(
                 RequirementResponseDocument.document_id == document_id,
                 AuditorEngagementGrant.auditor_id == auditor_id,
-                AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted]),
+                AuditorEngagementGrant.status == GrantStatus.accepted,
                 AuditEngagement.status != EngagementStatus.closed,
             )
         )
@@ -159,7 +159,7 @@ async def auditor_can_access_document(
             and_(
                 QueryMessage.attached_document_id == document_id,
                 AuditorEngagementGrant.auditor_id == auditor_id,
-                AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted]),
+                AuditorEngagementGrant.status == GrantStatus.accepted,
                 AuditEngagement.status != EngagementStatus.closed,
             )
         )
@@ -185,7 +185,7 @@ async def auditor_can_access_document(
             .where(
                 and_(
                     AuditorEngagementGrant.auditor_id == auditor_id,
-                    AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted]),
+                    AuditorEngagementGrant.status == GrantStatus.accepted,
                     AuditEngagement.company_id == doc.company_id,
                     AuditEngagement.status != EngagementStatus.closed,
                 )
@@ -201,13 +201,13 @@ async def auditor_can_access_document(
 async def grant_document_access_to_auditors(
     db: AsyncSession, engagement_id: uuid.UUID, document_id: uuid.UUID
 ) -> None:
-    """Give every accepted or invited auditor with the requirements area read access to a
+    """Give every accepted auditor with the requirements area read access to a
     submitted document (shared-workspace rule)."""
     rows = (await db.execute(
         select(AuditorEngagementGrant.auditor_id, AuditorEngagementGrant.area_permissions)
         .where(and_(
             AuditorEngagementGrant.engagement_id == engagement_id,
-            AuditorEngagementGrant.status.in_([GrantStatus.invited, GrantStatus.accepted]),
+            AuditorEngagementGrant.status == GrantStatus.accepted,
         )))).all()
     existing = set((await db.execute(
         select(DocumentAccessOverride.principal_id).where(
