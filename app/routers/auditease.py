@@ -1286,6 +1286,45 @@ async def remove_engagement_auditor(
     return None
 
 
+@router.delete(
+    "/engagements/{engagement_id}/auditors/pending/{email}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def cancel_pending_invite(
+    engagement_id: uuid.UUID,
+    email: str,
+    current_user: Annotated[CompanyUser, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Withdraw an invite to an email that never registered. A distinct route (not
+    /auditors/{auditor_id}) because a pending invite has no Auditor row to key off —
+    email is the natural key here, made safe to match on by
+    uq_pending_invite_engagement_email."""
+    await _get_owned_engagement(db, current_user.company_id, engagement_id)
+    clean_email = email.strip().lower()
+    res = await db.execute(
+        select(PendingAuditorInvite).where(
+            and_(
+                PendingAuditorInvite.engagement_id == engagement_id,
+                PendingAuditorInvite.email == clean_email,
+            )
+        )
+    )
+    pending = res.scalar_one_or_none()
+    if not pending:
+        raise HTTPException(status_code=404, detail="No pending invite for this email")
+
+    await db.delete(pending)
+    await log_activity(
+        db, current_user.company_id, current_user.id,
+        "auditor.invite_cancelled", "audit_engagement", engagement_id,
+        metadata_={"email": clean_email}, actor_type=ActorType.company_user,
+        engagement_id=engagement_id,
+    )
+    await db.commit()
+    return None
+
+
 @router.get("/engagements/{engagement_id}/auditors/{auditor_id}/activity", response_model=List[ActivityEventResponse])
 async def get_auditor_activity(
     engagement_id: uuid.UUID,

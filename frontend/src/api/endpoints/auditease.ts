@@ -58,6 +58,10 @@ export const auditeaseCompanyApi = {
     ),
   removeAuditor: (id: string, auditorId: string) =>
     companyClient.delete<void>(`/api/v1/auditease/engagements/${id}/auditors/${auditorId}`),
+  cancelPendingInvite: (id: string, email: string) =>
+    companyClient.delete<void>(
+      `/api/v1/auditease/engagements/${id}/auditors/pending/${encodeURIComponent(email)}`,
+    ),
   listAuditorActivity: (id: string, auditorId: string, limit = 50, offset = 0) =>
     companyClient.get<ActivityEventResponse[]>(
       `/api/v1/auditease/engagements/${id}/auditors/${auditorId}/activity?limit=${limit}&offset=${offset}`,

@@ -752,3 +752,137 @@ async def test_expired_pending_invite_reports_as_expired_not_pending(mock_email,
     listing3 = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co_headers)
     row3 = next(r for r in listing3.json() if r["email"] == target)
     assert row3["status"] == "pending"
+
+
+# --------------------------------------------------------------------------
+# 17. Cancelling a pending invite
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_admin_can_cancel_pending_invite(mock_email, client: AsyncClient):
+    """An admin can withdraw an invite that was never registered against. Once
+    cancelled, its token must be dead and it must vanish from the auditors list."""
+    mock_email.return_value = MagicMock(id="task-cancel")
+    await create_test_company(client, email="cancel_co@test.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='cancel_co@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    target = "cancel_target@firm.com"
+
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                      json={"email": target}, headers=co_headers)
+    token = _extract_token_from_mock(mock_email)
+
+    cancel = await client.delete(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/pending/{target}", headers=co_headers
+    )
+    assert cancel.status_code == 204, cancel.text
+
+    listing = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co_headers)
+    assert all(r["email"] != target for r in listing.json())
+
+    async with TestSessionLocal() as db:
+        assert (await db.execute(select(PendingAuditorInvite).where(
+            PendingAuditorInvite.engagement_id == eng_id, PendingAuditorInvite.email == target
+        ))).scalar_one_or_none() is None
+
+    # The cancelled invite's token is now unredeemable.
+    resp = await client.post(
+        "/api/v1/auth/auditor/register",
+        json={"email": target, "password": "Valid1!Pass", "name": "Late", "invite_token": token},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_cancel_nonexistent_pending_invite_404(client: AsyncClient):
+    await create_test_company(client, email="cancel404_co@test.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='cancel404_co@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+
+    resp = await client.delete(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/pending/nobody@nowhere.com", headers=co_headers
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_employee_cannot_cancel_pending_invite(mock_email, client: AsyncClient):
+    """Only an admin may withdraw an invite — mirrors the existing invite/remove ACL."""
+    from tests.test_auditease_multi_auditor import _make_user, _headers
+
+    mock_email.return_value = MagicMock(id="task-cancel-emp")
+    await create_test_company(client, email="cancelemp_co@test.com", password="Valid1!Pass")
+    co_headers = _headers(await get_company_token(client, email="cancelemp_co@test.com", password="Valid1!Pass"))
+    eng_id = await make_engagement(client, co_headers)
+    target = "cancel_emp_target@firm.com"
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                      json={"email": target}, headers=co_headers)
+
+    await _make_user(client, co_headers, "staff_cancel@a.com", role="employee")
+    emp_headers = _headers(await get_company_token(client, email="staff_cancel@a.com", password="Valid1!Pass"))
+
+    resp = await client.delete(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/pending/{target}", headers=emp_headers
+    )
+    assert resp.status_code == 403
+
+    # Untouched: the invite is still there for a real admin to manage.
+    listing = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co_headers)
+    assert any(r["email"] == target for r in listing.json())
+
+
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_cancel_pending_invite_is_tenant_scoped(mock_email, client: AsyncClient):
+    """Company A cannot cancel an invite that belongs to Company B's engagement."""
+    mock_email.return_value = MagicMock(id="task-cancel-tenant")
+    await create_test_company(client, email="tenant_a@test.com", password="Valid1!Pass")
+    a_headers = {"Authorization": f"Bearer {await get_company_token(client, email='tenant_a@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, a_headers)
+    target = "tenant_target@firm.com"
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                      json={"email": target}, headers=a_headers)
+
+    await create_test_company(client, email="tenant_b@test.com", password="Valid1!Pass")
+    b_headers = {"Authorization": f"Bearer {await get_company_token(client, email='tenant_b@test.com', password='Valid1!Pass')}"}
+
+    resp = await client.delete(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/pending/{target}", headers=b_headers
+    )
+    assert resp.status_code == 404
+
+    listing = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=a_headers)
+    assert any(r["email"] == target for r in listing.json())
+
+
+# --------------------------------------------------------------------------
+# 18. Resend must not silently widen a restricted invite back to full access
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+@patch("app.services.email.tasks.send_email_async.delay")
+async def test_resend_with_explicit_permissions_does_not_reset_to_full_access(mock_email, client: AsyncClient):
+    """The AuditorsTab 'Resend' action re-invites with the row's own current
+    area_permissions. Simulate that call and confirm the restriction survives —
+    a naive resend (posting {email} alone) would default back to full access."""
+    mock_email.return_value = MagicMock(id="task-resend-perms")
+    await create_test_company(client, email="resendperm_co@test.com", password="Valid1!Pass")
+    co_headers = {"Authorization": f"Bearer {await get_company_token(client, email='resendperm_co@test.com', password='Valid1!Pass')}"}
+    eng_id = await make_engagement(client, co_headers)
+    target = "resend_perm_target@firm.com"
+    restricted = {"trial_balance": True, "entries": False, "requirements": False,
+                  "queries": False, "documents": False}
+
+    await client.post(f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+                      json={"email": target, "area_permissions": restricted}, headers=co_headers)
+
+    # Simulates AuditorsTab's doResend: re-invite with the row's own current perms.
+    resend = await client.post(
+        f"/api/v1/auditease/engagements/{eng_id}/auditors/invite",
+        json={"email": target, "area_permissions": restricted}, headers=co_headers,
+    )
+    assert resend.status_code == 200, resend.text
+
+    listing = await client.get(f"/api/v1/auditease/engagements/{eng_id}/auditors", headers=co_headers)
+    row = next(r for r in listing.json() if r["email"] == target)
+    assert row["area_permissions"] == restricted

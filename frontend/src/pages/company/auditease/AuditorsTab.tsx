@@ -10,11 +10,13 @@ import {
 import { ApiError } from '@/api/http'
 import { companyClient } from '@/api/clients/company'
 import { saveBlob } from '@/lib/download'
-import { ChevronDown, ChevronUp, FileSpreadsheet, FileText, Pencil, UserMinus } from 'lucide-react'
+import { ChevronDown, ChevronUp, FileSpreadsheet, FileText, Pencil, RotateCw, UserMinus, X } from 'lucide-react'
 import type { EngagementAuditorResponse } from '@/api/types'
 import {
   useEngagementAuditors,
   useRemoveEngagementAuditor,
+  useCancelPendingInvite,
+  useInviteEngagementAuditor,
   useAuditorActivity,
 } from '@/api/hooks/auditease'
 import { EditAuditorAccessModal } from './EditAuditorAccessModal'
@@ -80,10 +82,14 @@ export function AuditorsTab({ engagementId, canManage }: { engagementId: string;
   const toast = useToast()
   const { data: auditors = [], isLoading } = useEngagementAuditors(engagementId)
   const remove = useRemoveEngagementAuditor(engagementId)
+  const cancelInvite = useCancelPendingInvite(engagementId)
+  const resendInvite = useInviteEngagementAuditor(engagementId)
+  const [resendingEmail, setResendingEmail] = useState<string | null>(null)
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editFor, setEditFor] = useState<EngagementAuditorResponse | null>(null)
   const [removeFor, setRemoveFor] = useState<EngagementAuditorResponse | null>(null)
+  const [cancelFor, setCancelFor] = useState<EngagementAuditorResponse | null>(null)
 
   const exportActivity = async (auditor: EngagementAuditorResponse, format: 'xlsx' | 'pdf') => {
     try {
@@ -107,6 +113,32 @@ export function AuditorsTab({ engagementId, canManage }: { engagementId: string;
       setRemoveFor(null)
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Could not remove auditor')
+    }
+  }
+
+  const doResend = async (pending: EngagementAuditorResponse) => {
+    setResendingEmail(pending.email)
+    try {
+      // Re-send with the invite's own current area_permissions, not the modal's
+      // all-checked defaults — otherwise resending a restricted invite (e.g. to
+      // renew an expired one) would silently widen it back to full access.
+      await resendInvite.mutateAsync({ email: pending.email, area_permissions: pending.area_permissions })
+      toast.success(`Invite resent to ${pending.email}`)
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Could not resend invite')
+    } finally {
+      setResendingEmail(null)
+    }
+  }
+
+  const doCancelInvite = async () => {
+    if (!cancelFor) return
+    try {
+      await cancelInvite.mutateAsync(cancelFor.email)
+      toast.success('Invite cancelled')
+      setCancelFor(null)
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Could not cancel invite')
     }
   }
 
@@ -153,9 +185,7 @@ export function AuditorsTab({ engagementId, canManage }: { engagementId: string;
                         <div className="font-medium text-text-primary">{a.name ?? a.email}</div>
                         {isPending && (
                           <div className={isExpired ? 'text-xs text-status-action' : 'text-xs text-status-pending'}>
-                            {isExpired
-                              ? 'Invitation expired — invite again to resend'
-                              : 'Invite pending registration'}
+                            {isExpired ? 'Invitation expired' : 'Invite pending registration'}
                           </div>
                         )}
                         {a.name && <div className="text-xs text-text-muted">{a.email}</div>}
@@ -171,7 +201,30 @@ export function AuditorsTab({ engagementId, canManage }: { engagementId: string;
                       </td>
                       <td className="px-4 py-3">
                         {isPending ? (
-                          <span className="text-xs text-text-muted">—</span>
+                          canManage ? (
+                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                loading={resendingEmail === a.email}
+                                onClick={() => void doResend(a)}
+                              >
+                                <RotateCw className="h-3.5 w-3.5" />
+                                Resend
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-status-action"
+                                onClick={() => setCancelFor(a)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                Cancel invite
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-text-muted">—</span>
+                          )
                         ) : (
                           <div className="flex flex-wrap items-center justify-end gap-1.5">
                             <Button
@@ -243,6 +296,17 @@ export function AuditorsTab({ engagementId, canManage }: { engagementId: string;
         loading={remove.isPending}
         onConfirm={doRemove}
         onCancel={() => setRemoveFor(null)}
+      />
+
+      <ConfirmDialog
+        open={!!cancelFor}
+        title={`Cancel invite to ${cancelFor?.email}?`}
+        message="They will no longer be able to register with this invitation link. You can invite them again at any time."
+        confirmLabel="Cancel invite"
+        destructive
+        loading={cancelInvite.isPending}
+        onConfirm={doCancelInvite}
+        onCancel={() => setCancelFor(null)}
       />
     </div>
   )
