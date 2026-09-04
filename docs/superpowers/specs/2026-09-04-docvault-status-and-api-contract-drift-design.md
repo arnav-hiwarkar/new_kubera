@@ -215,8 +215,8 @@ access; that stays server-side only.
 ```ts
 // Pure. No React. This is what gets the table-driven unit tests.
 export function documentPermissions(
-  profile: CompanyUserOut | null,
-  document: DocumentResponse,
+  profile: Pick<CompanyUserOut, 'id' | 'role'> | null | undefined,
+  document: DocumentResponse | null | undefined,
 ): DocumentPermissions
 ```
 
@@ -261,7 +261,7 @@ Approval").
 * The free status dropdown is **removed**. The server has no endpoint for setting
   an arbitrary status, by design.
 * Gains the real workflow: request approval (with `ApproverPicker`), the shared
-  `DocumentApprovalPanel`, archive, restore.
+  `DocumentApprovalPanel` placed in **both Overview and Edit tabs** (so inspecting an amber node allows immediate review without tab switching), archive, restore.
 * `restore` moves from `PATCH {status}` to `useRestoreDocument`.
 * Every control's enabled state comes from `useDocumentActions`.
 * Both `as never` casts are removed.
