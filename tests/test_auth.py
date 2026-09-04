@@ -113,11 +113,40 @@ async def test_auditor_register(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_auditor_register_without_token_fails(client: AsyncClient):
+    resp = await client.post(
+        "/api/v1/auth/auditor/register",
+        json={"email": "notoken@test.com", "password": "Valid1!Pass", "name": "NoToken"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_auditor_register_with_invalid_token_fails(client: AsyncClient):
+    resp = await client.post(
+        "/api/v1/auth/auditor/register",
+        json={
+            "email": "badtoken@test.com",
+            "password": "Valid1!Pass",
+            "name": "BadToken",
+            "invite_token": "invalid-token-12345",
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid or expired invitation details"
+
+
+@pytest.mark.asyncio
 async def test_auditor_register_duplicate(client: AsyncClient):
     await create_test_auditor(client)
     resp = await client.post(
         "/api/v1/auth/auditor/register",
-        json={"email": "auditor@test.com", "password": "Valid1!Pass", "name": "Dup"},
+        json={
+            "email": "auditor@test.com",
+            "password": "Valid1!Pass",
+            "name": "Dup",
+            "invite_token": "some-token",
+        },
     )
     assert resp.status_code == 409
 

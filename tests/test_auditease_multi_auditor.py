@@ -1,12 +1,14 @@
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import create_test_company, get_company_token
+from tests.conftest import create_test_company, get_company_token, create_test_auditor
 
 
 async def _register_login(client: AsyncClient, email: str) -> dict:
-    await client.post("/api/v1/auth/auditor/register", json={"email": email, "password": "Valid1!Pass", "name": email.split("@")[0].title()})
     resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "Valid1!Pass"})
+    if resp.status_code != 200:
+        await create_test_auditor(client, email=email, password="Valid1!Pass", name=email.split("@")[0].title())
+        resp = await client.post("/api/v1/auth/auditor/login", json={"email": email, "password": "Valid1!Pass"})
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
