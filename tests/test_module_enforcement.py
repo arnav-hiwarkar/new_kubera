@@ -16,6 +16,18 @@ GATED_ROUTES = {
     "/api/v1/activity-log": "activity",
     "/api/v1/depreciation": "assets",
     "/api/v1/financial-years": "assets",
+    "/api/v1/assets": "assets",
+}
+
+ALLOWED_BARE_ROUTES = {
+    "/api/v1/auth/company/me",
+    "/api/v1/company/profile",
+    "/api/v1/company/profile/logo",
+    "/api/v1/users/me",
+    "/api/v1/users/me/change-password",
+    "/api/v1/users/me/avatar",
+    "/api/v1/users/{user_id}/avatar",
+    "/api/v1/custom-fields/{module}",  # Known deferred gap from KUB-001
 }
 
 def test_every_module_router_has_a_server_side_gate():
@@ -45,6 +57,38 @@ def test_every_module_router_has_a_server_side_gate():
             if path.startswith(prefix) and module not in guards(route):
                 missing.append((path, module))
     assert not missing, f"endpoints missing their module gate: {missing}"
+
+
+def test_no_route_has_bare_company_user_without_gate():
+    """No route in the app should depend on get_current_company_user without
+    either a module gate or a role gate (unless explicitly allowlisted)."""
+    from app.auth import get_current_company_user
+    from app.main import app
+
+    def inspect_dependencies(route):
+        calls = []
+        def walk(dep, depth=0):
+            if depth > 5:
+                return
+            for sub in dep.dependencies:
+                calls.append(sub.call)
+                walk(sub, depth + 1)
+        if getattr(route, "dependant", None):
+            walk(route.dependant)
+        return calls
+
+    unprotected = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        calls = inspect_dependencies(route)
+        has_user = any(c == get_current_company_user for c in calls)
+        has_checker = any(getattr(c, "__name__", "") == "checker" for c in calls)
+
+        if has_user and not has_checker and path not in ALLOWED_BARE_ROUTES:
+            unprotected.append((path, getattr(route, "methods", None)))
+
+    assert not unprotected, f"Found routes using bare get_current_company_user without role/module gate: {unprotected}"
+
 
 @pytest.mark.asyncio
 async def test_module_gate_behavior(client: AsyncClient):
