@@ -43,11 +43,38 @@ test fixtures missing `UserResponse`'s newly-required `can_change_password` and
 
 The drift *mechanism* is hand-written shadow types in `src/api/types.ts`. When
 the generated schema lacks a type, someone hand-declares it; it then drifts
-silently. Audited against the live OpenAPI, most shadows agree — but
-`FinancialYearResponse` declares **`is_first_year`, which does not exist on the
-server**. Nothing reads it yet, so it is a loaded gun rather than a live bug.
-This is the same pattern as the `AssetResponse` `string & number` intersection
-that collapsed every disposal field to `null` (fixed in KUB-020).
+silently. There are **11** such shadows — standalone `export interface`
+declarations whose name matches an OpenAPI component:
+
+`AssetDepreciationLineResponse`, `AssetDisposalRequest`, `AssetExistingCreate`,
+`DepreciationRunResponse`, `DocVaultApproverResponse`,
+`DocumentRequestApprovalRequest`, `DocumentReviewRequest`,
+`FinancialYearCreate`, `FinancialYearResponse`,
+`ItBlockDepreciationLineResponse`, `UserChangePasswordRequest`.
+
+Only `ImpactPreview` and `TBColumnMap` are genuinely frontend-local.
+
+Compared field-by-field **and type-by-type** against the live OpenAPI, three of
+them actively lie: `DepreciationRunResponse`, `AssetDepreciationLineResponse`
+and `ItBlockDepreciationLineResponse` declare **`number` for ~29 money fields
+the API serialises as `string`** (they are `Decimal` server-side). This is the
+same class as the `AssetResponse` `string & number` intersection that collapsed
+every disposal field to `null` (fixed in KUB-020).
+
+Measured: pointing all three at the generated types produces **zero** new type
+errors, because the consuming code was written against reality rather than the
+declaration — `DepreciationRunCard.tsx:322` wraps values in `String(...)`, and
+`explain.test.tsx` fixtures already use `'0.00'`. So nobody depended on the lie
+and the shadows can be deleted at no cost. Had anyone written
+`line.additions.toFixed(2)`, it would have crashed in production.
+
+Four shadows narrow an enum-ish field the backend types loosely as `str`, where
+the hand-written narrowing is *correct* and worth keeping:
+`FinancialYearResponse.status`, `DepreciationRunResponse.status`,
+`DocVaultApproverResponse.role`, `DocumentReviewRequest.decision`. These become
+intersections over the generated type rather than standalone declarations, which
+preserves the narrowing and satisfies the ban rule by construction. The
+underlying backend looseness is recorded as a follow-up in §5.4.
 
 **Ordering:** B is the cause, A is the symptom. Restore type safety at the
 boundary first, then fix what it surfaces. Doing A alone means the next contract
@@ -127,13 +154,19 @@ identical output from the file as from the URL.
     `DocumentResponse`, `DocumentUpdate` (`approver_id`), and `CompanyUserOut`
     (`can_change_password`, `has_avatar`, `avatar_updated_at`,
     `password_changed_at` are all present in the schema).
+  * **The three lying depreciation shadows** — `DepreciationRunResponse`,
+    `AssetDepreciationLineResponse`, `ItBlockDepreciationLineResponse`. Deleting
+    them also *gains* fields the hand-written versions omitted entirely:
+    `calc_trace` on both line types and `book` on the run response.
   * **Redundant `Omit<…, 'role'>` overrides** on `UserResponse`, `UserCreate`
     and `UserUpdate`. The generated `UserRole` is already `"admin" |
     "employee"` — KUB-018's removal of `manager` is reflected in the live API —
     so the override reproduces the generated type exactly. `UserRoleType`
     becomes `S['UserRole']` rather than a hand-maintained union that only
     happens to be correct today.
-* Delete `FinancialYearResponse.is_first_year` — it does not exist server-side.
+* Convert the four correct enum narrowings to intersections over the generated
+  type, e.g. `export type DocumentReviewRequest = S['DocumentReviewRequest'] &
+  { decision: 'verified' | 'action_required' }`.
 * Fix the 6 test fixtures to include `can_change_password` and `has_avatar`.
 
 Every deletion here is mechanical and proven by `tsc -b`: if a shadow was
@@ -294,6 +327,12 @@ description, verified to contain no tenant data, hosts, or secrets.
   `version_id` branch 404s correctly). Robustness, not a leak.
 * `Content-Disposition` uses the raw `original_filename` — this is **KUB-010**,
   already tracked as open in the security audit.
+* The backend types several enum-backed response fields as bare `str`
+  (`FinancialYearResponse.status`, `DepreciationRunResponse.status`,
+  `DocVaultApproverResponse.role`, `DocumentReviewRequest.decision`), so the
+  generated types are wider than reality and the frontend must re-narrow by
+  hand. Typing these as their Python enums would remove the need. It is a
+  production schema change, so it is out of scope here.
 * `SalesPage.tsx:38`, `SalesDrawer.tsx:39` and `KraPage.tsx:23` still compare
   `role === 'manager'`. The live API's `UserRole` no longer contains `manager`
   (KUB-018), so these branches are dead. Behaviour is correct today — there are
@@ -400,7 +439,8 @@ done for the KUB-020 static and concurrency guards.
 * `GraphDocumentInspector` rewrite (status dropdown removed, real workflow added)
 * `DocumentDrawer`'s two permission gaps
 * Committed `openapi.json`, offline `gen:api`, three guard tests
-* `schema.d.ts` regeneration, shadow-type removal, `is_first_year` removal
+* `schema.d.ts` regeneration, removal of all 11 shadow types, and the four enum
+  narrowings converted to intersections
 * The 6 test fixtures gaining `can_change_password` / `has_avatar`
 
 **Out of scope**
