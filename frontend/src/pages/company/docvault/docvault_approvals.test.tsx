@@ -11,15 +11,25 @@ import { Dashboard } from '@/pages/company/Dashboard'
 import type { DocumentResponse } from '@/api/types'
 import { docvaultApi } from '@/api/endpoints/docvault'
 
+const authState = vi.hoisted(() => ({
+  profile: {
+    id: 'u-approver-1',
+    role: 'employee',
+    email: 'approver@acme.test',
+    full_name: 'Approver Alice',
+    accessible_modules: ['dashboard', 'docvault'],
+  } as {
+    id: string
+    role: string
+    email?: string
+    full_name?: string
+    accessible_modules?: string[]
+  } | null,
+}))
+
 vi.mock('@/auth/company', () => ({
   useCompanyAuth: () => ({
-    profile: {
-      id: 'u-approver-1',
-      role: 'employee',
-      email: 'approver@acme.test',
-      full_name: 'Approver Alice',
-      accessible_modules: ['dashboard', 'docvault'],
-    },
+    profile: authState.profile,
     status: 'authenticated',
     signIn: vi.fn(),
     signOut: vi.fn(),
@@ -103,7 +113,22 @@ const baseDoc: DocumentResponse = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  authState.profile = {
+    id: 'u-approver-1',
+    role: 'employee',
+    email: 'approver@acme.test',
+    full_name: 'Approver Alice',
+    accessible_modules: ['dashboard', 'docvault'],
+  }
 })
+
+function renderDrawer(doc: DocumentResponse = baseDoc) {
+  const isArchived = doc.status === 'archived'
+  const effectiveDoc: DocumentResponse = isArchived
+    ? doc
+    : { ...doc, status: 'uploaded', is_editable: true }
+  return wrap(<DocumentDrawer document={effectiveDoc} open onClose={() => {}} buckets={[]} />)
+}
 
 describe('DocVault Approvals & Final Status', () => {
   it('submits approval request and Final lock from UploadDocumentModal', async () => {
@@ -228,9 +253,8 @@ describe('DocVault Approvals & Final Status', () => {
     // Version dropzone is disabled / replaced with message
     expect(screen.getByText(/Document is pending approval by Other Approver/i)).toBeInTheDocument()
 
-    // Archive button is disabled
-    const archiveBtn = screen.getByRole('button', { name: /Archive/i })
-    expect(archiveBtn).toBeDisabled()
+    // Archive button is withheld for non-creator non-admin
+    expect(screen.queryByRole('button', { name: /Archive/i })).not.toBeInTheDocument()
   })
 
   it('renders Resubmit for Review card and submits for action_required document', async () => {
@@ -268,12 +292,50 @@ describe('DocVault Approvals & Final Status', () => {
     wrap(<DocumentDrawer document={archivedDoc} open onClose={() => {}} buckets={[]} />)
 
     // Current user in mock is role: 'employee'
-    const restoreBtn = screen.getByRole('button', { name: /Restore document/i })
-    expect(restoreBtn).toBeDisabled()
-    expect(restoreBtn).toHaveAttribute('title', 'Only administrators can restore archived documents')
+    expect(screen.queryByRole('button', { name: /Restore document/i })).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Only an administrator can restore an archived document.'),
+    ).toBeInTheDocument()
 
     const editableSwitch = screen.getByRole('checkbox', { name: /Final \(Locked\)/i })
     expect(editableSwitch).toBeDisabled()
   })
 })
+
+describe('DocumentDrawer — permissions match the server', () => {
+  it('withholds archive from a user who is neither creator nor admin', async () => {
+    // server: 403 "Only creator or admin can archive a document". The drawer
+    // used to show an enabled Archive here, which simply 403'd.
+    authState.profile = { id: 'u-stranger', role: 'employee' }
+    renderDrawer({ ...baseDoc, created_by: 'u-creator', approver_id: 'u-approver' })
+
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+  })
+
+  it('withholds metadata edits from a user outside admin/creator/approver', async () => {
+    // server: 403 "Not authorized to modify this document" (_may_edit_document).
+    // The drawer used to leave these inputs live.
+    authState.profile = { id: 'u-stranger', role: 'employee' }
+    renderDrawer({ ...baseDoc, created_by: 'u-creator', approver_id: 'u-approver' })
+
+    expect(screen.getByLabelText('Name')).toBeDisabled()
+  })
+
+  it('still lets the creator archive their own document', async () => {
+    authState.profile = { id: 'u-creator', role: 'employee' }
+    renderDrawer({ ...baseDoc, created_by: 'u-creator', approver_id: 'u-approver' })
+
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled()
+  })
+
+  it('restores through the restore endpoint for an admin', async () => {
+    const user = userEvent.setup()
+    authState.profile = { id: 'u-admin', role: 'admin' }
+    renderDrawer({ ...baseDoc, status: 'archived', is_editable: false })
+
+    await user.click(screen.getByRole('button', { name: 'Restore document' }))
+    await waitFor(() => expect(docvaultApi.restoreDocument).toHaveBeenCalledWith(baseDoc.id))
+  })
+})
+
 
